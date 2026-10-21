@@ -1052,6 +1052,10 @@ processMbeFrame (dsd_opts * opts, dsd_state * state, char imbe_fr[8][23], char a
         }
       }
 
+      //web interface Basic Privacy key-hunt: sample the (still ciphered) codeword
+      if (opts->web_enable == 1)
+        web_key_capture (opts, state, 0, ambe_d);
+
       mbe_processAmbe2450Dataf (state->audio_out_temp_buf, &state->errs, &state->errs2, state->err_str,
         ambe_d, state->cur_mp, state->prev_mp, state->prev_mp_enhanced, opts->uvquality);
 
@@ -1550,6 +1554,9 @@ processMbeFrame (dsd_opts * opts, dsd_state * state, char imbe_fr[8][23], char a
             state->static_ks_counter[state->currentslot] += state->straight_discard;
         }
       }
+
+      if (opts->web_enable == 1)
+        web_key_capture (opts, state, 1, ambe_d);
 
       mbe_processAmbe2450Dataf (state->audio_out_temp_bufR, &state->errsR, &state->errs2R, state->err_strR,
         ambe_d, state->cur_mp2, state->prev_mp2, state->prev_mp_enhanced2, opts->uvquality);

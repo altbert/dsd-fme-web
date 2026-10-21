@@ -265,6 +265,10 @@ void playSynthesizedVoiceFS3 (dsd_opts * opts, dsd_state * state)
   if (encL && encR)
     goto FS3_END;
 
+  web_audio_push(opts, stereo_samp1, 320*4, 0);
+  web_audio_push(opts, stereo_samp2, 320*4, 0);
+  web_audio_push(opts, stereo_samp3, 320*4, 0);
+
   if (opts->audio_out_type == 0) //Pulse Audio
   {
     pa_simple_write(opts->pulse_digi_dev_out, stereo_samp1, 320*4, NULL); //switch to sizeof(stereo_samp1) * 2?
@@ -513,6 +517,11 @@ void playSynthesizedVoiceFS4 (dsd_opts * opts, dsd_state * state)
   if (encL && encR)
     goto END_FS4;
 
+  web_audio_push(opts, stereo_samp1, 320*4, 0);
+  web_audio_push(opts, stereo_samp2, 320*4, 0);
+  if (memcmp(empty, stereo_samp3, sizeof(empty)) != 0) web_audio_push(opts, stereo_samp3, 320*4, 0);
+  if (memcmp(empty, stereo_samp4, sizeof(empty)) != 0) web_audio_push(opts, stereo_samp4, 320*4, 0);
+
   if (opts->audio_out_type == 0) //Pulse Audio
   {
     pa_simple_write(opts->pulse_digi_dev_out, stereo_samp1, 320*4, NULL); //switch to sizeof(stereo_samp1) * 2?
@@ -672,6 +681,7 @@ void playSynthesizedVoiceFS (dsd_opts * opts, dsd_state * state)
       stereo_samp1[i*2+1] = state->f_l[i] * 0.5f;
   }
 
+  web_audio_push(opts, stereo_samp1, 320*4, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
     pa_simple_write(opts->pulse_digi_dev_out, stereo_samp1, 320*4, NULL); //switch to sizeof(stereo_samp1) * 2?
@@ -814,6 +824,8 @@ void playSynthesizedVoiceFM (dsd_opts * opts, dsd_state * state)
   if (opts->slot1_on == 0)
     goto vfm_end;
 
+  web_audio_push(opts, state->f_l, 160*4, 0);
+
   if (opts->audio_out_type == 0)
     pa_simple_write(opts->pulse_digi_dev_out, state->f_l, 160*4, NULL);
 
@@ -871,6 +883,8 @@ void playSynthesizedVoiceMS (dsd_opts * opts, dsd_state * state)
 
   if (opts->use_hpf_d == 1)
     hpf_dL(state, state->s_l, len);
+
+  if (len == 160) web_audio_push(opts, mono_samp, len*2, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
     pa_simple_write(opts->pulse_digi_dev_out, mono_samp, len*2, NULL);
@@ -957,6 +971,8 @@ void playSynthesizedVoiceMSR (dsd_opts * opts, dsd_state * state)
 
   if (opts->use_hpf_d == 1)
     hpf_dR(state, mono_samp, len);
+
+  if (len == 160) web_audio_push(opts, mono_samp, len*2, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
     pa_simple_write(opts->pulse_digi_dev_out, mono_samp, len*2, NULL);
@@ -1101,6 +1117,8 @@ void playSynthesizedVoiceSS (dsd_opts * opts, dsd_state * state)
   //at this point, if still flagged as enc, then we can skip all playback/writing functions
   if (encL)
     goto SSM_END;
+
+  web_audio_push(opts, stereo_samp1, 320*2, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
     pa_simple_write(opts->pulse_digi_dev_out, stereo_samp1, 320*2, NULL);
@@ -1480,6 +1498,10 @@ void playSynthesizedVoiceSS3 (dsd_opts * opts, dsd_state * state)
       stereo_samp3[i*2+1] = state->s_r4[2][i];
   }
 
+  web_audio_push(opts, stereo_samp1, 320*2, 0);
+  web_audio_push(opts, stereo_samp2, 320*2, 0);
+  web_audio_push(opts, stereo_samp3, 320*2, 0);
+
   if (opts->audio_out_type == 0) //Pulse Audio
   {
     pa_simple_write(opts->pulse_digi_dev_out, stereo_samp1, 320*2, NULL);
@@ -1726,6 +1748,11 @@ void playSynthesizedVoiceSS4 (dsd_opts * opts, dsd_state * state)
   //at this point, if both channels are still flagged as enc, then we can skip all playback/writing functions
   if (encL && encR)
     goto SS4_END;
+
+  web_audio_push(opts, stereo_samp1, 320*2, 0);
+  web_audio_push(opts, stereo_samp2, 320*2, 0);
+  if (memcmp(empty, stereo_samp3, sizeof(empty)) != 0) web_audio_push(opts, stereo_samp3, 320*2, 0);
+  if (memcmp(empty, stereo_samp4, sizeof(empty)) != 0) web_audio_push(opts, stereo_samp4, 320*2, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
   {
@@ -2048,6 +2075,10 @@ void playSynthesizedVoiceSS18 (dsd_opts * opts, dsd_state * state)
         stereo_sf[j][i*2+1] = state->s_r4[j][i];
     }
   }
+
+  for (j = 0; j < 18; j++)
+    if (memcmp(empty, stereo_sf[j], sizeof(empty)) != 0)
+      web_audio_push(opts, stereo_sf[j], 320*2, 0);
 
   if (opts->audio_out_type == 0) //Pulse Audio
   {

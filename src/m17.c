@@ -901,6 +901,9 @@ void M17processCodec2_1600(dsd_opts * opts, dsd_state * state, uint8_t * payload
   if (opts->slot1_on == 1) //playback if enabled
   {
 
+    if (opts->web_enable == 1 && state->m17_enc == 0)
+      web_audio_push(opts, samp1, nsam*2, 0);
+
     if (opts->audio_out_type == 0 && state->m17_enc == 0) //Pulse Audio
     {
       pa_simple_write(opts->pulse_digi_dev_out, samp1, nsam*2, NULL);
@@ -1050,6 +1053,12 @@ void M17processCodec2_3200(dsd_opts * opts, dsd_state * state, uint8_t * payload
 
   if (opts->slot1_on == 1) //playback if enabled
   {
+
+    if (opts->web_enable == 1 && state->m17_enc == 0)
+    {
+      web_audio_push(opts, samp1, nsam*2, 0);
+      web_audio_push(opts, samp2, nsam*2, 0);
+    }
 
     if (opts->audio_out_type == 0 && state->m17_enc == 0) //Pulse Audio
     {
@@ -1285,6 +1294,10 @@ void processM17STR(dsd_opts * opts, dsd_state * state)
 
   //check lich first, and handle LSF chunk and completed LSF
   lich_err = M17processLICH(state, opts, lich_bits);
+
+  //the web side counts frames whose LICH decodes to tell a real stream from false syncs
+  if (opts->web_enable == 1 && lich_err == 0)
+    web_frame_good();
 
   if (lich_err == 0)
     prepare_str(opts, state, sbuf);

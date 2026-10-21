@@ -352,6 +352,8 @@ void dmrMS (dsd_opts * opts, dsd_state * state)
   {
     ncursesPrinter(opts, state);
   }
+  if (opts->web_enable == 1)
+    web_poll(opts, state);
 
   //slot 1
   watchdog_event_history(opts, state, 0);

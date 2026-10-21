@@ -365,6 +365,7 @@ typedef struct
   int unmute_encrypted_p25;
   int rtl_dev_index;
   int rtl_gain_value;
+  int rtl_digital_agc; //RTL2832 digital AGC (web UI), separate from the tuner AGC (gain 0); off by default
   int rtl_gain_actual;
   int rtl_squelch_level;
   int rtl_volume_multiplier;
@@ -504,6 +505,14 @@ typedef struct
 
   //Use floating point audio output
   int floating_point;
+
+  //Web interface (HTTP/WebSocket server for browser client)
+  int web_enable;
+  int web_port;
+  char web_bind[128];
+  char web_password[256];
+  char web_root[1024]; //serve UI from this dir instead of embedded assets (dev)
+  char web_bookmarks[1024]; //bookmark file (JSON), empty = default location
 
 } dsd_opts;
 
@@ -1705,6 +1714,11 @@ void cleanup_rtlsdr_stream();
 int get_rtlsdr_sample(int16_t *sample, dsd_opts * opts, dsd_state * state);
 void rtlsdr_sighandler();
 void rtl_dev_tune(dsd_opts * opts, long int frequency);
+uint32_t rtl_dev_set_rate(dsd_opts * opts, uint32_t rate);
+void rtl_dev_set_bandwidth(dsd_opts * opts, int khz);
+void rtl_dev_set_agc(dsd_opts * opts, int on);
+uint32_t rtl_dev_rate(void);
+uint32_t rtl_dev_rate_target(void);
 long int rtl_return_rms();
 void rtl_clean_queue();
 #endif
@@ -1719,6 +1733,21 @@ int isch_lookup (uint64_t isch); //isch map lookup
 //Phase 1 NID Check
 int check_NID(char* bch_code, int* new_nac, char* new_duid, unsigned char parity);
 
+#ifdef __cplusplus
+}
+#endif
+
+//Web interface entry points (implemented in dsd_web.c); safe no-ops unless enabled
+#ifdef __cplusplus
+extern "C" {
+#endif
+void web_init (dsd_opts * opts, dsd_state * state);
+void web_poll (dsd_opts * opts, dsd_state * state);
+void web_shutdown (dsd_opts * opts, dsd_state * state);
+void web_audio_push (dsd_opts * opts, const void * data, size_t nbytes, int analog);
+void web_key_capture (dsd_opts * opts, dsd_state * state, int slot, char * ambe_d); //DMR BP key-hunt sample tap
+void web_frame_tap (dsd_state * state); //getFrameSync entry: counts accepted frames
+void web_frame_good (void); //a frame whose FEC checked out (M17 LICH)
 #ifdef __cplusplus
 }
 #endif

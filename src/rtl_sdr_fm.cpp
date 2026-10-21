@@ -30,6 +30,7 @@
 #include <queue>
 #include <rtl-sdr.h>
 #include "dsd.h"
+#include "dsd_web.h"
 
 #define DEFAULT_SAMPLE_RATE		48000
 #define DEFAULT_BUF_LENGTH		(1 * 16384)
@@ -96,6 +97,8 @@ struct demod_state
 	int      pre_r, pre_j;
 	int      prev_index;
 	int      downsample;    /* min 1, max 256 */
+	int      downsample_ref; /* the default decimation, low_pass scales to its level */
+	int      downsample_passes_ref; /* CIC passes at the default decimation, likewise */
 	int      post_downsample;
 	int      output_scale;
 	int      squelch_level, conseq_squelch, squelch_hits, terminate_on_squelch;
@@ -192,6 +195,12 @@ void low_pass(struct demod_state *d)
 		d->prev_index++;
 		if (d->prev_index < d->downsample) {
 			continue;
+		}
+		//a box sum grows with the decimation: off the default one (other capture rates)
+		//scale it back, so int16 doesn't overflow and RMS / squelch levels mean the same
+		if (d->downsample != d->downsample_ref) {
+			d->now_r = d->now_r * d->downsample_ref / d->downsample;
+			d->now_j = d->now_j * d->downsample_ref / d->downsample;
 		}
 		d->lowpassed[i2]   = d->now_r; // * d->output_scale;
 		d->lowpassed[i2+1] = d->now_j; // * d->output_scale;
@@ -494,6 +503,13 @@ void full_demod(struct demod_state *d)
 	int sr = 0;
 	ds_p = d->downsample_passes;
 	if (ds_p) {
+		//each pass doubles the level: off the default pass count (other capture rates) bring it
+		//back to the default level like low_pass does, before the passes so int16 can't overflow
+		int ds_shift = ds_p - d->downsample_passes_ref;
+		if (ds_shift > 0) {
+			for (i=0; i < d->lp_len; i++) {
+				d->lowpassed[i] = (int16_t)(d->lowpassed[i] >> ds_shift);}
+		}
 		for (i=0; i < ds_p; i++) {
 			fifth_order(d->lowpassed,   (d->lp_len >> i), d->lp_i_hist[i]);
 			fifth_order(d->lowpassed+1, (d->lp_len >> i) - 1, d->lp_q_hist[i]);
@@ -505,6 +521,10 @@ void full_demod(struct demod_state *d)
 				cic_9_tables[ds_p], d->droop_i_hist);
 			generic_fir(d->lowpassed+1, d->lp_len-1,
 				cic_9_tables[ds_p], d->droop_q_hist);
+		}
+		if (ds_shift < 0) {
+			for (i=0; i < d->lp_len; i++) {
+				d->lowpassed[i] = (int16_t)(d->lowpassed[i] * (1 << -ds_shift));}
 		}
 	} else {
 		low_pass(d);
@@ -557,6 +577,12 @@ static void rtlsdr_callback(unsigned char *buf, uint32_t len, void *ctx)
 		rotate_90(buf, len);}
 	for (i=0; i<(int)len; i++) {
 		s->buf16[i] = (int16_t)buf[i] - 127;}
+	//feed the web spectrum analyzer with the full-rate IQ (already re-centered on
+	//the user frequency by rotate_90), span is the capture rate
+	{
+		uint32_t disp_center = s->offset_tuning ? s->freq : (s->freq - s->rate / 4);
+		spectrum_push_iq((const int16_t *)s->buf16, (int)(len / 2), disp_center, s->rate, 0);
+	}
 	pthread_rwlock_wrlock(&d->rw);
 	memcpy(d->lowpassed, s->buf16, 2*len);
 	d->lp_len = len;
@@ -740,6 +766,40 @@ int verbose_reset_buffer(rtlsdr_dev_t *dev)
 	return r;
 }
 
+//capture rate asked for from the web UI, 0 keeps the default (just over 1 MSPS)
+static uint32_t rtl_rate_target = 0;
+
+//sample rates the RTL2832U accepts
+static int rtl_rate_valid(long long r)
+{
+	return (r > 225000 && r <= 300000) || (r > 900000 && r <= 3200000);
+}
+
+//decimation for the requested capture rate: the nearest one the dongle accepts, preferring
+//the next step up when the nearest falls in the 300-900 kHz gap
+static void target_downsample(struct demod_state *dm)
+{
+	double ratio = (double)rtl_rate_target / dm->rate_in;
+	if (dm->downsample_passes) {
+		//CIC passes only decimate by powers of two: the largest one at or under the target,
+		//so asking for 2.4 MSPS doesn't land on an unstable 3 MSPS
+		int p0 = (int)floor(log2(ratio) + 1e-9), p;
+		if (p0 < 1) p0 = 1;
+		if (p0 > 9) p0 = 9;
+		for (p = p0; p > 1 && !rtl_rate_valid((long long)dm->rate_in << p); p--);
+		if (!rtl_rate_valid((long long)dm->rate_in << p))
+			for (p = p0; p < 9 && !rtl_rate_valid((long long)dm->rate_in << p); p++);
+		dm->downsample_passes = p;
+		dm->downsample = 1 << p;
+	} else {
+		int ds = (int)lround(ratio);
+		if (ds < 1) ds = 1;
+		while (!rtl_rate_valid((long long)ds * dm->rate_in) && (long long)ds * dm->rate_in < 3200000) ds++;
+		while (ds > 1 && !rtl_rate_valid((long long)ds * dm->rate_in)) ds--;
+		dm->downsample = ds;
+	}
+}
+
 static void optimal_settings(int freq, int rate)
 {
 	UNUSED(rate);
@@ -750,10 +810,16 @@ static void optimal_settings(int freq, int rate)
 	struct dongle_state *d = &dongle;
 	struct demod_state *dm = &demod;
 	struct controller_state *cs = &controller;
-	dm->downsample = (1000000 / dm->rate_in) + 1; //dm->rate_in is the rtl_bandwidth value
-	if (dm->downsample_passes) {
-		dm->downsample_passes = (int)log2(dm->downsample) + 1;
-		dm->downsample = 1 << dm->downsample_passes;
+	dm->downsample_ref = (1000000 / dm->rate_in) + 1;
+	dm->downsample_passes_ref = (int)log2(dm->downsample_ref) + 1;
+	if (rtl_rate_target) {
+		target_downsample(dm);
+	} else {
+		dm->downsample = (1000000 / dm->rate_in) + 1; //dm->rate_in is the rtl_bandwidth value
+		if (dm->downsample_passes) {
+			dm->downsample_passes = (int)log2(dm->downsample) + 1;
+			dm->downsample = 1 << dm->downsample_passes;
+		}
 	}
 	capture_freq = freq;
 	capture_rate = dm->downsample * dm->rate_in; //
@@ -1105,6 +1171,10 @@ void open_rtlsdr_stream(dsd_opts *opts)
 
   verbose_ppm_set(dongle.dev, dongle.ppm_error);
 
+  //the RTL2832 comes up with its digital AGC off
+  if (opts->rtl_digital_agc)
+    rtl_dev_set_agc(opts, 1);
+
   /* Reset endpoint before we start reading from it (mandatory) */
 	verbose_reset_buffer(dongle.dev);
 
@@ -1251,6 +1321,76 @@ void rtl_dev_tune(dsd_opts * opts, long int frequency)
 	rtl_clean_queue();
 	pthread_rwlock_unlock(&output.rw); //resume
 
+}
+
+//change the capture rate while streaming (0 = default); the decimation follows so the
+//demodulated rate stays the same. Returns the rate the dongle runs at.
+uint32_t rtl_dev_set_rate(dsd_opts * opts, uint32_t rate)
+{
+	pthread_rwlock_wrlock(&demod.rw);
+	rtl_rate_target = rate;
+	optimal_settings((int)opts->rtlsdr_center_freq, demod.rate_in);
+	demod.prev_index = 0;
+	demod.now_r = demod.now_j = 0;
+	pthread_rwlock_unlock(&demod.rw);
+
+	verbose_set_sample_rate(dongle.dev, dongle.rate);
+	rtlsdr_set_center_freq(dongle.dev, dongle.freq); //the capture sits rate/4 above the tuned frequency
+	fprintf (stderr, "RTL capture rate %u Hz (decimation %d).\n", dongle.rate, demod.downsample);
+
+	pthread_rwlock_wrlock(&output.rw);
+	rtl_clean_queue();
+	pthread_rwlock_unlock(&output.rw);
+	return dongle.rate;
+}
+
+//change the demodulated bandwidth (the bw of -i rtl, in kHz) while streaming: the demod rates,
+//the upsampling to 48 kHz and the decimation follow, as if the stream had been opened with it
+void rtl_dev_set_bandwidth(dsd_opts * opts, int khz)
+{
+	pthread_rwlock_wrlock(&demod.rw);
+	pthread_rwlock_wrlock(&output.rw);
+	rtl_bandwidth = khz * 1000;
+	bandwidth_multiplier = (bandwidth_divisor / rtl_bandwidth);
+	demod.rate_in = rtl_bandwidth * demod.post_downsample;
+	demod.rate_out = rtl_bandwidth;
+	if (demod.rate_out2 > 0) demod.rate_out2 = rtl_bandwidth;
+	output.rate = demod.rate_out;
+	if (demod.deemph)
+		demod.deemph_a = (int)round(1.0/((1.0-exp(-1.0/(demod.rate_out * 75e-6)))));
+	optimal_settings((int)opts->rtlsdr_center_freq, demod.rate_in);
+	demod.prev_index = 0;
+	demod.now_r = demod.now_j = 0;
+	demod.prev_lpr_index = 0;
+	demod.now_lpr = 0;
+	rtl_clean_queue();
+	pthread_rwlock_unlock(&output.rw);
+	pthread_rwlock_unlock(&demod.rw);
+
+	verbose_set_sample_rate(dongle.dev, dongle.rate);
+	rtlsdr_set_center_freq(dongle.dev, dongle.freq);
+	opts->rtl_bandwidth = khz;
+	fprintf (stderr, "RTL bandwidth %d kHz, capture rate %u Hz (decimation %d).\n", khz, dongle.rate, demod.downsample);
+}
+
+//RTL2832 digital AGC on or off while streaming: digital gain after the ADC that holds the output
+//level, independent of the tuner gain mode (the tuner AGC is rtl_gain_value 0)
+void rtl_dev_set_agc(dsd_opts * opts, int on)
+{
+	opts->rtl_digital_agc = on ? 1 : 0;
+	if (rtlsdr_set_agc_mode(dongle.dev, opts->rtl_digital_agc) < 0)
+		fprintf (stderr, "WARNING: Failed to set the RTL digital AGC.\n");
+	else fprintf (stderr, "RTL digital AGC %s.\n", opts->rtl_digital_agc ? "on" : "off");
+}
+
+uint32_t rtl_dev_rate(void)
+{
+	return dongle.rate;
+}
+
+uint32_t rtl_dev_rate_target(void)
+{
+	return rtl_rate_target;
 }
 
 static long int prev_rms = 0;
