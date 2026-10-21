@@ -307,7 +307,10 @@ getSymbol (dsd_opts * opts, dsd_state * state, int have_sync)
           //seems to be working now, but RMS values are lower on actual analog signal than on no signal but noise
           if ( (opts->rtl_rms > opts->rtl_squelch_level) && opts->monitor_input_audio == 1 && state->carrier == 0 ) //added carrier check here in lieu of disabling it above
           {
-            if (opts->audio_out_type == 0)
+            if (opts->web_enable == 1)
+              web_audio_push(opts, state->analog_out, 960*2, 1);
+
+            if (opts->audio_out_type == 0 && opts->pulse_raw_dev_out != NULL)
               pa_simple_write(opts->pulse_raw_dev_out, state->analog_out, 960*2, NULL);
 
             if (opts->audio_out_type == 8)

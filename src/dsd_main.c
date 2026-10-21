@@ -686,6 +686,7 @@
    //all RTL user options -- enabled AGC by default due to weak signal related issues
    opts->rtl_dev_index = 0;        //choose which device we want by index number
    opts->rtl_gain_value = 0;     //mid value, 0 - AGC - 0 to 49 acceptable values
+   opts->rtl_digital_agc = 0;    //RTL2832 digital AGC, only switched on from the web UI
    opts->rtl_gain_actual = -100; //mirror dongle.gain actual values -100 is AUTO_GAIN, else nearest_gain(dongle.dev, dongle.gain);
    opts->rtl_squelch_level = 100; //100 by default, but only affects NXDN and dPMR during framesync test, compared to RMS value
    opts->rtl_volume_multiplier = 2; //sample multiplier; This multiplies the sample value to produce a higher 'inlvl' for the demodulator
@@ -742,7 +743,11 @@
  
    opts->monitor_input_audio = 0; //enable with -8
    opts->analog_only = 0; //only turned on with -fA
- 
+
+   //pulse output streams, NULL until opened (the analog one only opens for -8, ProVoice or the web UI)
+   opts->pulse_raw_dev_out = NULL;
+   opts->pulse_digi_dev_out = NULL;
+
    opts->inverted_p2 = 0;
    opts->p2counter = 0;
  
@@ -831,7 +836,15 @@
  
    //Use P25p1 heuristics
    opts->use_heuristics = 0;
- 
+
+   //Web interface
+   opts->web_enable = 0;
+   opts->web_port = 8080;
+   sprintf (opts->web_bind, "%s", "127.0.0.1");
+   opts->web_password[0] = 0;
+   opts->web_root[0] = 0;
+   opts->web_bookmarks[0] = 0; //empty = default location (see dsd_web_bookmarks.c)
+
  } //initopts
  
  void
@@ -1653,6 +1666,16 @@
    printf (" Trunking Example TCP: dsd-fme -fs -i tcp -U 4532 -T -C dmr_t3_chan.csv -G group.csv -N 2> log.txt\n");
    printf (" Trunking Example RTL: dsd-fme -fs -i rtl:0:450M:26:-2:8 -T -C connect_plus_chan.csv -G group.csv -N 2> log.txt\n");
    printf ("\n");
+   printf (" Web Interface (browser client with spectrum, scanning, auto tune/decode, keys):\n");
+   printf ("  --web [bind:]port   Enable the web UI (default bind 127.0.0.1, port 8080)\n");
+   printf ("                       --web 8080                 (localhost only)\n");
+   printf ("                       --web 0.0.0.0:8080         (all interfaces -- use a password!)\n");
+   printf ("  --web-pass <pw>     Require a password to use the web UI\n");
+   printf ("  --web-root <dir>    Serve the UI from a directory instead of the embedded copy (dev)\n");
+   printf ("  --web-bookmarks <f> Bookmark file (default ~/.config/dsd-fme/web_bookmarks.json)\n");
+   printf (" Web Example RTL:    dsd-fme -i rtl --web 8080\n");
+   printf (" Web Example RTL+SQ: dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv --web 0.0.0.0:8080 --web-pass secret\n");
+   printf ("\n");
    exit (0);
  }
  
@@ -1788,7 +1811,11 @@
  {
    // Signal that everything should shutdown.
    exitflag = 1;
- 
+
+   //stop the web interface first so its threads stop touching state
+   if (opts->web_enable == 1)
+     web_shutdown (opts, state);
+
    #ifdef USE_CODEC2
    codec2_destroy(state->codec2_1600);
    codec2_destroy(state->codec2_3200);
@@ -1929,7 +1956,79 @@
 
  
    exitflag = 0;
- 
+
+   //Pre-scan argv for the long-form --web options (all getopt letters are taken).
+   //Consumed tokens are removed so the normal getopt parse below never sees them.
+   {
+     int w = 1;
+     for (int rd = 1; rd < argc; rd++)
+     {
+       char * a = argv[rd];
+       //--web-pass, --web-root and --web-bookmarks take a value, as "--opt value" or "--opt=value"
+       char * vdst = NULL;
+       size_t vlen = 0, n = 0;
+       if (strncmp (a, "--web-pass", 10) == 0 && (a[10] == 0 || a[10] == '='))
+         { vdst = opts.web_password; vlen = sizeof(opts.web_password); n = 10; }
+       else if (strncmp (a, "--web-root", 10) == 0 && (a[10] == 0 || a[10] == '='))
+         { vdst = opts.web_root; vlen = sizeof(opts.web_root); n = 10; }
+       else if (strncmp (a, "--web-bookmarks", 15) == 0 && (a[15] == 0 || a[15] == '='))
+         { vdst = opts.web_bookmarks; vlen = sizeof(opts.web_bookmarks); n = 15; }
+       if (vdst)
+       {
+         const char * v = NULL;
+         if (a[n] == '=') v = a + n + 1;
+         else if (rd + 1 < argc) v = argv[++rd];
+         //a missing password must not quietly leave the interface open
+         if (!v || !v[0])
+         {
+           fprintf (stderr, "%.*s needs a value.\n", (int)n, a);
+           exit (1);
+         }
+         snprintf (vdst, vlen, "%s", v);
+         continue;
+       }
+       if (strcmp (a, "--web") == 0 || strncmp (a, "--web=", 6) == 0)
+       {
+         opts.web_enable = 1;
+         const char * spec = NULL;
+         if (a[5] == '=') spec = a + 6;
+         else if (rd + 1 < argc && argv[rd+1][0] != '-') spec = argv[++rd];
+         if (spec && spec[0])
+         {
+           //[bind:]port; bind is a name or an address, IPv6 in brackets ([::]:8080);
+           //a bind address on its own keeps the default port
+           char tmp[256];
+           snprintf (tmp, sizeof(tmp), "%s", spec);
+           char * host = tmp, * port = NULL;
+           if (tmp[0] == '[')
+           {
+             host = tmp + 1;
+             char * rb = strchr (host, ']');
+             if (rb) { *rb = 0; if (rb[1] == ':') port = rb + 2; }
+           }
+           else if (strchr (tmp, ':')) { port = strrchr (tmp, ':'); *port++ = 0; }
+           else if (tmp[strspn (tmp, "0123456789")] == 0) { port = tmp; host = NULL; }
+           if (host && host[0]) snprintf (opts.web_bind, sizeof(opts.web_bind), "%s", host);
+           if (port)
+           {
+             char * end = NULL;
+             long p = strtol (port, &end, 10);
+             if (!port[0] || *end || p < 1 || p > 65535)
+             {
+               fprintf (stderr, "--web: invalid port '%s' (use --web [bind:]port, e.g. --web 0.0.0.0:8080).\n", port);
+               exit (1);
+             }
+             opts.web_port = (int)p;
+           }
+         }
+         continue;
+       }
+       argv[w++] = a; //keep this token
+     }
+     argc = w;
+     argv[argc] = NULL;
+   }
+
    while ((c = getopt (argc, argv, "~haepPqs:t:v:z:i:o:d:c:g:n:w:B:C:R:f:m:u:x:A:S:G:D:L:V:U:YK:b:H:X:M:NQ:WrlZTF@:!:01:2:345:6:^:7:8_:9:Ek:I:J:O+:j:,:$:y:")) != -1)
      {
  
@@ -3613,16 +3712,35 @@
  
      signal(SIGINT, handler);
      signal(SIGTERM, handler);
- 
+
+     //start the web interface (browser client) if requested
+     if (opts.web_enable == 1)
+     {
+       extern int web_server_start (const char *, int, const char *, const char *, const char *);
+       const char * root = opts.web_root[0] ? opts.web_root : NULL;
+       if (web_server_start (opts.web_bind, opts.web_port, root, opts.wav_out_dir, opts.web_password[0] ? opts.web_password : NULL) == 0)
+       {
+         web_init (&opts, &state);
+         int v6 = strchr (opts.web_bind, ':') != NULL; //IPv6 literals go in brackets in a URL
+         fprintf (stderr, "Web interface listening on http://%s%s%s:%d/%s\n", v6 ? "[" : "", opts.web_bind, v6 ? "]" : "",
+                  opts.web_port, opts.web_password[0] ? " (password protected)" : "");
+       }
+       else
+       {
+         fprintf (stderr, "Web interface failed to start.\n");
+         opts.web_enable = 0;
+       }
+     }
+
      if (opts.playfiles == 1)
      {
- 
+
        playMbeFiles (&opts, &state, argc, argv);
      }
- 
+
      else
      {
- 
+
        liveScanner (&opts, &state);
      }
  

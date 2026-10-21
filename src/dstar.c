@@ -48,6 +48,8 @@ void processDSTAR(dsd_opts * opts, dsd_state * state)
     //since we are in a long loop, use this to improve response time in ncurses
     if (opts->use_ncurses_terminal == 1)
       ncursesPrinter(opts, state);
+    if (opts->web_enable == 1)
+      web_poll(opts, state);
 
     //slot 1
     watchdog_event_history(opts, state, 0);

@@ -112,9 +112,20 @@ find_package(RTLSDR)
 find_package(Curses REQUIRED)
 find_package(PulseAudio REQUIRED)
 find_package(CODEC2)
+find_package(Threads REQUIRED)
 
 include_directories(SYSTEM ${LIBSNDFILE_INCLUDE_DIR} ${MBE_INCLUDE_DIR} ${PULSEAUDIO_INCLUDE_DIRS} ${CURSES_INCLUDE_DIRS})
-set(LIBS ${MBE_LIBRARY} ${LIBSNDFILE_LIBRARY} ${PULSEAUDIO_SIMPLE_LIBRARY} ${PULSEAUDIO_LIBRARY} ${CURSES_LIBRARIES})
+set(LIBS ${MBE_LIBRARY} ${LIBSNDFILE_LIBRARY} ${PULSEAUDIO_SIMPLE_LIBRARY} ${PULSEAUDIO_LIBRARY} ${CURSES_LIBRARIES} ${CMAKE_THREAD_LIBS_INIT} m)
+
+# Regenerate the embedded web UI assets on demand: `make web_assets`
+# (the generated src/dsd_web_assets.c is committed so a plain build needs no Python)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_FOUND)
+    add_custom_target(web_assets
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_web_assets.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/web ${CMAKE_CURRENT_SOURCE_DIR}/src/dsd_web_assets.c
+        COMMENT "Embedding web/ into src/dsd_web_assets.c")
+endif()
 
 if(RTLSDR_FOUND)
     find_package(Threads)

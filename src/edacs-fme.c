@@ -394,8 +394,15 @@ void edacs_analog(dsd_opts * opts, dsd_state * state, int afs, unsigned char lcn
     // if (opts->audio_in_type != 3)
     //   rms = raw_rms(analog3, 960, 1);
 
+    if (opts->web_enable == 1 && opts->slot1_on == 1)
+    {
+      web_audio_push (opts, analog1, 960*2, 1);
+      web_audio_push (opts, analog2, 960*2, 1);
+      web_audio_push (opts, analog3, 960*2, 1);
+    }
+
     //reconfigured to use seperate audio out stream that is always 48k short
-    if (opts->audio_out_type == 0 && opts->slot1_on == 1)
+    if (opts->audio_out_type == 0 && opts->slot1_on == 1 && opts->pulse_raw_dev_out != NULL)
     {
       pa_simple_write(opts->pulse_raw_dev_out, analog1, 960*2, NULL);
       pa_simple_write(opts->pulse_raw_dev_out, analog2, 960*2, NULL);
@@ -459,6 +466,8 @@ void edacs_analog(dsd_opts * opts, dsd_state * state, int afs, unsigned char lcn
     //Update Ncurses Terminal
     if (opts->use_ncurses_terminal == 1)
       ncursesPrinter(opts, state);
+    if (opts->web_enable == 1)
+      web_poll(opts, state);
 
     //write to wav file if opened
     if (opts->wav_out_f != NULL && opts->dmr_stereo_wav == 1) //Per Call

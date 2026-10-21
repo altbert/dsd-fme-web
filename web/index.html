@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>DSD-FME Web</title>
+<style>
+:root{
+  --bg:#0b0f14; --panel:#131a22; --panel2:#0f141b; --line:#243240; --ink:#d7e3ee;
+  --dim:#8aa0b4; --accent:#35d0a5; --accent2:#5aa9ff; --warn:#ffcf5a; --bad:#ff6b6b;
+  --good:#45e07a; --chip:#1c2735;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+a{color:var(--accent2)}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;background:linear-gradient(#141c25,#0e141b);
+  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:15px;margin:0;letter-spacing:.5px;color:#fff;font-weight:700}
+header h1 b{color:var(--accent)}
+.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--dim);border:1px solid var(--line)}
+.badge.on{color:#06281f;background:var(--accent);border-color:var(--accent)}
+.badge.live{color:#06281f;background:var(--good);border-color:var(--good)}
+.badge.off{color:#fff;background:#3a2330;border-color:#5a2a3a}
+.badge.warn{color:#2a1d00;background:var(--warn);border-color:var(--warn)}
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;padding:12px;max-width:1500px;margin:0 auto}
+@media(max-width:980px){.wrap{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.card h2{margin:0;padding:8px 12px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);
+  background:var(--panel2);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+.card .body{padding:12px}
+.spec-wrap{position:relative;background:#05080c}
+canvas{display:block;width:100%}
+#spec{height:150px}
+#wf{height:230px}
+.specinfo{position:absolute;top:6px;left:10px;font-size:11px;color:var(--dim);text-shadow:0 1px 2px #000;pointer-events:none}
+#cursor{position:absolute;top:0;bottom:0;width:1px;background:rgba(90,169,255,.5);pointer-events:none;display:none}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+.row>label{color:var(--dim);min-width:84px}
+input,select,button,textarea{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);
+  border-radius:7px;padding:6px 8px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent2)}
+input[type=range]{padding:0;background:none;border:none}
+button{cursor:pointer;background:#1a2634;border-color:#2a3a4c}
+button:hover{border-color:var(--accent2)}
+button.p{background:var(--accent);color:#06281f;border-color:var(--accent);font-weight:700}
+button.bad{background:var(--bad);color:#2b0606;border-color:var(--bad);font-weight:700}
+button.sm{padding:3px 8px;font-size:12px}
+button.tgl{min-width:52px}
+button.tgl.on{background:var(--accent);color:#06281f;border-color:var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12px}
+.kv .k{color:var(--dim)}
+.kv .v{color:var(--ink);word-break:break-word}
+.freq{font-size:30px;font-weight:700;letter-spacing:1px;color:#fff}
+.freq .u{font-size:14px;color:var(--dim);font-weight:400}
+.meter{height:8px;border-radius:5px;background:#0a1017;overflow:hidden;border:1px solid var(--line)}
+.meter>i{display:block;height:100%;background:linear-gradient(90deg,var(--good),var(--warn),var(--bad));width:0}
+.meter>i.prog{background:var(--accent2);transition:width .3s}
+button:disabled,input:disabled{opacity:.45;cursor:default}
+button:disabled:hover{border-color:#2a3a4c}
+.slot{border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;background:var(--panel2)}
+.slot.active{border-color:var(--good);box-shadow:0 0 0 1px var(--good) inset}
+.slot .hd{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;margin-bottom:4px}
+.slot .big{font-size:16px;color:#fff}
+.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:5px;background:var(--chip);border:1px solid var(--line);color:var(--dim)}
+.tag.enc{background:#3a2330;border-color:#5a2a3a;color:var(--warn)}
+.tag.grp{color:var(--accent2)} .tag.prv{color:var(--warn)}
+.log{height:220px;overflow:auto;font-size:11.5px;background:#05080c;border-radius:7px;padding:6px;white-space:pre-wrap;word-break:break-word}
+.log .e{padding:2px 4px;border-bottom:1px solid #121a22}
+.c1{color:var(--warn)} .c2{color:var(--bad)} .c3{color:var(--good)} .c4{color:var(--accent2)} .c5{color:#c58bff}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:8px 8px 0}
+.tabs button{border-radius:7px 7px 0 0;border-bottom:none;color:var(--dim)}
+.tabs button.on{color:#fff;background:var(--panel);border-color:var(--line)}
+.tabpane{display:none;padding:12px;border-top:1px solid var(--line)}
+.tabpane.on{display:block}
+.hint{color:var(--dim);font-size:11px;margin:4px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--chip);border:1px solid var(--line);cursor:pointer}
+.chip.on{background:var(--accent2);color:#04121f;border-color:var(--accent2)}
+textarea{width:100%;min-height:90px;resize:vertical}
+.flist{max-height:180px;overflow:auto;font-size:12px}
+.flist a{display:block;padding:3px 0;border-bottom:1px solid #121a22}
+.overlay{position:fixed;inset:0;background:rgba(5,8,12,.85);display:flex;align-items:center;justify-content:center;z-index:50}
+.overlay .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:320px;text-align:center}
+.hidden{display:none !important}
+small.mono{color:var(--dim)}
+.bmlist{max-height:260px;overflow:auto;margin:6px 0;border:1px solid var(--line);border-radius:7px;background:var(--panel2)}
+.bmlist .hint{padding:8px}
+.bm{display:flex;gap:6px;align-items:center;padding:4px 6px;border-bottom:1px solid #121a22;cursor:pointer}
+.bm:last-child{border-bottom:none}
+.bm:hover{background:#17212c}
+.bm.on{box-shadow:inset 3px 0 0 var(--warn);background:#1b1f17}
+.bm .bm-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
+.bm .bm-f{color:var(--accent);font-size:12px}
+.bm-g{padding:4px 6px 2px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);background:#0b1016;border-bottom:1px solid #121a22}
+.bm button{padding:1px 6px;font-size:12px}
+.bmname{color:var(--warn);min-height:1.45em}
+details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>DSD<b>·</b>FME <span style="color:var(--dim);font-weight:400">web</span></h1>
+  <span id="st-conn" class="badge off">offline</span>
+  <span id="st-carrier" class="badge">no sync</span>
+  <span id="st-mode" class="badge">—</span>
+  <span id="st-bs" class="badge warn hidden">BAND SCAN</span>
+  <span style="flex:1"></span>
+  <button id="btn-audio" class="sm">🔊 Audio off</button>
+  <input id="vol" type="range" min="0" max="100" value="80" title="Volume" style="width:90px">
+</header>
+
+<div id="login" class="overlay hidden">
+  <div class="box">
+    <h3 style="margin-top:0">Password required</h3>
+    <input id="pw" type="password" placeholder="password" style="width:100%;margin:8px 0">
+    <button class="p" id="pw-go" style="width:100%">Connect</button>
+    <div id="pw-err" class="hint" style="color:var(--bad)"></div>
+  </div>
+</div>
+
+<div class="wrap">
+  <!-- LEFT: spectrum + decode -->
+  <div class="col">
+    <div class="card">
+      <h2>Spectrum / Waterfall
+        <span><span id="specmeta" class="badge">—</span></span>
+      </h2>
+      <div class="spec-wrap" id="specbox">
+        <canvas id="spec"></canvas>
+        <canvas id="wf"></canvas>
+        <div class="specinfo" id="specinfo"></div>
+        <div id="cursor"></div>
+      </div>
+      <div class="body">
+        <div class="row">
+          <label>Tune</label>
+          <input id="tunefreq" placeholder="e.g. 851.0125M or 154987500" style="width:150px">
+          <button class="p sm" id="btn-tune">Tune</button>
+          <button class="sm" id="btn-bm" title="Bookmark this frequency">☆</button>
+          <button class="tgl sm" id="tg-autotune" title="Snap onto the strongest nearby peak">Auto-tune</button>
+          <button class="tgl sm" id="tg-autodec" title="Cycle decoders until a sync holds. With Analog on, a signal no decoder syncs to is played as analog FM.">Auto-decode</button>
+          <button class="tgl sm on" id="tg-autoana" title="In AUTO and Auto-decode, also play analog (non-digital) FM whenever there is no digital sync. Set the RF squelch so noise stays muted.">Analog</button>
+          <span class="hint" id="ad-stat"></span>
+        </div>
+        <div class="row">
+          <label>FFT</label>
+          <select id="fftsize">
+            <option>1024</option><option>2048</option><option selected>4096</option>
+            <option>8192</option><option>16384</option>
+          </select>
+          <label style="min-width:auto">FPS</label><input id="fps" type="number" value="15" min="1" max="60" style="width:60px">
+          <label style="min-width:auto">Avg</label><input id="avg" type="number" value="2" min="1" max="32" style="width:60px">
+          <label style="min-width:auto">Range</label><input id="dbrange" type="range" min="30" max="120" value="80" style="width:110px">
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Decode</h2>
+      <div class="body">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <div class="freq"><span id="d-freq">—</span> <span class="u">MHz</span></div>
+            <div class="bmname" id="d-bm"></div>
+            <div class="kv" style="margin-top:4px">
+              <span class="k">system</span><span class="v" id="d-sys">—</span>
+              <span class="k">frame</span><span class="v" id="d-ftype">—</span>
+              <span class="k">mod/rate</span><span class="v" id="d-mod">—</span>
+            </div>
+          </div>
+          <div style="flex:1;min-width:160px">
+            <div class="row"><label>Level</label><div class="meter" style="flex:1"><i id="d-level"></i></div></div>
+            <div class="row"><label>RMS / SQL</label><div class="meter" style="flex:1"><i id="d-rms"></i></div><span id="d-rmsv" class="mono"></span></div>
+          </div>
+        </div>
+
+        <div id="slots"></div>
+
+        <div class="kv" id="siteinfo" style="margin-top:10px"></div>
+        <div id="chanlist" class="chips" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Events</h2>
+      <div class="body"><div class="log" id="events"></div></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: bookmarks + controls -->
+  <div class="col">
+    <div class="card">
+      <h2>Bookmarks <span><button class="sm" id="bm-add" title="Bookmark the tuned frequency">+ Add</button></span></h2>
+      <div class="body">
+        <div class="row" style="margin-top:0">
+          <input id="bm-q" placeholder="Search" title="Matches name, group or MHz" style="flex:1;min-width:110px">
+          <select id="bm-grp"><option value="">All groups</option></select>
+        </div>
+        <div class="bmlist" id="bm-list"></div>
+        <div id="bm-msg" class="hint"></div>
+        <div id="bm-form" class="hidden">
+          <div class="row"><label>Name</label><input id="bm-name" maxlength="90" style="flex:1" placeholder="e.g. County Fire"></div>
+          <div class="row"><label>Frequency</label><input id="bm-freq" style="width:130px" placeholder="851.0125M">
+            <button class="sm" id="bm-cur" title="Use the tuned frequency and decoder">Current</button></div>
+          <div class="row"><label>Decoder</label><select id="bm-mode" style="flex:1;min-width:0"></select></div>
+          <div class="row"><label>Modulation</label>
+            <select id="bm-mod"><option value="">Default</option><option value="c4fm">C4FM</option><option value="qpsk">QPSK</option><option value="gfsk">GFSK</option></select></div>
+          <div class="row"><label>Group</label><input id="bm-group" list="bm-groups" maxlength="40" style="flex:1" placeholder="optional"><datalist id="bm-groups"></datalist></div>
+          <div class="row"><button class="p sm" id="bm-save">Add bookmark</button><button class="sm" id="bm-cancel">Cancel</button></div>
+        </div>
+        <details>
+          <summary>Import / export</summary>
+          <div class="row"><button class="sm" id="bm-export">Export</button><button class="sm" id="bm-import">Import…</button>
+            <input type="file" id="bm-file" accept=".json,.csv,.txt" class="hidden"></div>
+          <div class="hint">Import takes a DSD-FME export, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.
+            Bookmarks are saved on the DSD-FME host in <span id="bm-path">—</span>.</div>
+        </details>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Band scan <span id="bs-badge" class="badge">off</span></h2>
+      <div class="body">
+        <div class="row" style="margin-top:0"><label>Bands</label>
+          <select id="bs-preset" style="flex:1;min-width:0">
+            <option value="lmr">All land mobile (136–941 MHz)</option>
+            <option value="vhf">VHF 136–174 MHz</option>
+            <option value="uhf">UHF 400–470 MHz</option>
+            <option value="uhft">UHF 470–512 MHz</option>
+            <option value="800">800 MHz (806–870)</option>
+            <option value="900">900 MHz (896–941)</option>
+            <option value="ham">Ham 2 m + 70 cm</option>
+            <option value="pmr">PMR446 (446.0–446.2)</option>
+            <option value="custom">Custom range</option>
+          </select></div>
+        <div class="row hidden" id="bs-custom"><label>Range</label>
+          <input id="bs-lo" style="width:80px" placeholder="450"> to <input id="bs-hi" style="width:80px" placeholder="470"> MHz</div>
+        <div class="row"><label>Threshold</label><input id="bs-thr" type="number" value="10" min="4" max="40" style="width:58px"> dB over noise</div>
+        <div class="row"><label>Exclude</label>
+          <textarea id="bs-excl" rows="2" style="flex:1;min-width:0;min-height:0" placeholder="one per line: 462.5625 or 460-461"
+            title="Frequencies (±3 kHz) or ranges in MHz the scan never stops on. Ranges covering a whole window aren't tuned at all."></textarea></div>
+        <div class="row">
+          <button class="tgl sm on" id="bs-skip" title="Don't stop on frequencies that are already bookmarked">Skip bookmarked</button>
+          <button class="tgl sm" id="bs-keep" title="Bookmark every find and keep scanning instead of stopping on it">Keep going</button>
+        </div>
+        <div class="row">
+          <button class="p sm" id="bs-start">▶ Start</button>
+          <button class="sm" id="bs-cont" disabled>Continue</button>
+          <button class="bad sm" id="bs-excl-cont" title="Add the frequency the scan is on (or the tuned one) to the Exclude list and keep scanning">Exclude &amp; continue</button>
+          <button class="sm" id="bs-stop" disabled>Stop</button>
+        </div>
+        <div class="meter"><i id="bs-prog" class="prog"></i></div>
+        <div class="hint" id="bs-stat"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="tabs" id="tabs">
+        <button data-t="dec" class="on">Decode</button>
+        <button data-t="rf">RF</button>
+        <button data-t="trunk">Trunk</button>
+        <button data-t="keys">Keys</button>
+        <button data-t="files">Files</button>
+        <button data-t="log">Log</button>
+      </div>
+
+      <div class="tabpane on" data-t="dec">
+        <div class="row"><label>Decoder</label>
+          <select id="mode">
+            <option value="auto">AUTO (P25/DMR/YSF/DSTAR/X2)</option>
+            <option value="tdma">TDMA Trunk (P25p1/p2/DMR)</option>
+            <option value="p25p1">P25 Phase 1</option>
+            <option value="p25p2">P25 Phase 2</option>
+            <option value="dmr">DMR</option>
+            <option value="nxdn48">NXDN48 / IDAS</option>
+            <option value="nxdn96">NXDN96</option>
+            <option value="dpmr">dPMR</option>
+            <option value="ysf">YSF</option>
+            <option value="dstar">D-STAR</option>
+            <option value="m17">M17</option>
+            <option value="provoice">ProVoice</option>
+            <option value="edacs">EDACS EA</option>
+            <option value="analog">Analog FM (no digital)</option>
+          </select>
+        </div>
+        <div class="row"><label>Modulation</label>
+          <select id="modu"><option value="c4fm">C4FM</option><option value="qpsk">QPSK</option><option value="gfsk">GFSK</option></select>
+          <button class="tgl sm" id="tg-inv">Invert</button>
+        </div>
+        <div class="row"><label>Slots</label>
+          <button class="tgl sm on" id="tg-s1">Slot 1</button>
+          <button class="tgl sm on" id="tg-s2">Slot 2</button>
+        </div>
+        <div class="row"><label>Digi gain</label><input id="gdig" type="range" min="0" max="50" value="0" style="flex:1"><span id="gdigv" class="mono">auto</span></div>
+        <div class="row"><label>Analog gain</label><input id="gana" type="range" min="0" max="100" value="50" style="flex:1"><span id="ganav" class="mono"></span></div>
+        <div class="row"><label>Filters</label>
+          <button class="tgl sm" id="tg-hpfd">HPF-D</button>
+          <button class="tgl sm" id="tg-hpf">HPF</button>
+          <button class="tgl sm" id="tg-lpf">LPF</button>
+          <button class="tgl sm" id="tg-pbf">PBF</button>
+        </div>
+        <div class="row">
+          <button class="tgl sm" id="tg-payload">Payload</button>
+          <button class="tgl sm" id="tg-monitor" title="Always play analog (non-digital) audio when there is no digital sync, in any decoder">Monitor</button>
+          <button class="tgl sm" id="tg-wav">Rec WAV</button>
+          <button class="sm" id="btn-resetev">Clear events</button>
+        </div>
+        <div class="row"><label>P2 params</label>
+          <input id="p2wacn" placeholder="WACN hex" style="width:84px">
+          <input id="p2sys" placeholder="SYS" style="width:60px">
+          <input id="p2cc" placeholder="CC/NAC" style="width:70px">
+          <button class="sm" id="btn-p2">Set</button>
+        </div>
+      </div>
+
+      <div class="tabpane" data-t="rf">
+        <div class="hint">RTL-SDR live tuning (requires <code>-i rtl</code>). RIGCTL also supported.</div>
+        <div class="row"><label>LNA gain</label><input id="rtlgain" type="range" min="1" max="49" value="30" style="flex:1"><span id="rtlgainv" class="mono">auto</span></div>
+        <div class="row"><label>AGC</label>
+          <button class="tgl sm on" id="tg-agc" title="Tuner hardware AGC: the tuner sets its own LNA and mixer gain (close to maximum on weak signals), so the manual LNA gain is disabled while it is on">Tuner AGC</button>
+          <button class="tgl sm" id="tg-dagc" title="RTL2832 digital AGC: digital gain after the ADC that holds the output level, independent of the tuner gain. It lifts noise to the level of signals, so the RMS squelch (NXDN/dPMR/M17 sync, analog monitor, band scan) works poorly while it is on">RTL AGC</button></div>
+        <div class="hint">Tuner AGC runs the LNA gain itself (the slider is off meanwhile). RTL AGC is digital gain in the RTL2832: it lifts noise too, so the RMS squelch can't tell it from signals.</div>
+        <div class="row"><label>PPM</label><input id="rtlppm" type="number" value="0" style="width:70px"><button class="sm" id="btn-ppm">Set</button>
+          <label style="min-width:auto">Vol</label><select id="rtlvol"><option>1</option><option selected>2</option><option>3</option></select></div>
+        <div class="row"><label>Bandwidth</label><select id="rtlbw"><option>4</option><option>6</option><option>8</option><option selected>12</option><option>16</option><option>24</option></select>kHz
+          <button class="sm" id="btn-bw">Set</button></div>
+        <div class="row"><label>Sample rate</label><select id="rtlrate" title="RTL capture rate: the spectrum span and how much the band scan sees per window. Above 2.4 MSPS most dongles drop samples.">
+            <option value="0">Default (~1 MSPS)</option><option value="250000">0.25 MSPS</option>
+            <option value="960000">0.96 MSPS</option><option value="1024000">1.024 MSPS</option><option value="1200000">1.2 MSPS</option>
+            <option value="1440000">1.44 MSPS</option><option value="1600000">1.6 MSPS</option><option value="1800000">1.8 MSPS</option>
+            <option value="1920000">1.92 MSPS</option><option value="2048000">2.048 MSPS</option><option value="2400000">2.4 MSPS</option>
+            <option value="2560000">2.56 MSPS (unstable)</option><option value="2880000">2.88 MSPS (unstable)</option><option value="3200000">3.2 MSPS (unstable)</option>
+          </select><span id="rtlratev" class="mono hint"></span></div>
+        <div class="row"><label>Squelch</label><input id="rtlsq" type="number" value="100" style="width:80px"><span class="hint">RMS (NXDN/dPMR/analog/scan)</span><button class="sm" id="btn-sq">Set</button></div>
+        <div class="row"><label>SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:80px">Hz (RIGCTL)<button class="sm" id="btn-smb">Set</button></div>
+      </div>
+
+      <div class="tabpane" data-t="trunk">
+        <div class="row">
+          <button class="tgl" id="tg-trunk">Trunking</button>
+          <button class="tgl" id="tg-scan">Scanner</button>
+          <button class="sm" id="btn-cc">Return CC</button>
+          <button class="sm" id="btn-cycle">Cycle ►</button>
+        </div>
+        <div class="row"><label>Tune calls</label>
+          <button class="tgl sm on" id="tg-grp">Group</button>
+          <button class="tgl sm on" id="tg-prv">Private</button>
+          <button class="tgl sm" id="tg-data">Data</button>
+          <button class="tgl sm on" id="tg-enc">Enc</button>
+        </div>
+        <div class="row">
+          <button class="tgl sm" id="tg-allow">Allow-list only</button>
+          <label style="min-width:auto">Hang</label><input id="hang" type="number" step="0.5" value="1" style="width:64px">s
+          <button class="sm" id="btn-hang">Set</button>
+        </div>
+        <div class="row"><label>TG hold</label><input id="tghold" type="number" value="0" style="width:100px"><button class="sm" id="btn-tgh">Hold</button></div>
+        <h3 style="color:var(--dim);font-size:12px">Channel map CSV</h3>
+        <textarea id="csv-chan" placeholder="ChannelNumber(dec),frequency(Hz)&#10;1,851012500"></textarea>
+        <div class="row"><button class="sm" id="btn-chan">Import channel map</button></div>
+        <h3 style="color:var(--dim);font-size:12px">Group list CSV</h3>
+        <textarea id="csv-group" placeholder="DEC,Mode,Name,Tag&#10;1449,A,Fire Dispatch,Fire"></textarea>
+        <div class="row"><button class="sm" id="btn-group">Import groups</button></div>
+        <h3 style="color:var(--dim);font-size:12px">Scanner frequencies</h3>
+        <textarea id="scanlist" placeholder="one freq per line&#10;154.9875M&#10;155.145M"></textarea>
+        <div class="row"><button class="sm" id="btn-scanset">Apply scan list</button>
+          <button class="sm" id="btn-scanbm" title="Fill with the bookmarks shown in the list (search / group filter, first 26)">From bookmarks</button></div>
+      </div>
+
+      <div class="tabpane" data-t="keys">
+        <div class="hint">Encrypted-comms key entry. Keys are applied to the running decoder (you must be authorized to decode the traffic).</div>
+        <div class="row"><label>Type</label>
+          <select id="ktype">
+            <optgroup label="Common">
+              <option value="bp">DMR Basic Privacy (dec)</option>
+              <option value="scrambler">NXDN/dPMR Scrambler (dec)</option>
+              <option value="rc4">RC4 (hex)</option>
+              <option value="des">DES (hex)</option>
+              <option value="aes">AES-128/256 (hex)</option>
+              <option value="hytera">Hytera 40/128/256 BP (hex)</option>
+            </optgroup>
+            <optgroup label="Vendor">
+              <option value="tyt_bp">TYT 16-bit BP (hex)</option>
+              <option value="tyt_ap">TYT AP / PC4 (hex)</option>
+              <option value="tyt_ep">TYT EP AES-128 (hex)</option>
+              <option value="retevis">Retevis RC2 (hex)</option>
+              <option value="baofeng">Baofeng PC5 (hex)</option>
+              <option value="anytone">Anytone BP (hex)</option>
+              <option value="kenwood">Kenwood 15-bit scrambler (dec)</option>
+              <option value="csi">Connect Systems 72-bit (hex)</option>
+              <option value="vertex">Vertex Standard (10:/64:hex)</option>
+              <option value="auctus">Auctus A6 8-char</option>
+              <option value="straight">Straight XOR (len:hex[:discard])</option>
+              <option value="ras">Hytera RAS password</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="row"><label>Value</label><input id="kval" style="flex:1" placeholder="key value"></div>
+        <div class="row">
+          <button class="p sm" id="btn-key">Apply key</button>
+          <button class="sm" id="btn-keyclear">Clear all keys</button>
+          <button class="tgl sm" id="tg-force">Force key</button>
+        </div>
+        <div class="hint" id="khint"></div>
+        <h3 style="color:var(--dim);font-size:12px">Auto-find key</h3>
+        <div class="hint">Finds a DMR Basic Privacy key (1–255): in speech pauses radios send a fixed silence frame, so the encrypted pauses give the key away. Let it run over some encrypted BP voice. Strong ciphers (AES/DES/RC4) cannot be found this way.</div>
+        <div class="row">
+          <button class="tgl" id="tg-autokey">Auto-find BP key</button>
+          <span id="autokey-stat" class="mono"></span>
+        </div>
+        <h3 style="color:var(--dim);font-size:12px">Key list CSV</h3>
+        <div class="row">
+          <select id="kcsvkind"><option value="keys_hex">Hex key list</option><option value="keys_dec">Decimal key list</option></select>
+        </div>
+        <textarea id="csv-keys" placeholder="keyid,keyvalue"></textarea>
+        <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
+      </div>
+
+      <div class="tabpane" data-t="files">
+        <div class="row"><label>Recording</label>
+          <button class="tgl sm" id="tg-wav2">Per-call WAV</button>
+        </div>
+        <div class="hint">Decoded per-call WAV files appear here for download.</div>
+        <div class="row"><button class="sm" id="btn-refresh">Refresh list</button></div>
+        <div class="flist" id="filelist"></div>
+      </div>
+
+      <div class="tabpane" data-t="log">
+        <div class="log" id="console"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

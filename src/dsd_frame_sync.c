@@ -226,6 +226,15 @@ getFrameSync (dsd_opts * opts, dsd_state * state)
   if (opts->use_ncurses_terminal == 1)
     ncursesPrinter(opts, state);
 
+  //service the web interface (commands, status, auto tune/decode, scanner); entering with
+  //carrier set means the last frame was accepted, which the web side counts to tell real
+  //signals from chains of false syncs
+  if (opts->web_enable == 1)
+  {
+    web_frame_tap(state);
+    web_poll(opts, state);
+  }
+
   //slot 1
   watchdog_event_history(opts, state, 0);
   watchdog_event_current(opts, state, 0);
@@ -248,6 +257,9 @@ getFrameSync (dsd_opts * opts, dsd_state * state)
       //NOTE: Need to monitor and test this, if responsiveness issues arise, then disable this
       if ( opts->use_ncurses_terminal == 1 && ((t % 300) == 0)) //t maxes out at 1800 (6 times each getFrameSync)
         ncursesPrinter(opts, state);
+
+      if ( opts->web_enable == 1 && ((t % 300) == 0))
+        web_poll(opts, state);
 
       symbol = getSymbol (opts, state, 0);
 
