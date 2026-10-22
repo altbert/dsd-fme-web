@@ -98,6 +98,38 @@ small.mono{color:var(--dim)}
 .bm button{padding:1px 6px;font-size:12px}
 .bmname{color:var(--warn);min-height:1.45em}
 details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
+.acts{max-height:460px;overflow:auto;background:#05080c;border-radius:7px;font-size:12px}
+.act{padding:5px 8px;border-bottom:1px solid #121a22;cursor:pointer}
+.act:hover{background:#0b121a}
+.act .l1{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px}
+.act .t{color:var(--dim);font-size:11px}
+.act .ty{font-size:11px;padding:0 6px;border-radius:5px;border:1px solid var(--line);background:var(--chip);color:var(--accent2)}
+.act.k-call .ty{color:var(--good)} .act.k-sig .ty{color:#c58bff} .act.k-sys .ty{color:var(--dim)}
+.act.err .ty{color:var(--bad)} .act.err .sum{color:var(--dim)}
+.act .sl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px}
+.act .who{color:#fff}
+.act .who i,.rtab i{color:var(--dim);font-style:normal}
+.act .meta{margin-left:auto;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.act .meta a{text-decoration:none}
+.act .sum{margin-top:1px;word-break:break-word}
+.act .dur{color:var(--dim);font-size:11px}
+.act.live .dur{color:var(--good)}
+.act.live .dur::before{content:'\25CF ';animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.2}}
+.tag.ok{color:var(--good)}
+.det{margin-top:6px;padding:6px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:auto}
+.det .kv{font-size:11.5px}
+.hexd{margin:6px 0 0;font-size:11px;line-height:1.35;white-space:pre;overflow:auto;color:var(--dim)}
+.acthint{padding:10px;color:var(--dim)}
+.rwrap{max-height:320px;overflow:auto}
+.rtab{width:100%;border-collapse:collapse;font-size:12px}
+.rtab th{text-align:left;color:var(--dim);font-weight:400;padding:3px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+.rtab td{padding:3px 6px;border-bottom:1px solid #121a22;vertical-align:top;word-break:break-word}
+.rtab tr.talk td:first-child{box-shadow:inset 3px 0 0 var(--good)}
+#posmap{height:240px;background:#05080c;border-radius:7px;margin-bottom:8px;cursor:crosshair}
+.sysg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 16px;margin-top:10px}
+.sysg h4{margin:0 0 3px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);font-weight:400}
+@media(max-width:600px){.rtab .opt{display:none}}
 </style>
 </head>
 <body>
@@ -180,13 +212,34 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
         <div id="slots"></div>
 
         <div class="kv" id="siteinfo" style="margin-top:10px"></div>
+        <div id="sysinfo"></div>
         <div id="chanlist" class="chips" style="margin-top:8px"></div>
       </div>
     </div>
 
     <div class="card" style="margin-top:12px">
-      <h2>Events</h2>
-      <div class="body"><div class="log" id="events"></div></div>
+      <h2>Activity <span id="act-count" class="badge">0</span></h2>
+      <div class="body">
+        <div class="row" style="margin-top:0">
+          <span class="chips" id="act-kinds">
+            <span class="chip on" data-k="">All</span><span class="chip" data-k="call">Calls</span><span class="chip" data-k="data">Data</span><span class="chip" data-k="sig" title="Trunking and data link signalling: grants, registrations, affiliations, delivery reports">Signalling</span><span class="chip" data-k="sys">System</span><span class="chip" data-k="log" title="The decoder's own event history, as the console terminal shows it">Decoder log</span>
+          </span>
+          <input id="act-q" placeholder="Filter: radio, talkgroup, text" style="flex:1;min-width:140px">
+          <button class="tgl sm" id="act-err" title="Also list packets that failed their CRC check">Errors</button>
+          <button class="sm" id="act-clear" title="Clear the activity and the decoder's event history">Clear</button>
+        </div>
+        <div class="acts" id="acts"></div>
+        <div class="log hidden" id="events"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <h2>Radios <span id="rad-count" class="badge">0</span></h2>
+      <div class="body">
+        <canvas id="posmap" class="hidden" title="Last known positions (click a dot for its map)"></canvas>
+        <div class="rwrap"><table class="rtab"><thead><tr><th>Radio</th><th>Heard</th><th>Last activity</th><th class="opt">Talkgroup</th><th>Position</th></tr></thead><tbody id="rad-body"></tbody></table></div>
+        <div class="hint" id="rad-hint">Radios show up here as they talk or send data.</div>
+      </div>
     </div>
   </div>
 

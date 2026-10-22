@@ -1748,6 +1748,12 @@ void web_audio_push (dsd_opts * opts, const void * data, size_t nbytes, int anal
 void web_key_capture (dsd_opts * opts, dsd_state * state, int slot, char * ambe_d); //DMR BP key-hunt sample tap
 void web_frame_tap (dsd_state * state); //getFrameSync entry: counts accepted frames
 void web_frame_good (void); //a frame whose FEC checked out (M17 LICH)
+//read-only taps for the web activity log (dsd_web_data.c)
+void web_dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t * dheader); //DMR data header that passed its CRC
+void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok); //completed DMR packet, before it is deciphered
+void web_dmr_pdu (dsd_opts * opts, dsd_state * state, int undecrypted); //the same packet after deciphering (if a key was loaded)
+void web_p25_tsbk (dsd_opts * opts, dsd_state * state, uint8_t * tsbk); //P25 TSBK (12 bytes) that passed its CRC
+void web_datacall (dsd_opts * opts, dsd_state * state, int slot, uint32_t src, uint32_t dst, const char * text); //watchdog_event_datacall
 #ifdef __cplusplus
 }
 #endif

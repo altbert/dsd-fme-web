@@ -673,6 +673,10 @@ void processTSBK(dsd_opts * opts, dsd_state * state)
       }
     }
 
+    //web activity log: grants, registrations, affiliations and the site picture
+    if (err == 0 && opts->web_enable == 1)
+      web_p25_tsbk (opts, state, tsbk_byte);
+
     //reset for next rep
     ec = -2;
     err = -2;
