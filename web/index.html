@@ -23,6 +23,10 @@ header h1 b{color:var(--accent)}
 .badge.live{color:#06281f;background:var(--good);border-color:var(--good)}
 .badge.off{color:#fff;background:#3a2330;border-color:#5a2a3a}
 .badge.warn{color:#2a1d00;background:var(--warn);border-color:var(--warn)}
+#st-conn{min-width:86px;text-align:center} #st-carrier{min-width:64px;text-align:center}
+#st-mode{min-width:60px;max-width:240px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vh{visibility:hidden}
+.ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;padding:12px;max-width:1500px;margin:0 auto}
 @media(max-width:980px){.wrap{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
@@ -60,10 +64,27 @@ button.tgl.on{background:var(--accent);color:#06281f;border-color:var(--accent)}
 .meter>i.prog{background:var(--accent2);transition:width .3s}
 button:disabled,input:disabled{opacity:.45;cursor:default}
 button:disabled:hover{border-color:#2a3a4c}
-.slot{border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:8px;background:var(--panel2)}
+.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
+@media(max-width:640px){.slots{grid-template-columns:minmax(0,1fr)}}
+.slot{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--panel2);height:132px;overflow:hidden;min-width:0}
 .slot.active{border-color:var(--good);box-shadow:0 0 0 1px var(--good) inset}
-.slot .hd{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;margin-bottom:4px}
-.slot .big{font-size:16px;color:#fff}
+.slot.off{opacity:.45}
+.slot .hd{display:flex;gap:8px;color:var(--dim);font-size:11px;height:16px;line-height:16px}
+.slot .hd .tm{color:var(--good);min-width:5ch}
+.slot .hd .bu{margin-left:auto;white-space:nowrap}
+.slot .big{font-size:16px;color:#fff;height:24px;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .big .lb{font-size:11px;color:var(--dim)}
+.slot .ln{height:18px;line-height:18px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .ln.l3{color:var(--dim);font-size:11px}
+.slot .ln a{cursor:pointer}
+.sysbox{height:156px;overflow:auto;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.sysbox .sysg{margin-top:0}
+.dtop{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
+#d-info{width:290px;max-width:100%}
+#d-info .kv{grid-template-columns:70px minmax(0,1fr)}
+#d-info .kv .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#d-rmsv{display:inline-block;width:10ch;text-align:right}
+#ad-stat{flex:1 1 180px;min-height:1.45em;margin:0}
 .tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:5px;background:var(--chip);border:1px solid var(--line);color:var(--dim)}
 .tag.enc{background:#3a2330;border-color:#5a2a3a;color:var(--warn)}
 .tag.grp{color:var(--accent2)} .tag.prv{color:var(--warn)}
@@ -98,21 +119,24 @@ small.mono{color:var(--dim)}
 .bm button{padding:1px 6px;font-size:12px}
 .bmname{color:var(--warn);min-height:1.45em}
 details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
-.acts{max-height:460px;overflow:auto;background:#05080c;border-radius:7px;font-size:12px}
+.acts,#events{height:460px;overflow:auto;background:#05080c;border-radius:7px;font-size:12px}
 .act{padding:5px 8px;border-bottom:1px solid #121a22;cursor:pointer}
 .act:hover{background:#0b121a}
-.act .l1{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px}
+.act .l1{display:flex;align-items:center;gap:8px;height:18px;min-width:0}
 .act .t{color:var(--dim);font-size:11px}
 .act .ty{font-size:11px;padding:0 6px;border-radius:5px;border:1px solid var(--line);background:var(--chip);color:var(--accent2)}
 .act.k-call .ty{color:var(--good)} .act.k-sig .ty{color:#c58bff} .act.k-sys .ty{color:var(--dim)}
 .act.err .ty{color:var(--bad)} .act.err .sum{color:var(--dim)}
 .act .sl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px}
-.act .who{color:#fff}
+.act .who{color:#fff;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act .t,.act .ty,.act .sl{flex:0 0 auto;white-space:nowrap}
 .act .who i,.rtab i{color:var(--dim);font-style:normal}
-.act .meta{margin-left:auto;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
-.act .meta a{text-decoration:none}
-.act .sum{margin-top:1px;word-break:break-word}
-.act .dur{color:var(--dim);font-size:11px}
+.act .meta{margin-left:auto;display:flex;gap:4px;align-items:center;flex:0 0 auto;white-space:nowrap}
+.act .meta a,.act .meta .lnk{text-decoration:none;cursor:pointer}
+.act .meta .enc{max-width:16ch;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+.act .sum{margin-top:1px;height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act.open .sum{height:auto;white-space:normal;word-break:break-word}
+.act .dur{color:var(--dim);font-size:11px;display:inline-block;min-width:6ch;text-align:right}
 .act.live .dur{color:var(--good)}
 .act.live .dur::before{content:'\25CF ';animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.2}}
@@ -121,15 +145,61 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
 .det .kv{font-size:11.5px}
 .hexd{margin:6px 0 0;font-size:11px;line-height:1.35;white-space:pre;overflow:auto;color:var(--dim)}
 .acthint{padding:10px;color:var(--dim)}
-.rwrap{max-height:320px;overflow:auto}
-.rtab{width:100%;border-collapse:collapse;font-size:12px}
+.rwrap{height:320px;overflow-x:hidden;overflow-y:auto}
+.rtab .pin{display:none}
+.rtab{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
 .rtab th{text-align:left;color:var(--dim);font-weight:400;padding:3px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
-.rtab td{padding:3px 6px;border-bottom:1px solid #121a22;vertical-align:top;word-break:break-word}
+.rtab td{padding:3px 6px;border-bottom:1px solid #121a22;height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rtab tr.talk td:first-child{box-shadow:inset 3px 0 0 var(--good)}
-#posmap{height:240px;background:#05080c;border-radius:7px;margin-bottom:8px;cursor:crosshair}
+.rtab tr.tx td:first-child{box-shadow:inset 3px 0 0 var(--accent2)}
+.rtab td.empty{color:var(--dim);white-space:normal;height:auto;padding:10px 6px;border-bottom:none}
+.rtab a{cursor:pointer}
 .sysg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 16px;margin-top:10px}
 .sysg h4{margin:0 0 3px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);font-weight:400}
-@media(max-width:600px){.rtab .opt{display:none}}
+.rtab th.c-id{width:22%} .rtab th.c-heard{width:12%} .rtab th.c-tg{width:17%} .rtab th.c-pos{width:22%}
+@media(max-width:600px){.rtab .opt,.rtab .coords{display:none} .rtab .pin{display:inline} .rtab th.c-id{width:26%} .rtab th.c-heard{width:21%} .rtab th.c-pos{width:12%}}
+.bmlist{height:260px}
+#bm-msg{min-height:1.45em}
+#bs-stat{height:5.8em;overflow:hidden}
+.card h2 .hr{display:flex;gap:6px;align-items:center}
+button.fold{padding:0 6px;font-size:12px;line-height:18px;min-width:24px}
+.card.folded>.body{display:none}
+.card.folded>h2{border-bottom:none}
+/* map modal */
+.mapbox{width:min(1200px,96vw);height:min(820px,92vh);background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:minmax(0,1fr) 270px;overflow:hidden}
+.maphd{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.maphd b{color:#fff;font-size:13px}
+a.btn{display:inline-block;text-decoration:none;color:var(--ink);background:#1a2634;border:1px solid #2a3a4c;border-radius:7px;padding:3px 8px;font-size:12px}
+a.btn:hover{border-color:var(--accent2)}
+.mapview{position:relative;overflow:hidden;background:#0a1118;cursor:grab;touch-action:none;user-select:none}
+.mapview.drag{cursor:grabbing}
+.mapview .tile{position:absolute;left:0;top:0;width:256px;height:256px;filter:invert(.92) hue-rotate(180deg) saturate(.55) brightness(.95)}
+.mapview .tile.miss{visibility:hidden}
+.marks{position:absolute;inset:0;pointer-events:none}
+.mk{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;white-space:nowrap}
+.mk i{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#5d6f80;border:1px solid #05080c}
+.mk.recent i{background:var(--warn)} .mk.fresh i{background:var(--good)}
+.mk span{position:absolute;left:8px;top:-9px;font-size:11px;color:#e8f0f7;text-shadow:0 0 3px #000,0 0 2px #000}
+.mk.air{z-index:2} .mk.air i{left:-7px;top:-7px;width:14px;height:14px;background:var(--bad);animation:pulse 1.2s infinite}
+.mk.air span{color:#fff;font-weight:700}
+.mk.tx i{animation:flash .5s 4}
+.mk.sel span{background:rgba(5,8,12,.85);border:1px solid var(--accent2);border-radius:4px;padding:0 4px}
+.mk.nl span{display:none} .mk.nl:hover span{display:inline;z-index:3}
+.mk.focus i{left:-9px;top:-9px;width:18px;height:18px;background:none;border:2px solid var(--accent2)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,107,107,.75)}100%{box-shadow:0 0 0 16px rgba(255,107,107,0)}}
+@keyframes flash{50%{box-shadow:0 0 0 6px rgba(90,169,255,.8)}}
+.mapattr{position:absolute;right:4px;bottom:2px;font-size:10px;color:#9fb0c0;background:rgba(5,8,12,.65);padding:0 4px;border-radius:3px}
+.mapattr a{color:#9fb0c0}
+.mapscale{position:absolute;left:8px;bottom:6px;font-size:10px;color:#cfd8e2;border:2px solid #cfd8e2;border-top:none;padding:0 3px;height:8px;line-height:0;text-shadow:0 0 2px #000}
+.mapempty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);pointer-events:none;text-align:center;padding:20px}
+.mapside{border-left:1px solid var(--line);overflow:auto;padding:8px 10px;font-size:12px}
+.mapside h4{margin:8px 0 4px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);font-weight:400}
+.mapside .it{padding:3px 4px;border-bottom:1px solid #121a22;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mapside .it:hover{background:#0b121a}
+.mapside .it.air{color:var(--bad)}
+.mapside .it.sel{background:#0b121a;color:#fff}
+@media(max-width:760px){.mapbox{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 150px}.mapside{border-left:none;border-top:1px solid var(--line)}}
 </style>
 </head>
 <body>
@@ -138,8 +208,9 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
   <span id="st-conn" class="badge off">offline</span>
   <span id="st-carrier" class="badge">no sync</span>
   <span id="st-mode" class="badge">—</span>
-  <span id="st-bs" class="badge warn hidden">BAND SCAN</span>
+  <span id="st-bs" class="badge warn vh">BAND SCAN</span>
   <span style="flex:1"></span>
+  <button id="btn-map" class="sm" title="Map of radio positions; radios on air pulse">🗺 Map</button>
   <button id="btn-audio" class="sm">🔊 Audio off</button>
   <input id="vol" type="range" min="0" max="100" value="80" title="Volume" style="width:90px">
 </header>
@@ -193,8 +264,8 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
     <div class="card" style="margin-top:12px">
       <h2>Decode</h2>
       <div class="body">
-        <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end">
-          <div>
+        <div class="dtop">
+          <div id="d-info">
             <div class="freq"><span id="d-freq">—</span> <span class="u">MHz</span></div>
             <div class="bmname" id="d-bm"></div>
             <div class="kv" style="margin-top:4px">
@@ -209,11 +280,13 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
           </div>
         </div>
 
-        <div id="slots"></div>
+        <div class="slots" id="slots"><div class="slot" id="slot1"></div><div class="slot" id="slot2"></div></div>
 
-        <div class="kv" id="siteinfo" style="margin-top:10px"></div>
-        <div id="sysinfo"></div>
-        <div id="chanlist" class="chips" style="margin-top:8px"></div>
+        <div class="sysbox" id="sysbox">
+          <div class="kv" id="siteinfo"></div>
+          <div id="sysinfo"><div class="hint">System details show up here once a repeater or control channel identifies itself.</div></div>
+          <div id="chanlist" class="chips" style="margin-top:6px"></div>
+        </div>
       </div>
     </div>
 
@@ -234,19 +307,18 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
     </div>
 
     <div class="card" style="margin-top:12px">
-      <h2>Radios <span id="rad-count" class="badge">0</span></h2>
+      <h2>Radios <span class="hr"><span id="rad-count" class="badge">0</span><button class="sm" id="rad-map" title="Map of radio positions; radios on air pulse">🗺 Map</button></span></h2>
       <div class="body">
-        <canvas id="posmap" class="hidden" title="Last known positions (click a dot for its map)"></canvas>
-        <div class="rwrap"><table class="rtab"><thead><tr><th>Radio</th><th>Heard</th><th>Last activity</th><th class="opt">Talkgroup</th><th>Position</th></tr></thead><tbody id="rad-body"></tbody></table></div>
-        <div class="hint" id="rad-hint">Radios show up here as they talk or send data.</div>
+        <div class="rwrap"><table class="rtab">
+          <thead><tr><th class="c-id">Radio</th><th class="c-heard">Heard</th><th>Last activity</th><th class="opt c-tg">Talkgroup</th><th class="c-pos"><span class="coords">Position</span><span class="pin">📍</span></th></tr></thead><tbody id="rad-body"></tbody></table></div>
       </div>
     </div>
   </div>
 
   <!-- RIGHT: bookmarks + controls -->
   <div class="col">
-    <div class="card">
-      <h2>Bookmarks <span><button class="sm" id="bm-add" title="Bookmark the tuned frequency">+ Add</button></span></h2>
+    <div class="card" id="card-bm">
+      <h2>Bookmarks <span class="hr"><button class="sm" id="bm-add" title="Bookmark the tuned frequency">+ Add</button><button class="fold" data-fold="card-bm" aria-expanded="true" title="Hide bookmarks">▾</button></span></h2>
       <div class="body">
         <div class="row" style="margin-top:0">
           <input id="bm-q" placeholder="Search" title="Matches name, group or MHz" style="flex:1;min-width:110px">
@@ -274,8 +346,8 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
       </div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <h2>Band scan <span id="bs-badge" class="badge">off</span></h2>
+    <div class="card" id="card-bs" style="margin-top:12px">
+      <h2>Band scan <span class="hr"><span id="bs-badge" class="badge">off</span><button class="fold" data-fold="card-bs" aria-expanded="true" title="Hide band scan">▾</button></span></h2>
       <div class="body">
         <div class="row" style="margin-top:0"><label>Bands</label>
           <select id="bs-preset" style="flex:1;min-width:0">
@@ -484,6 +556,29 @@ details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
         <div class="log" id="console"></div>
       </div>
     </div>
+  </div>
+</div>
+<div id="mapdlg" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="map-title">
+  <div class="mapbox">
+    <div class="maphd">
+      <b id="map-title">Radio map</b>
+      <span id="map-onair" class="badge">nobody on air</span>
+      <span style="flex:1"></span>
+      <button class="tgl sm on" id="map-follow" title="Bring radios that go on air into view">Follow on air</button>
+      <button class="sm" id="map-fit" title="Show every radio with a position">Fit all</button>
+      <button class="sm" id="map-zin" title="Zoom in" aria-label="Zoom in">+</button>
+      <button class="sm" id="map-zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <a class="btn" id="map-osm" target="_blank" rel="noopener" title="Open this view on openstreetmap.org">OSM ↗</a>
+      <button class="sm" id="map-close" title="Close (Esc)" aria-label="Close map">✕</button>
+    </div>
+    <div class="mapview" id="mapview">
+      <div id="maptiles"></div>
+      <div class="marks" id="mapmarks"></div>
+      <div class="mapempty hidden" id="mapempty">No positions yet. Radios appear here once they send GPS.</div>
+      <div class="mapscale" id="mapscale"></div>
+      <div class="mapattr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+    </div>
+    <div class="mapside" id="mapside"></div>
   </div>
 </div>
 <script src="/app.js"></script>
