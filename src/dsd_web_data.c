@@ -477,6 +477,8 @@ static const char * alg_name (int alg)
     case 0x22: case 0x81: return "DES";
     case 0x24: case 0x85: case 0x89: return "AES-128";
     case 0x26: return "Caltta BP";
+    case 0x68: return "Hytera Basic Privacy"; //Hytera PDU encryption header, ALG 1 (dmr_block.c sets 0x68 * ALG)
+    case 0xD0: return "Hytera Enhanced";      //ALG 2
     case 0x82: return "2-key 3DES";
     case 0x83: return "3DES";
     case 0x88: return "AES-CBC";
