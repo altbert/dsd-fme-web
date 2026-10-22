@@ -256,26 +256,8 @@ function renderStatus(m){
   bmMarkCurrent();
   if (document.activeElement !== $('mode') && d.mode !== undefined) $('mode').value = d.mode;
 
-  // slots
-  const slotsEl = $('slots'); slotsEl.innerHTML='';
-  const showSlot = (s, idx, stereo) => {
-    if (!s) return;
-    if (!stereo && idx===2) return;
-    const act = s.tg || s.src;
-    const el=document.createElement('div'); el.className='slot'+(d.carrier&&act?' active':'');
-    const algId = s.alg && s.alg!==0x80; // ALG / key id, when the protocol sends them
-    const gi = s.gi===0?'<span class="tag grp">GROUP</span>':(s.gi===1?'<span class="tag prv">PRIVATE</span>':'');
-    const lc = d.carrier && act ? liveCalls.get(stereo ? idx : 0) : null;
-    el.innerHTML =
-      '<div class="hd"><span>SLOT '+idx+(stereo?'':' / FDMA')+(lc?' · <span style="color:var(--good)">'+fmtDur(Date.now()/1000-lc.t)+'</span>':'')+'</span><span>'+escH(s.burst)+' · err '+escH(s.err)+escH(s.err2)+(s.on?'':' · OFF')+'</span></div>'+
-      '<div class="big">TGT <b>'+escH(s.tg)+'</b> &nbsp; SRC <b>'+escH(s.src)+'</b> '+gi+(s.enc?' <span class="tag enc">ENC '+escH(s.enc)+(algId?' · alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':'')+'</div>'+
-      (s.call&&s.call.trim()?'<div>'+escH(s.call.trim())+'</div>':'')+
-      (s.alias&&s.alias.trim()?'<div class="tag">'+escH(s.alias.trim())+'</div>':'')+
-      (s.gps&&s.gps.trim()?'<div class="tag">📍 '+escH(s.gps.trim())+'</div>':'')+
-      (s.data&&s.data.trim()?'<div class="hint">Last data: '+escH(s.data.trim())+'</div>':'');
-    slotsEl.appendChild(el);
-  };
-  showSlot(m.slot1,1,d.stereo); showSlot(m.slot2,2,d.stereo);
+  // slots: two fixed boxes, updated in place
+  slotSet(1, m.slot1, d, true); slotSet(2, m.slot2, d, d.stereo);
 
   // site info
   let kv='';
@@ -329,6 +311,46 @@ function renderStatus(m){
 function gainLabel(g, actual){ return g+' dB'+(actual > 0 && actual !== g*10 ? ' ('+(actual/10).toFixed(1)+')' : ''); }
 let shownBw = 0; // RTL bandwidth last reflected into the RF tab
 function hex(n){ return (n>>>0).toString(16).toUpperCase(); }
+
+//---------------------------------------------------------------- slot boxes
+// built once; every line is always there, empty or not, so a call starting or ending moves nothing
+function slotInit(){
+  for (const i of [1,2]) $('slot'+i).innerHTML=
+    '<div class="hd"><span class="nm">SLOT '+i+'</span><span class="tm"></span><span class="bu"></span></div>'+
+    '<div class="big"><span class="lb">TGT</span> <b class="tg">—</b> &nbsp;<span class="lb">SRC</span> <b class="sr">—</b></div>'+
+    '<div class="ln tags"></div><div class="ln l1"></div><div class="ln l2"></div><div class="ln l3"></div>';
+}
+function setTxt(el, t, title){ if (el.textContent !== t) el.textContent = t; if (title !== undefined && el.title !== title) el.title = title; }
+function setHTML(el, h){ if (el._h !== h){ el._h = h; el.innerHTML = h; } }
+function slotSet(i, s, d, used){
+  const el=$('slot'+i), q=c=>el.querySelector('.'+c);
+  used = used && !!s;
+  el.classList.toggle('off', !used);
+  if (!used){
+    el.classList.remove('active');
+    setTxt(q('nm'), 'SLOT '+i); setTxt(q('tm'), ''); setTxt(q('bu'), ''); setTxt(q('tg'), '—'); setTxt(q('sr'), '—');
+    setHTML(q('tags'), s ? '<span class="hint">no second timeslot on this channel</span>' : '');
+    for (const c of ['l1','l2','l3']) setTxt(q(c), '', '');
+    return;
+  }
+  const act = !!(s.tg || s.src), lc = d.carrier && act ? liveCalls.get(d.stereo ? i : 0) : null;
+  el.classList.toggle('active', !!(d.carrier && act));
+  setTxt(q('nm'), 'SLOT '+i+(d.stereo ? '' : ' / FDMA'));
+  setTxt(q('tm'), lc ? fmtClock(Date.now()/1000-lc.t) : '');
+  setTxt(q('bu'), (s.burst||'')+' · err '+esc(s.err)+esc(s.err2)+(s.on ? '' : ' · OFF'));
+  setTxt(q('tg'), s.tg ? String(s.tg) : '—'); setTxt(q('sr'), s.src ? String(s.src) : '—');
+  const algId = s.alg && s.alg!==0x80; // ALG / key id, when the protocol sends them
+  //the decoder keeps the call type after the call; only show it while the slot has ids
+  setHTML(q('tags'), !act ? '' : (s.gi===0?'<span class="tag grp">GROUP</span> ':(s.gi===1?'<span class="tag prv">PRIVATE</span> ':''))+
+    (s.enc?'<span class="tag enc">ENC '+escH(s.enc)+(algId?' · alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':''));
+  const l1=[(s.alias||'').trim(), (s.call||'').trim()].filter(x=>x).join(' · ');
+  setTxt(q('l1'), l1, l1);
+  const gps=(s.gps||'').trim();
+  setHTML(q('l2'), !gps ? '' : (lc && lc.lat!=null ? '<a data-lat="'+lc.lat+'" data-lon="'+lc.lon+'" title="Show on the map">📍 '+escH(gps)+'</a>' : '📍 '+escH(gps)));
+  const data=(s.data||'').trim();
+  setTxt(q('l3'), data ? 'Last data: '+data : '', data);
+}
+$('slots').addEventListener('click', e=>{ const a=e.target.closest('a[data-lat]'); if (a) mapOpen({lat:+a.dataset.lat, lon:+a.dataset.lon}); });
 function reflect(id, on){ const b=$(id); if(!b) return; b.classList.toggle('on', !!on); }
 
 function renderEvents(evs){
@@ -349,17 +371,22 @@ function renderEvents(evs){
 // calls, decoded data and signalling from the decoder; an item that comes again (same id) replaces
 // the earlier version, which is how calls update until they end and packets show their retries
 const acts = new Map(), actEls = new Map(), actOpen = new Set(), liveCalls = new Map();
+const onAir = new Map(); // radio -> its live call (voice heard here, or a trunked grant)
 let actKind = '', actErr = false;
 const ACT_KEEP = 800, ACT_SHOW = 500;
 
 function handleActivity(m){
-  if (m.reset){ acts.clear(); radios.clear(); liveCalls.clear(); }
+  if (m.reset){ acts.clear(); radios.clear(); liveCalls.clear(); onAir.clear(); }
   for (const it of m.items){
-    acts.set(it.id, it); radioSeen(it);
-    if (it.k === 'call' && it.p !== 'P25'){ // voice on this channel (trunked grants seen on a P25 control channel are "P25")
+    const fresh = !acts.has(it.id);
+    acts.set(it.id, it); radioSeen(it, fresh);
+    if (it.k !== 'call') continue;
+    if (it.p !== 'P25'){ // voice on this channel (trunked grants seen on a P25 control channel are "P25")
       const slot = it.s || 0;
       if (it.live) liveCalls.set(slot, it); else if (liveCalls.get(slot) && liveCalls.get(slot).id === it.id) liveCalls.delete(slot);
     }
+    const who = it.srcs || (it.src>0 ? String(it.src) : '');
+    if (who){ if (it.live) onAir.set(who, it); else if (onAir.get(who) && onAir.get(who).id === it.id) onAir.delete(who); }
   }
   if (acts.size > ACT_KEEP){ const ids=[...acts.keys()].sort((a,b)=>a-b); for (const id of ids.slice(0, acts.size-ACT_KEEP)) acts.delete(id); }
   if (m.reset) renderActs(); else for (const it of m.items) actPut(it);
@@ -375,9 +402,10 @@ function actMatch(it){
   return [it.src, it.dst, it.srcs, it.dsts, it.sn, it.dn, it.ty, it.sum, it.p, ...(it.f||[]).map(f=>f[1])].join(' ').toLowerCase().includes(q);
 }
 function hms(t){ return new Date(t*1000).toTimeString().slice(0,8); }
-function fmtDur(s){ s=Math.max(0, Math.round(s)); return s<60 ? s+' s' : Math.floor(s/60)+' min '+String(s%60).padStart(2,'0')+' s'; }
+// m:ss (h:mm:ss past an hour): constant width while a call runs
+function fmtClock(s){ s=Math.max(0, Math.round(s)); const h=Math.floor(s/3600), m=Math.floor(s/60)%60, x=String(s%60).padStart(2,'0');
+  return h ? h+':'+String(m).padStart(2,'0')+':'+x : m+':'+x; }
 function ago(s){ s=Math.max(0, Math.round(s)); return s<60 ? s+' s ago' : (s<3600 ? Math.floor(s/60)+' min ago' : Math.floor(s/3600)+' h ago'); }
-function osmURL(lat, lon){ return 'https://www.openstreetmap.org/?mlat='+lat.toFixed(6)+'&mlon='+lon.toFixed(6)+'#map=15/'+lat.toFixed(6)+'/'+lon.toFixed(6); }
 // radio / talkgroup: callsign style id, or number with its name from the group list
 function idHTML(num, str, name, prefix){
   if (str) return escH(str);
@@ -387,15 +415,15 @@ function idHTML(num, str, name, prefix){
 
 function actRow(it){
   const el=document.createElement('div');
-  el.className='act k-'+it.k+(it.crc===0?' err':'')+(it.live?' live':'');
+  el.className='act k-'+it.k+(it.crc===0?' err':'')+(it.live?' live':'')+(actOpen.has(it.id)?' open':'');
   el.dataset.id=it.id;
   const who=idHTML(it.src, it.srcs, it.sn), to=idHTML(it.dst, it.dsts, it.dn, it.g===0 ? 'TG ' : '');
   let meta='';
-  if (it.enc) meta+='<span class="tag enc">🔒 '+escH(it.enc)+'</span>';
-  if (it.lat!=null) meta+='<a class="tag" target="_blank" rel="noopener" href="'+osmURL(it.lat,it.lon)+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+' on OpenStreetMap">📍 map</a>';
+  if (it.enc) meta+='<span class="tag enc" title="'+escH(it.enc)+'">🔒 '+escH(it.enc)+'</span>';
+  if (it.lat!=null) meta+='<span class="tag lnk" data-lat="'+it.lat+'" data-lon="'+it.lon+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+': show on the map">📍</span>';
   if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times (resent)">×'+it.rep+'</span>';
-  if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'">'+(it.ack==='delivered'?'✓ delivered':escH(it.ack))+'</span>';
-  if (it.k==='call') meta+='<span class="dur" data-t="'+it.t+'">'+fmtDur(it.live ? Date.now()/1000-it.t : it.dur)+'</span>';
+  if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'" title="'+escH(it.ack)+'">'+(it.ack==='delivered'?'✓':'✗')+'</span>';
+  if (it.k==='call') meta+='<span class="dur" data-t="'+it.t+'">'+fmtClock(it.live ? Date.now()/1000-it.t : it.dur)+'</span>';
   el.innerHTML='<div class="l1"><span class="t">'+hms(it.t)+'</span><span class="ty">'+escH(it.ty||it.k)+'</span>'+
     (it.s?'<span class="sl">TS'+it.s+'</span>':'')+'<span class="who">'+who+(to?' → '+to:'')+'</span><span class="meta">'+meta+'</span></div>'+
     '<div class="sum">'+escH(it.sum)+'</div>';
@@ -452,6 +480,8 @@ function renderActs(){
   actHint();
 }
 $('acts').addEventListener('click', e=>{
+  const ln=e.target.closest('.lnk');
+  if (ln){ const it=acts.get(+ln.closest('.act').dataset.id); mapOpen({lat:+ln.dataset.lat, lon:+ln.dataset.lon, id: it && (it.srcs || (it.src>0 ? String(it.src) : ''))}); return; }
   if (e.target.closest('a') || e.target.closest('.det')) return;
   const row=e.target.closest('.act'); if (!row) return;
   const id=+row.dataset.id, it=acts.get(id); if (!it) return;
@@ -476,7 +506,7 @@ $('act-clear').onclick=clearAll;
 //---------------------------------------------------------------- radios
 // every radio heard, from the activity: last activity, talkgroup, alias and last position
 const radios = new Map();
-function radioSeen(it){
+function radioSeen(it, fresh){
   if (it.k==='sys') return;
   // the sender, or for messages to one radio from the system (P25 grants, acknowledgements) the radio addressed
   const key = it.srcs || (it.src>0 ? String(it.src) : (it.g===1 && it.dst>0 ? String(it.dst) : ''));
@@ -491,6 +521,7 @@ function radioSeen(it){
   if (it.k==='call' && (it.dst>0 || it.dsts)) r.tg = it.dsts ? escH(it.dsts) : idHTML(it.dst, '', it.dn, it.g===1 ? 'radio ' : 'TG ');
   for (const [k,v] of it.f||[]) if (k==='Talker alias') r.alias=v;
   if (it.lat!=null && it.crc!==0 && it.t >= (r.pt||0)){ r.lat=it.lat; r.lon=it.lon; r.pt=it.t; }
+  if (fresh && it.k!=='call' && it.crc!==0 && it.src>0) r.flash=Date.now()/1000+4; //it just sent something
 }
 let radT=0, radTimer=0;
 function renderRadios(){
@@ -500,58 +531,185 @@ function renderRadios(){
 function drawRadios(){
   const list=[...radios.values()].sort((a,b)=>b.last-a.last), now=Date.now()/1000;
   $('rad-count').textContent=list.length;
-  $('rad-hint').classList.toggle('hidden', list.length>0);
   let h='';
   for (const r of list.slice(0,300)){
-    const talk = r.live && r.k==='call';
-    h+='<tr'+(talk?' class="talk"':'')+'><td><b>'+escH(r.id)+'</b>'+(r.name?' <i>'+escH(r.name)+'</i>':'')+(r.alias?'<div class="hint">'+escH(r.alias)+'</div>':'')+'</td>'+
-      '<td>'+(talk?'<span style="color:var(--good)">on air</span>':ago(now-r.last))+'</td>'+
-      '<td><span class="tag">'+escH(r.ty||'')+'</span> '+escH(r.sum||'')+'</td>'+
+    const air=onAir.has(r.id), tx=r.flash>now;
+    h+='<tr'+(air?' class="talk"':(tx?' class="tx"':''))+'>'+
+      '<td title="'+escH(r.id+(r.name?' '+r.name:'')+(r.alias?' · '+r.alias:''))+'"><b>'+escH(r.id)+'</b>'+(r.name?' <i>'+escH(r.name)+'</i>':'')+(r.alias?' <i>'+escH(r.alias)+'</i>':'')+'</td>'+
+      '<td>'+(air?'<span style="color:var(--good)">on air</span>':ago(now-r.last))+'</td>'+
+      '<td title="'+escH(r.sum||'')+'"><span class="tag">'+escH(r.ty||'')+'</span> '+escH(r.sum||'')+'</td>'+
       '<td class="opt">'+(r.tg||'')+'</td>'+
-      '<td>'+(r.lat!=null?'<a target="_blank" rel="noopener" href="'+osmURL(r.lat,r.lon)+'">'+r.lat.toFixed(5)+', '+r.lon.toFixed(5)+'</a><div class="hint">'+ago(now-r.pt)+'</div>':'')+'</td></tr>';
+      '<td>'+(r.lat!=null?'<a data-id="'+escH(r.id)+'" title="'+r.lat.toFixed(5)+', '+r.lon.toFixed(5)+', '+ago(now-r.pt)+': show on the map">📍<span class="coords"> '+r.lat.toFixed(4)+', '+r.lon.toFixed(4)+'</span></a>':'')+'</td></tr>';
   }
+  if (!list.length) h='<tr><td colspan="5" class="empty">Radios show up here as they talk or send data.</td></tr>';
   $('rad-body').innerHTML=h;
-  drawPosMap(list, now);
+  if (MAP.open) mapDraw();
 }
-// last known positions on a plain equirectangular plot (works offline, no map tiles)
-let posPts=[];
-function drawPosMap(list, now){
-  const pts=list.filter(r=>r.lat!=null), c=$('posmap');
-  c.classList.toggle('hidden', !pts.length);
-  posPts=[];
-  if (!pts.length) return;
-  const w=c.clientWidth|0, h=c.clientHeight|0; if (!w || !h) return;
-  if (c.width!==w || c.height!==h){ c.width=w; c.height=h; }
-  const g=c.getContext('2d'); g.clearRect(0,0,w,h);
+$('rad-body').addEventListener('click', e=>{
+  const a=e.target.closest('a[data-id]'); if (!a) return;
+  const r=radios.get(a.dataset.id); if (r && r.lat!=null) mapOpen({lat:r.lat, lon:r.lon, id:r.id});
+});
+
+//---------------------------------------------------------------- map (modal)
+// OpenStreetMap tiles when the browser is online; offline the dots still sit right on a dark
+// background with a scale bar. Radios on air pulse red and come into view, data makes a radio flash.
+const MAP = {open:false, z:13, lat:0, lon:0, tiles:new Map(), fitted:false, focus:null, sel:null, follow:true, air:new Set(), drag:null, back:null};
+const TS = 256;
+function mpx(lon, z){ return (lon+180)/360*TS*2**z; }
+function mpy(lat, z){ const s=Math.sin(Math.max(-85.05, Math.min(85.05, lat))*Math.PI/180); return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*TS*2**z; }
+function mlon(x, z){ return x/(TS*2**z)*360-180; }
+function mlat(y, z){ const n=Math.PI-2*Math.PI*y/(TS*2**z); return 180/Math.PI*Math.atan(Math.sinh(n)); }
+function mapPts(){ return [...radios.values()].filter(r=>r.lat!=null); }
+function airLabel(id){ const c=onAir.get(id); return !c ? '' : (c.dsts ? c.dsts : (c.dst>0 ? (c.g===1 ? 'to '+c.dst : 'TG '+c.dst) : 'on air')); }
+
+function mapOpen(focus){
+  if (!MAP.open){ MAP.back=document.activeElement; MAP.open=true; $('mapdlg').classList.remove('hidden'); }
+  MAP.focus = focus && focus.lat!=null ? {lat:focus.lat, lon:focus.lon} : null;
+  if (focus && focus.id) MAP.sel=focus.id;
+  if (MAP.focus){ MAP.lat=focus.lat; MAP.lon=focus.lon; MAP.z=Math.max(MAP.z, 14); MAP.fitted=true; }
+  else if (!MAP.fitted) mapFit();
+  mapDraw();
+  $('map-close').focus();
+}
+function mapClose(){
+  MAP.open=false; MAP.focus=null; $('mapdlg').classList.add('hidden');
+  if (MAP.back && MAP.back.focus) MAP.back.focus();
+}
+function mapFit(){
+  const pts=mapPts(), v=$('mapview'); if (!pts.length) return;
+  const w=v.clientWidth||900, h=v.clientHeight||600;
   let la0=90, la1=-90, lo0=180, lo1=-180;
   for (const p of pts){ la0=Math.min(la0,p.lat); la1=Math.max(la1,p.lat); lo0=Math.min(lo0,p.lon); lo1=Math.max(lo1,p.lon); }
-  const k=Math.cos((la0+la1)/2*Math.PI/180), pad=28;
-  const sc=Math.min((w-2*pad)/Math.max((lo1-lo0)*k, 0.01), (h-2*pad)/Math.max(la1-la0, 0.01)); // px per degree of latitude
-  const cx=(lo0+lo1)/2, cy=(la0+la1)/2, X=lon=>w/2+(lon-cx)*k*sc, Y=lat=>h/2-(lat-cy)*sc;
-  // scale bar: a round number of km close to a fifth of the width
-  const kmpx=111.32/sc; let km=1; for (const s of [0.1,0.2,0.5,1,2,5,10,20,50,100,200,500]) if (s/kmpx < w/5) km=s;
-  g.strokeStyle='#8aa0b4'; g.fillStyle='#8aa0b4'; g.font='10px ui-monospace,Menlo,Consolas,monospace';
-  g.beginPath(); g.moveTo(10, h-10); g.lineTo(10+km/kmpx, h-10); g.stroke(); g.fillText(km+' km', 12, h-14); g.fillText('N ↑', w-30, 14);
-  const boxes=[];
-  for (const p of [...pts].sort((a,b)=>b.pt-a.pt)){ // newest first: they get the labels when crowded
-    const x=X(p.lon), y=Y(p.lat), age=now-p.pt;
-    g.fillStyle = age<180 ? '#45e07a' : (age<1200 ? '#ffcf5a' : '#5d6f80');
-    g.beginPath(); g.arc(x, y, 4, 0, 2*Math.PI); g.fill();
-    const lw=g.measureText(p.id).width, b={x0:x+6, y0:y-6, x1:x+8+lw, y1:y+5};
-    if (!boxes.some(o=>b.x0<o.x1 && b.x1>o.x0 && b.y0<o.y1 && b.y1>o.y0)){ boxes.push(b); g.fillStyle='#d7e3ee'; g.fillText(p.id, x+6, y+3); }
-    posPts.push({x, y, p});
-  }
+  let z=16;
+  while (z>2 && (mpx(lo1,z)-mpx(lo0,z) > w-90 || mpy(la0,z)-mpy(la1,z) > h-90)) z--;
+  MAP.z=z; MAP.lon=(lo0+lo1)/2; MAP.lat=mlat((mpy(la0,z)+mpy(la1,z))/2, z); MAP.fitted=true;
 }
-$('posmap').addEventListener('click', e=>{
-  const r=$('posmap').getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
-  let best=null, bd=12;
-  for (const q of posPts){ const d=Math.hypot(q.x-x, q.y-y); if (d<bd){ bd=d; best=q; } }
-  if (best) window.open(osmURL(best.p.lat, best.p.lon), '_blank', 'noopener');
+// a radio with a position that just went on air comes into view (while following)
+function mapFollow(w, h){
+  const now=new Set();
+  for (const r of mapPts()) if (onAir.has(r.id)) now.add(r.id);
+  for (const id of now){
+    if (MAP.air.has(id) || !MAP.follow) continue;
+    const r=radios.get(id), x=mpx(r.lon,MAP.z)-mpx(MAP.lon,MAP.z)+w/2, y=mpy(r.lat,MAP.z)-mpy(MAP.lat,MAP.z)+h/2;
+    if (x<40 || y<40 || x>w-40 || y>h-40){ MAP.lat=r.lat; MAP.lon=r.lon; MAP.focus=null; }
+  }
+  MAP.air=now;
+}
+function mapDraw(){
+  if (!MAP.open) return;
+  const v=$('mapview'), w=v.clientWidth, h=v.clientHeight; if (!w || !h) return;
+  if (!MAP.drag) mapFollow(w, h);
+  const z=MAP.z, n=2**z, x0=mpx(MAP.lon,z)-w/2, y0=mpy(MAP.lat,z)-h/2, keep=new Set();
+  for (let tx=Math.floor(x0/TS); tx*TS<x0+w; tx++) for (let ty=Math.max(0, Math.floor(y0/TS)); ty*TS<y0+h && ty<n; ty++){
+    const key=z+'/'+tx+'/'+ty; keep.add(key);
+    let img=MAP.tiles.get(key);
+    if (!img){
+      img=document.createElement('img'); img.className='tile'; img.alt=''; img.draggable=false;
+      img.onerror=()=>img.classList.add('miss');
+      img.src='https://tile.openstreetmap.org/'+z+'/'+(((tx%n)+n)%n)+'/'+ty+'.png';
+      $('maptiles').appendChild(img); MAP.tiles.set(key, img);
+    }
+    img.style.transform='translate('+Math.round(tx*TS-x0)+'px,'+Math.round(ty*TS-y0)+'px)';
+  }
+  for (const [k, img] of MAP.tiles) if (!keep.has(k)){ img.remove(); MAP.tiles.delete(k); }
+  const now=Date.now()/1000, pts=[];
+  for (const r of mapPts()){
+    const x=Math.round(mpx(r.lon,z)-x0), y=Math.round(mpy(r.lat,z)-y0);
+    if (x>=-80 && y>=-30 && x<=w+80 && y<=h+30) pts.push({r, x, y, air:airLabel(r.id)});
+  }
+  //when crowded, labels go to the selected radio, radios on air, then the newest positions
+  const boxes=[];
+  for (const p of [...pts].sort((a,b)=>(b.r.id===MAP.sel)-(a.r.id===MAP.sel) || !!b.air-!!a.air || b.r.pt-a.r.pt)){
+    const len=p.r.id.length+(p.air ? p.air.length+3 : 0), bx={x0:p.x+6, y0:p.y-9, x1:p.x+10+len*6.8, y1:p.y+6};
+    p.label = !boxes.some(o=>bx.x0<o.x1 && bx.x1>o.x0 && bx.y0<o.y1 && bx.y1>o.y0);
+    if (p.label) boxes.push(bx);
+  }
+  pts.sort((a,b)=>!!a.air-!!b.air || a.r.pt-b.r.pt); //on air drawn last, on top
+  let mk='';
+  for (const {r, x, y, air, label} of pts){
+    const age=now-r.pt;
+    mk+='<div class="mk'+(air?' air':'')+(label?'':' nl')+(r.flash>now?' tx':'')+(age<180?' fresh':(age<1200?' recent':''))+(MAP.sel===r.id?' sel':'')+
+      '" data-id="'+escH(r.id)+'" style="transform:translate('+x+'px,'+y+'px)" title="'+
+      escH(r.id+(r.name?' '+r.name:'')+(air?' · on air '+air:'')+' · '+(r.ty||'')+' '+(r.sum||'')+' · position from '+ago(age))+
+      '"><i></i><span>'+escH(r.id)+(air?' · '+escH(air):'')+'</span></div>';
+  }
+  if (MAP.focus) mk+='<div class="mk focus" style="transform:translate('+Math.round(mpx(MAP.focus.lon,z)-x0)+'px,'+Math.round(mpy(MAP.focus.lat,z)-y0)+'px)"><i></i></div>';
+  $('mapmarks').innerHTML=mk;
+  $('mapempty').classList.toggle('hidden', mapPts().length>0 || !!MAP.focus);
+  // scale bar: a round distance close to a sixth of the width
+  const mpp=156543.03392*Math.cos(MAP.lat*Math.PI/180)/n; //metres per pixel
+  let d=5; for (const sd of [10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000,200000,500000,1000000]) if (sd/mpp < w/6) d=sd;
+  $('mapscale').style.width=Math.round(d/mpp)+'px';
+  $('mapscale').textContent=d>=1000 ? d/1000+' km' : d+' m';
+  $('map-osm').href='https://www.openstreetmap.org/#map='+z+'/'+MAP.lat.toFixed(5)+'/'+MAP.lon.toFixed(5);
+  mapSide(now);
+}
+function mapSide(now){
+  const air=[...onAir.entries()].sort((a,b)=>a[1].t-b[1].t);
+  setTxt($('map-onair'), air.length ? air.length+' on air' : 'nobody on air');
+  $('map-onair').className='badge'+(air.length?' live':'');
+  let h='<h4>On air</h4>';
+  if (!air.length) h+='<div class="hint">Nobody is transmitting.</div>';
+  for (const [id, c] of air){
+    const r=radios.get(id), pos=r && r.lat!=null;
+    h+='<div class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position from this radio yet')+'">● '+escH(id)+' · '+escH(airLabel(id))+' · '+fmtClock(now-c.t)+(pos?'':' · no position')+'</div>';
+  }
+  h+='<h4>Recently heard</h4>';
+  const rec=mapPts().sort((a,b)=>b.last-a.last).slice(0,40);
+  if (!rec.length) h+='<div class="hint">No positions yet.</div>';
+  for (const r of rec) h+='<div class="it'+(MAP.sel===r.id?' sel':'')+'" data-id="'+escH(r.id)+'">'+escH(r.id)+(r.name?' '+escH(r.name):'')+' · '+escH(r.ty||'')+' · '+ago(now-r.last)+'</div>';
+  setHTML($('mapside'), h);
+}
+function mapZoom(dz, cx, cy){
+  const v=$('mapview'), w=v.clientWidth, h=v.clientHeight, z=MAP.z, nz=Math.max(2, Math.min(19, z+dz));
+  if (nz===z) return;
+  if (cx===undefined){ cx=w/2; cy=h/2; }
+  //the point under the cursor stays where it is
+  const lon=mlon(mpx(MAP.lon,z)-w/2+cx, z), lat=mlat(mpy(MAP.lat,z)-h/2+cy, z);
+  MAP.z=nz; MAP.lon=mlon(mpx(lon,nz)-cx+w/2, nz); MAP.lat=mlat(mpy(lat,nz)-cy+h/2, nz);
+  mapDraw();
+}
+$('btn-map').onclick=()=>mapOpen();
+$('rad-map').onclick=()=>mapOpen();
+$('map-close').onclick=mapClose;
+$('mapdlg').addEventListener('click', e=>{ if (e.target===$('mapdlg')) mapClose(); });
+document.addEventListener('keydown', e=>{ if (e.key==='Escape' && MAP.open) mapClose(); });
+$('map-fit').onclick=()=>{ MAP.focus=null; mapFit(); mapDraw(); };
+$('map-follow').onclick=()=>{ MAP.follow=!MAP.follow; reflect('map-follow', MAP.follow); };
+$('map-zin').onclick=()=>mapZoom(1);
+$('map-zout').onclick=()=>mapZoom(-1);
+$('mapview').addEventListener('wheel', e=>{ e.preventDefault(); const r=$('mapview').getBoundingClientRect(); mapZoom(e.deltaY<0?1:-1, e.clientX-r.left, e.clientY-r.top); }, {passive:false});
+$('mapview').addEventListener('pointerdown', e=>{
+  const m=e.target.closest('.mk');
+  MAP.drag={x:e.clientX, y:e.clientY, px:mpx(MAP.lon,MAP.z), py:mpy(MAP.lat,MAP.z), moved:false, id:m && m.dataset.id};
+  $('mapview').setPointerCapture(e.pointerId); $('mapview').classList.add('drag');
 });
+$('mapview').addEventListener('pointermove', e=>{
+  const d=MAP.drag; if (!d) return;
+  const dx=e.clientX-d.x, dy=e.clientY-d.y;
+  if (!d.moved && Math.hypot(dx, dy) < 4) return;
+  d.moved=true; MAP.lon=mlon(d.px-dx, MAP.z); MAP.lat=mlat(d.py-dy, MAP.z); mapDraw();
+});
+function mapUp(){
+  const d=MAP.drag; if (!d) return;
+  MAP.drag=null; $('mapview').classList.remove('drag');
+  if (!d.moved && d.id){ MAP.sel = MAP.sel===d.id ? null : d.id; mapDraw(); }
+}
+$('mapview').addEventListener('pointerup', mapUp);
+$('mapview').addEventListener('pointercancel', mapUp);
+$('mapside').addEventListener('click', e=>{
+  const it=e.target.closest('.it'); if (!it) return;
+  const r=radios.get(it.dataset.id); if (!r || r.lat==null) return;
+  MAP.sel=r.id; MAP.lat=r.lat; MAP.lon=r.lon; MAP.focus=null; mapDraw();
+});
+window.addEventListener('resize', ()=>{ if (MAP.open) mapDraw(); });
+
 // running call timers and "heard ... ago"
 setInterval(()=>{
   const now=Date.now()/1000;
-  for (const el of document.querySelectorAll('.act.live .dur')) el.textContent=fmtDur(now-(+el.dataset.t));
+  for (const el of document.querySelectorAll('.act.live .dur')) el.textContent=fmtClock(now-(+el.dataset.t));
+  for (const [id, c] of onAir) if (!c.live || (acts.get(c.id) && !acts.get(c.id).live)) onAir.delete(id);
+  if (MAP.open) mapSide(now);
 }, 1000);
 setInterval(()=>{ if (radios.size) renderRadios(); }, 5000);
 
@@ -572,7 +730,7 @@ function renderSystem(m){
     if (p.iden && p.iden.length) h+='<div><h4>Channel plan</h4>'+kv(p.iden.map(i=>['Identifier '+i.id, mhz(i.base)+' + n × '+i.step+' kHz'+(i.tdma?' (TDMA)':'')]))+'</div>';
   }
   if (m.nxdn){ const n=m.nxdn; h+='<div><h4>NXDN</h4>'+kv([['RAN',n.ran],['System code',n.sys],['Site code',n.site]])+'</div>'; }
-  $('sysinfo').innerHTML = h ? '<div class="sysg">'+h+'</div>' : '';
+  setHTML($('sysinfo'), h ? '<div class="sysg">'+h+'</div>' : '<div class="hint">System details show up here once a repeater or control channel identifies itself.</div>');
 }
 
 function logConsole(line){
@@ -660,6 +818,7 @@ function bmMarkCurrent(){
 }
 
 function bmFormOpen(b){
+  if ($('card-bm').classList.contains('folded')) foldSet('card-bm', false);
   bmEdit = b.id || 0;
   $('bm-name').value = b.name || '';
   $('bm-freq').value = b.freq ? (b.freq/1e6).toFixed(6) : '';
@@ -781,7 +940,7 @@ function renderBscan(bs, d){
   $('bs-badge').textContent = {off:'off', sweep:'sweeping', probe:'probing', found:'locked', fixed:'found'}[bs.state] || bs.state;
   $('bs-badge').className = 'badge '+(bs.state==='found' || bs.state==='fixed' ? 'live' : (on ? 'warn' : ''));
   $('st-bs').textContent = bs.state==='fixed' ? 'FOUND' : 'BAND SCAN';
-  $('st-bs').className = 'badge '+(bs.state==='fixed' ? 'live' : 'warn')+(on ? '' : ' hidden');
+  $('st-bs').className = 'badge '+(bs.state==='fixed' ? 'live' : 'warn')+(on ? '' : ' vh');
   $('bs-start').disabled = on; $('bs-stop').disabled = !on; $('bs-cont').disabled = bs.state !== 'fixed';
   bsCur = bs.state === 'fixed' ? bs.last_freq : (bs.state === 'probe' || bs.state === 'found' ? bs.freq : 0);
   bsOff = !on;
@@ -911,6 +1070,21 @@ $('tabs').addEventListener('click', e=>{ if(e.target.tagName!=='BUTTON') return;
 $('pw-go').onclick=()=>send({cmd:'auth', password:$('pw').value});
 $('pw').addEventListener('keydown',e=>{ if(e.key==='Enter') $('pw-go').click(); });
 
+//---------------------------------------------------------------- folding cards
+// Bookmarks and Band scan fold down to their title bar; remembered per browser
+function foldSet(id, folded){
+  const card=$(id), b=card.querySelector('button.fold'), name=card.querySelector('h2').firstChild.textContent.trim().toLowerCase();
+  card.classList.toggle('folded', folded);
+  b.textContent = folded ? '▸' : '▾';
+  b.setAttribute('aria-expanded', String(!folded));
+  b.title = (folded ? 'Show ' : 'Hide ')+name;
+  try { const f=JSON.parse(localStorage.getItem('dsdfme.fold') || '{}'); f[id]=folded; localStorage.setItem('dsdfme.fold', JSON.stringify(f)); } catch(e){}
+}
+for (const b of document.querySelectorAll('button.fold')) b.onclick=()=>foldSet(b.dataset.fold, !$(b.dataset.fold).classList.contains('folded'));
+(function(){ try { const f=JSON.parse(localStorage.getItem('dsdfme.fold') || '{}'); for (const id in f) if (f[id] && $(id)) foldSet(id, true); } catch(e){} })();
+
+slotInit();
+drawRadios();
 sizeCanvas();
 renderBookmarks();
 connect();

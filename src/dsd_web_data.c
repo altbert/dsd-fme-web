@@ -1179,9 +1179,13 @@ static int dec_hytera_clp (act_item * a, const uint8_t * p, int len)
   if (has_rssi && off + 2 <= len)
   {
     int rssi = (int16_t)be16 (p + off);
-    act_kv (a, "RSSI", "%d dBm", rssi);
-    size_t l = strlen (a->sum);
-    snprintf (a->sum + l, sizeof(a->sum) - l, ", RSSI %d dBm", rssi);
+    if (rssi < -150 || rssi > 0) act_kv (a, "RSSI", "not measured (%d)", rssi); //seen as -231
+    else
+    {
+      act_kv (a, "RSSI", "%d dBm", rssi);
+      size_t l = strlen (a->sum);
+      snprintf (a->sum + l, sizeof(a->sum) - l, ", RSSI %d dBm", rssi);
+    }
   }
   return 1;
 }
