@@ -464,6 +464,7 @@ static const char * mime_for (const char * path)
   if (strcasecmp (ext, ".svg") == 0) return "image/svg+xml";
   if (strcasecmp (ext, ".png") == 0) return "image/png";
   if (strcasecmp (ext, ".ico") == 0) return "image/x-icon";
+  if (strcasecmp (ext, ".woff2") == 0) return "font/woff2";
   if (strcasecmp (ext, ".wav") == 0) return "audio/wav";
   if (strcasecmp (ext, ".csv") == 0) return "text/csv";
   if (strcasecmp (ext, ".txt") == 0 || strcasecmp (ext, ".log") == 0) return "text/plain; charset=utf-8";
