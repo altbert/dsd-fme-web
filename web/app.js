@@ -20,8 +20,8 @@ function connect(){
 }
 function send(obj){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
-function subscribe(){ send({cmd:'subscribe', fft:true, audio:audioOn, console:true}); }
-function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); }
+function subscribe(){ send({cmd:'subscribe', fft:true, audio:audioOn, console:true, events:actKind==='log'}); }
+function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); send({cmd:'activity'}); }
 
 function onMessage(ev){
   if (typeof ev.data === 'string'){
@@ -47,6 +47,8 @@ function handleJSON(m){
     else { $('pw-err').textContent = 'Wrong password'; }
   }
   else if (m.type === 'status'){ authed = true; setConn('connected','live'); renderStatus(m); }
+  else if (m.type === 'activity'){ handleActivity(m); }
+  else if (m.type === 'system'){ renderSystem(m); }
   else if (m.type === 'files'){ renderFiles(m); }
   else if (m.type === 'bookmarks'){ bms = m.items || []; $('bm-path').textContent = m.path || '—'; renderBookmarks(); }
   else if (m.type === 'bm_saved'){ bmFormClose(); bmMsg(m.warn ? 'Saved, but '+m.warn+'.' : 'Saved.', !!m.warn); }
@@ -263,12 +265,14 @@ function renderStatus(m){
     const el=document.createElement('div'); el.className='slot'+(d.carrier&&act?' active':'');
     const algId = s.alg && s.alg!==0x80; // ALG / key id, when the protocol sends them
     const gi = s.gi===0?'<span class="tag grp">GROUP</span>':(s.gi===1?'<span class="tag prv">PRIVATE</span>':'');
+    const lc = d.carrier && act ? liveCalls.get(stereo ? idx : 0) : null;
     el.innerHTML =
-      '<div class="hd"><span>SLOT '+idx+(stereo?'':' / FDMA')+'</span><span>'+escH(s.burst)+' · err '+escH(s.err)+escH(s.err2)+(s.on?'':' · OFF')+'</span></div>'+
+      '<div class="hd"><span>SLOT '+idx+(stereo?'':' / FDMA')+(lc?' · <span style="color:var(--good)">'+fmtDur(Date.now()/1000-lc.t)+'</span>':'')+'</span><span>'+escH(s.burst)+' · err '+escH(s.err)+escH(s.err2)+(s.on?'':' · OFF')+'</span></div>'+
       '<div class="big">TGT <b>'+escH(s.tg)+'</b> &nbsp; SRC <b>'+escH(s.src)+'</b> '+gi+(s.enc?' <span class="tag enc">ENC '+escH(s.enc)+(algId?' · alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':'')+'</div>'+
       (s.call&&s.call.trim()?'<div>'+escH(s.call.trim())+'</div>':'')+
       (s.alias&&s.alias.trim()?'<div class="tag">'+escH(s.alias.trim())+'</div>':'')+
-      (s.gps&&s.gps.trim()?'<div class="tag">📍 '+escH(s.gps.trim())+'</div>':'');
+      (s.gps&&s.gps.trim()?'<div class="tag">📍 '+escH(s.gps.trim())+'</div>':'')+
+      (s.data&&s.data.trim()?'<div class="hint">Last data: '+escH(s.data.trim())+'</div>':'');
     slotsEl.appendChild(el);
   };
   showSlot(m.slot1,1,d.stereo); showSlot(m.slot2,2,d.stereo);
@@ -276,21 +280,18 @@ function renderStatus(m){
   // site info
   let kv='';
   const add=(k,v)=>{ if(v!==undefined&&v!==''&&v!==0&&v!=='0') kv+='<span class="k">'+k+'</span><span class="v">'+escH(v)+'</span>'; };
-  if (tr.cc_freq) add('CC freq',(tr.cc_freq/1e6).toFixed(6)+' MHz');
-  if (tr.vc_freq) add('VC freq',(tr.vc_freq/1e6).toFixed(6)+' MHz');
-  add('DMR CC', site.dmr_cc===16?'':site.dmr_cc);
-  add('DMR', (esc(site.dmr_brand)+' '+esc(site.dmr_brand_sub)+' '+esc(site.dmr_site)).trim());
-  if (site.p2_wacn) add('P25', hex(site.p2_wacn)+':'+hex(site.p2_sysid)+':'+hex(site.p2_cc)+' RFSS '+site.p2_rfss+' SITE '+site.p2_site);
-  if (site.nxdn_ran>=0 && (d.sys==='NXDN')) add('NXDN RAN', site.nxdn_ran);
-  if (site.nxdn_cipher) add('NXDN cipher', site.nxdn_cipher);
+  // trunking frequencies; the system identity is in the system picture below (#sysinfo)
+  if (tr.enabled && tr.cc_freq) add('CC freq',(tr.cc_freq/1e6).toFixed(6)+' MHz');
+  if (tr.enabled && tr.vc_freq) add('VC freq',(tr.vc_freq/1e6).toFixed(6)+' MHz');
+  if (site.nxdn_cipher && d.sys==='NXDN') add('NXDN cipher', site.nxdn_cipher);
   $('siteinfo').innerHTML = kv;
 
   // active channels
   const ch=$('chanlist'); ch.innerHTML='';
   (m.channels||[]).forEach(c=>{ const s=document.createElement('span'); s.className='chip'; s.textContent=c.trim(); ch.appendChild(s); });
 
-  // events
-  renderEvents(m.events||[]);
+  // the decoder's own event history, while that view is open
+  if (actKind === 'log') renderEvents(m.events||[]);
 
   // reflect toggles (only if not focused/editing)
   reflect('tg-trunk', tr.enabled); reflect('tg-scan', tr.scanner);
@@ -332,6 +333,7 @@ function reflect(id, on){ const b=$(id); if(!b) return; b.classList.toggle('on',
 
 function renderEvents(evs){
   const el=$('events'); el.innerHTML='';
+  if (!evs.length) el.innerHTML='<div class="acthint">No decoder events yet.</div>';
   evs.forEach(e=>{
     const div=document.createElement('div'); div.className='e c'+(e.color||4);
     let s = '['+e.slot+'] '+esc(e.text);
@@ -341,6 +343,236 @@ function renderEvents(evs){
     if (e.note) s+='\n    ⓘ '+esc(e.note);
     div.textContent = s; el.appendChild(div);
   });
+}
+
+//---------------------------------------------------------------- activity
+// calls, decoded data and signalling from the decoder; an item that comes again (same id) replaces
+// the earlier version, which is how calls update until they end and packets show their retries
+const acts = new Map(), actEls = new Map(), actOpen = new Set(), liveCalls = new Map();
+let actKind = '', actErr = false;
+const ACT_KEEP = 800, ACT_SHOW = 500;
+
+function handleActivity(m){
+  if (m.reset){ acts.clear(); radios.clear(); liveCalls.clear(); }
+  for (const it of m.items){
+    acts.set(it.id, it); radioSeen(it);
+    if (it.k === 'call' && it.p !== 'P25'){ // voice on this channel (trunked grants seen on a P25 control channel are "P25")
+      const slot = it.s || 0;
+      if (it.live) liveCalls.set(slot, it); else if (liveCalls.get(slot) && liveCalls.get(slot).id === it.id) liveCalls.delete(slot);
+    }
+  }
+  if (acts.size > ACT_KEEP){ const ids=[...acts.keys()].sort((a,b)=>a-b); for (const id of ids.slice(0, acts.size-ACT_KEEP)) acts.delete(id); }
+  if (m.reset) renderActs(); else for (const it of m.items) actPut(it);
+  $('act-count').textContent = acts.size;
+  renderRadios();
+}
+
+function actMatch(it){
+  if (actKind && it.k !== actKind) return false;
+  if (!actErr && it.crc === 0) return false;
+  const q = $('act-q').value.trim().toLowerCase();
+  if (!q) return true;
+  return [it.src, it.dst, it.srcs, it.dsts, it.sn, it.dn, it.ty, it.sum, it.p, ...(it.f||[]).map(f=>f[1])].join(' ').toLowerCase().includes(q);
+}
+function hms(t){ return new Date(t*1000).toTimeString().slice(0,8); }
+function fmtDur(s){ s=Math.max(0, Math.round(s)); return s<60 ? s+' s' : Math.floor(s/60)+' min '+String(s%60).padStart(2,'0')+' s'; }
+function ago(s){ s=Math.max(0, Math.round(s)); return s<60 ? s+' s ago' : (s<3600 ? Math.floor(s/60)+' min ago' : Math.floor(s/3600)+' h ago'); }
+function osmURL(lat, lon){ return 'https://www.openstreetmap.org/?mlat='+lat.toFixed(6)+'&mlon='+lon.toFixed(6)+'#map=15/'+lat.toFixed(6)+'/'+lon.toFixed(6); }
+// radio / talkgroup: callsign style id, or number with its name from the group list
+function idHTML(num, str, name, prefix){
+  if (str) return escH(str);
+  if (num==null || num<0) return '';
+  return (prefix||'')+escH(num)+(name?' <i>'+escH(name)+'</i>':'');
+}
+
+function actRow(it){
+  const el=document.createElement('div');
+  el.className='act k-'+it.k+(it.crc===0?' err':'')+(it.live?' live':'');
+  el.dataset.id=it.id;
+  const who=idHTML(it.src, it.srcs, it.sn), to=idHTML(it.dst, it.dsts, it.dn, it.g===0 ? 'TG ' : '');
+  let meta='';
+  if (it.enc) meta+='<span class="tag enc">🔒 '+escH(it.enc)+'</span>';
+  if (it.lat!=null) meta+='<a class="tag" target="_blank" rel="noopener" href="'+osmURL(it.lat,it.lon)+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+' on OpenStreetMap">📍 map</a>';
+  if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times (resent)">×'+it.rep+'</span>';
+  if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'">'+(it.ack==='delivered'?'✓ delivered':escH(it.ack))+'</span>';
+  if (it.k==='call') meta+='<span class="dur" data-t="'+it.t+'">'+fmtDur(it.live ? Date.now()/1000-it.t : it.dur)+'</span>';
+  el.innerHTML='<div class="l1"><span class="t">'+hms(it.t)+'</span><span class="ty">'+escH(it.ty||it.k)+'</span>'+
+    (it.s?'<span class="sl">TS'+it.s+'</span>':'')+'<span class="who">'+who+(to?' → '+to:'')+'</span><span class="meta">'+meta+'</span></div>'+
+    '<div class="sum">'+escH(it.sum)+'</div>';
+  if (actOpen.has(it.id)) el.appendChild(actDetail(it));
+  return el;
+}
+
+function hexDump(hex){
+  const b=hex.match(/../g)||[]; let out='';
+  for (let i=0;i<b.length;i+=16){
+    const row=b.slice(i,i+16);
+    const asc=row.map(h=>{ const c=parseInt(h,16); return c>=32&&c<127?String.fromCharCode(c):'.'; }).join('');
+    out+=i.toString(16).padStart(4,'0')+'  '+row.join(' ').padEnd(47)+'  '+asc+'\n';
+  }
+  return out;
+}
+function actDetail(it){
+  const d=document.createElement('div'); d.className='det';
+  let kv='';
+  const add=(k,v)=>{ kv+='<span class="k">'+escH(k)+'</span><span class="v">'+escH(v)+'</span>'; };
+  add('Protocol', it.p+(it.s?', timeslot '+it.s:''));
+  if (it.freq) add('Frequency', (it.freq/1e6).toFixed(5)+' MHz');
+  if (it.k==='call') add('Time', hms(it.t)+(it.live?', in progress':' to '+hms(it.t+it.dur)));
+  for (const [k,v] of it.f||[]) add(k,v);
+  if (it.crc===0) add('Integrity','failed the CRC check');
+  d.innerHTML='<div class="kv">'+kv+'</div>'+(it.hex?'<pre class="hexd">'+escH(hexDump(it.hex))+'</pre>':'');
+  return d;
+}
+function actHint(){
+  const box=$('acts');
+  let h=box.querySelector('.acthint');
+  if (box.querySelector('.act')){ if (h) h.remove(); return; }
+  if (!h){ h=document.createElement('div'); h.className='acthint'; box.appendChild(h); }
+  h.textContent = acts.size ? 'Nothing matches the filter.' : 'Calls, decoded data and signalling show up here as they are heard.';
+}
+// add, replace or drop one row, keeping the newest first
+function actPut(it){
+  const box=$('acts'), old=actEls.get(it.id);
+  if (!actMatch(it)){ if (old){ old.remove(); actEls.delete(it.id); } actHint(); return; }
+  const el=actRow(it);
+  if (old) old.replaceWith(el);
+  else {
+    let next=null;
+    for (const c of box.children) if (c.dataset.id && +c.dataset.id < it.id){ next=c; break; }
+    box.insertBefore(el, next);
+  }
+  actEls.set(it.id, el);
+  while (actEls.size > ACT_SHOW){ const last=[...box.children].reverse().find(c=>c.dataset.id); if (!last) break; actEls.delete(+last.dataset.id); last.remove(); }
+  actHint();
+}
+function renderActs(){
+  const box=$('acts'); box.innerHTML=''; actEls.clear();
+  for (const it of [...acts.values()].filter(actMatch).sort((a,b)=>b.id-a.id).slice(0,ACT_SHOW)){ const el=actRow(it); box.appendChild(el); actEls.set(it.id, el); }
+  actHint();
+}
+$('acts').addEventListener('click', e=>{
+  if (e.target.closest('a') || e.target.closest('.det')) return;
+  const row=e.target.closest('.act'); if (!row) return;
+  const id=+row.dataset.id, it=acts.get(id); if (!it) return;
+  if (actOpen.has(id)) actOpen.delete(id); else actOpen.add(id);
+  actPut(it);
+});
+$('act-kinds').addEventListener('click', e=>{
+  const c=e.target.closest('.chip'); if (!c) return;
+  const was=actKind; actKind=c.dataset.k;
+  for (const x of $('act-kinds').children) x.classList.toggle('on', x===c);
+  const log=actKind==='log';
+  $('acts').classList.toggle('hidden', log); $('events').classList.toggle('hidden', !log);
+  if (log !== (was==='log')) subscribe();
+  if (log){ $('events').innerHTML='<div class="acthint">Waiting for the decoder…</div>'; send({cmd:'get_status'}); }
+  else renderActs();
+});
+$('act-q').oninput=()=>renderActs();
+$('act-err').onclick=()=>{ actErr=!actErr; reflect('act-err', actErr); renderActs(); };
+function clearAll(){ send({cmd:'activity_clear'}); send({cmd:'reset_events'}); }
+$('act-clear').onclick=clearAll;
+
+//---------------------------------------------------------------- radios
+// every radio heard, from the activity: last activity, talkgroup, alias and last position
+const radios = new Map();
+function radioSeen(it){
+  if (it.k==='sys') return;
+  // the sender, or for messages to one radio from the system (P25 grants, acknowledgements) the radio addressed
+  const key = it.srcs || (it.src>0 ? String(it.src) : (it.g===1 && it.dst>0 ? String(it.dst) : ''));
+  if (!key) return;
+  let r = radios.get(key);
+  if (!r){ r={id:key, name:'', last:0}; radios.set(key, r); }
+  const t = it.k==='call' && !it.live ? it.t+(it.dur||0) : it.t;
+  if ((t >= r.last || it.id === r.item) && (it.crc !== 0 || !r.item)){ r.item=it.id; r.ty=it.ty; r.sum=it.sum; r.live=!!it.live; r.k=it.k; }
+  r.last=Math.max(r.last, t);
+  if (it.sn && key===String(it.src)) r.name=it.sn;
+  else if (it.dn && key===String(it.dst)) r.name=it.dn;
+  if (it.k==='call' && (it.dst>0 || it.dsts)) r.tg = it.dsts ? escH(it.dsts) : idHTML(it.dst, '', it.dn, it.g===1 ? 'radio ' : 'TG ');
+  for (const [k,v] of it.f||[]) if (k==='Talker alias') r.alias=v;
+  if (it.lat!=null && it.crc!==0 && it.t >= (r.pt||0)){ r.lat=it.lat; r.lon=it.lon; r.pt=it.t; }
+}
+let radT=0, radTimer=0;
+function renderRadios(){
+  if (radTimer) return;
+  radTimer=setTimeout(()=>{ radTimer=0; radT=Date.now(); drawRadios(); }, Math.max(0, 600-(Date.now()-radT)));
+}
+function drawRadios(){
+  const list=[...radios.values()].sort((a,b)=>b.last-a.last), now=Date.now()/1000;
+  $('rad-count').textContent=list.length;
+  $('rad-hint').classList.toggle('hidden', list.length>0);
+  let h='';
+  for (const r of list.slice(0,300)){
+    const talk = r.live && r.k==='call';
+    h+='<tr'+(talk?' class="talk"':'')+'><td><b>'+escH(r.id)+'</b>'+(r.name?' <i>'+escH(r.name)+'</i>':'')+(r.alias?'<div class="hint">'+escH(r.alias)+'</div>':'')+'</td>'+
+      '<td>'+(talk?'<span style="color:var(--good)">on air</span>':ago(now-r.last))+'</td>'+
+      '<td><span class="tag">'+escH(r.ty||'')+'</span> '+escH(r.sum||'')+'</td>'+
+      '<td class="opt">'+(r.tg||'')+'</td>'+
+      '<td>'+(r.lat!=null?'<a target="_blank" rel="noopener" href="'+osmURL(r.lat,r.lon)+'">'+r.lat.toFixed(5)+', '+r.lon.toFixed(5)+'</a><div class="hint">'+ago(now-r.pt)+'</div>':'')+'</td></tr>';
+  }
+  $('rad-body').innerHTML=h;
+  drawPosMap(list, now);
+}
+// last known positions on a plain equirectangular plot (works offline, no map tiles)
+let posPts=[];
+function drawPosMap(list, now){
+  const pts=list.filter(r=>r.lat!=null), c=$('posmap');
+  c.classList.toggle('hidden', !pts.length);
+  posPts=[];
+  if (!pts.length) return;
+  const w=c.clientWidth|0, h=c.clientHeight|0; if (!w || !h) return;
+  if (c.width!==w || c.height!==h){ c.width=w; c.height=h; }
+  const g=c.getContext('2d'); g.clearRect(0,0,w,h);
+  let la0=90, la1=-90, lo0=180, lo1=-180;
+  for (const p of pts){ la0=Math.min(la0,p.lat); la1=Math.max(la1,p.lat); lo0=Math.min(lo0,p.lon); lo1=Math.max(lo1,p.lon); }
+  const k=Math.cos((la0+la1)/2*Math.PI/180), pad=28;
+  const sc=Math.min((w-2*pad)/Math.max((lo1-lo0)*k, 0.01), (h-2*pad)/Math.max(la1-la0, 0.01)); // px per degree of latitude
+  const cx=(lo0+lo1)/2, cy=(la0+la1)/2, X=lon=>w/2+(lon-cx)*k*sc, Y=lat=>h/2-(lat-cy)*sc;
+  // scale bar: a round number of km close to a fifth of the width
+  const kmpx=111.32/sc; let km=1; for (const s of [0.1,0.2,0.5,1,2,5,10,20,50,100,200,500]) if (s/kmpx < w/5) km=s;
+  g.strokeStyle='#8aa0b4'; g.fillStyle='#8aa0b4'; g.font='10px ui-monospace,Menlo,Consolas,monospace';
+  g.beginPath(); g.moveTo(10, h-10); g.lineTo(10+km/kmpx, h-10); g.stroke(); g.fillText(km+' km', 12, h-14); g.fillText('N ↑', w-30, 14);
+  const boxes=[];
+  for (const p of [...pts].sort((a,b)=>b.pt-a.pt)){ // newest first: they get the labels when crowded
+    const x=X(p.lon), y=Y(p.lat), age=now-p.pt;
+    g.fillStyle = age<180 ? '#45e07a' : (age<1200 ? '#ffcf5a' : '#5d6f80');
+    g.beginPath(); g.arc(x, y, 4, 0, 2*Math.PI); g.fill();
+    const lw=g.measureText(p.id).width, b={x0:x+6, y0:y-6, x1:x+8+lw, y1:y+5};
+    if (!boxes.some(o=>b.x0<o.x1 && b.x1>o.x0 && b.y0<o.y1 && b.y1>o.y0)){ boxes.push(b); g.fillStyle='#d7e3ee'; g.fillText(p.id, x+6, y+3); }
+    posPts.push({x, y, p});
+  }
+}
+$('posmap').addEventListener('click', e=>{
+  const r=$('posmap').getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  let best=null, bd=12;
+  for (const q of posPts){ const d=Math.hypot(q.x-x, q.y-y); if (d<bd){ bd=d; best=q; } }
+  if (best) window.open(osmURL(best.p.lat, best.p.lon), '_blank', 'noopener');
+});
+// running call timers and "heard ... ago"
+setInterval(()=>{
+  const now=Date.now()/1000;
+  for (const el of document.querySelectorAll('.act.live .dur')) el.textContent=fmtDur(now-(+el.dataset.t));
+}, 1000);
+setInterval(()=>{ if (radios.size) renderRadios(); }, 5000);
+
+//---------------------------------------------------------------- system picture
+function renderSystem(m){
+  const kv=rows=>'<div class="kv">'+rows.filter(r=>r[1]!==undefined && r[1]!=='' && r[1]!==null)
+    .map(([k,v])=>'<span class="k">'+escH(k)+'</span><span class="v">'+escH(v)+'</span>').join('')+'</div>';
+  const mhz=f=>(f/1e6).toFixed(5)+' MHz';
+  let h='';
+  if (m.dmr){ const d=m.dmr;
+    h+='<div><h4>DMR '+(d.ms?'direct mode':'repeater')+'</h4>'+kv([['Color code',d.cc],['System code',d.syscode],['Vendor',[d.brand,d.sub].filter(x=>x).join(' ')],['Site',d.site],['Rest channel',d.rest]])+'</div>'; }
+  if (m.p25){ const p=m.p25;
+    h+='<div><h4>P25 site</h4>'+kv([['WACN',p.wacn],['System',p.sys],['NAC',p.nac],['RFSS / site',p.rfss!=null?p.rfss+' / '+(p.site!=null?p.site:'?'):undefined],
+      ['Control channel',p.cc?mhz(p.cc)+(p.cc_ch?' (ch '+p.cc_ch+')':''):undefined],['Services',p.ssc?'0x'+p.ssc:undefined],['Network time',p.time]])+'</div>';
+    if (p.sec && p.sec.length) h+='<div><h4>Secondary control channels</h4>'+kv(p.sec.map(s=>['ch '+s.ch, s.f?mhz(s.f):'frequency not known yet']))+'</div>';
+    if (p.nb && p.nb.length) h+='<div><h4>Neighbor sites</h4>'+kv(p.nb.map(n=>['RFSS '+n.rfss+' site '+n.site,
+      (n.f?mhz(n.f):'ch '+n.ch)+(n.sys?', SYS '+n.sys:'')+(n.fail?', failed':'')+(n.conv?', conventional':'')]))+'</div>';
+    if (p.iden && p.iden.length) h+='<div><h4>Channel plan</h4>'+kv(p.iden.map(i=>['Identifier '+i.id, mhz(i.base)+' + n × '+i.step+' kHz'+(i.tdma?' (TDMA)':'')]))+'</div>';
+  }
+  if (m.nxdn){ const n=m.nxdn; h+='<div><h4>NXDN</h4>'+kv([['RAN',n.ran],['System code',n.sys],['Site code',n.site]])+'</div>'; }
+  $('sysinfo').innerHTML = h ? '<div class="sysg">'+h+'</div>' : '';
 }
 
 function logConsole(line){
@@ -613,7 +845,7 @@ bindToggle('tg-lpf','filters','lpf'); bindToggle('tg-pbf','filters','pbf');
 bindToggle('tg-payload','payload','enable'); bindToggle('tg-monitor','monitor','enable');
 function toggleWav(id){ const on=!$(id).classList.contains('on'); send({cmd:'per_call_wav', enable:on}); reflect('tg-wav',on); reflect('tg-wav2',on); }
 $('tg-wav').onclick=()=>toggleWav('tg-wav'); $('tg-wav2').onclick=()=>toggleWav('tg-wav2');
-$('btn-resetev').onclick=()=>send({cmd:'reset_events'});
+$('btn-resetev').onclick=clearAll;
 $('btn-p2').onclick=()=>send({cmd:'p2_params', wacn:parseInt($('p2wacn').value,16)||0, sysid:parseInt($('p2sys').value,16)||0, cc:parseInt($('p2cc').value,16)||0});
 
 // RF

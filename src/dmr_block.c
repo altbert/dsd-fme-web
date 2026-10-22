@@ -405,60 +405,41 @@ void dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t dheader[], uint8_t
       else if (p_sap != 1 && p_mfid == 0x10)
       {
 
-        //The low nibble of octet 2 (bits 20..23) is ambiguous: on a genuinely encrypted PDU it
-        //flags privacy, but Motorola MNIS service PDUs (LRRP/ARS) also carry a 1 here as a plain
-        //service opcode. Treating the nibble alone as "encrypted" falsely flags unencrypted MNIS
-        //telemetry, which then never decodes. Only flag encryption when there is real key material:
-        //a named algorithm (ALG != 0), a key id, or a message indicator. Unkeyed Moto BP (ALG 0,
-        //no MI/KID) is indistinguishable from the MNIS opcode here, so it is left to decode as
-        //cleartext rather than hiding real data behind a false positive.
-        uint8_t enc_nibble = (uint8_t)ConvertBitIntoBytes(&dheader_bits[20], 4);
-        uint8_t enc_alg    = (uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3);
-        uint8_t enc_kid    = (uint8_t)ConvertBitIntoBytes(&dheader_bits[24], 8);
-        uint32_t enc_mi    = (uint32_t)ConvertBitIntoBytes(&dheader_bits[48], 32);
-        uint8_t is_enc     = (enc_nibble == 1 && (enc_alg != 0 || enc_kid != 0 || enc_mi != 0));
-        if (is_enc)
+        //check ENC bit, assuming this is an ENC bit, or SVC OPT like thing (or could be an opcode for the rest of the extended header)
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[20], 4) == 1)
         {
           //set to 0x100 so it won't trigger any weird flags, but still has a non-zero value to be checked later
           if (state->currentslot == 0) state->dmr_so = 0x100;
           else state->dmr_soR = 0x100;
         }
 
+        fprintf (stderr, "\n DMRA PDU ENC Header:");
+        fprintf (stderr, " MFID: %02X;", (uint8_t)ConvertBitIntoBytes(&dheader_bits[8], 8));
+        fprintf (stderr, " ENC: %X;", (uint8_t)ConvertBitIntoBytes(&dheader_bits[20], 4));
+
         if (state->currentslot == 0)
-          state->payload_keyid = enc_kid;
-        else state->payload_keyidR = enc_kid;
+          state->payload_keyid = (uint8_t)ConvertBitIntoBytes(&dheader_bits[24], 8);
+        else state->payload_keyidR = (uint8_t)ConvertBitIntoBytes(&dheader_bits[24], 8);
+        fprintf (stderr, " Key ID: %02X;", (uint8_t)ConvertBitIntoBytes(&dheader_bits[24], 8));
 
         //this uses the same 3 bit method found in the 'late entry' alg
         if (state->currentslot == 0) //could be 17,3
-          state->payload_algid = enc_alg;
-        else state->payload_algidR = enc_alg;
+          state->payload_algid = (uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3);
+        else state->payload_algidR = (uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3);
+        fprintf (stderr, " ALG: %02X;", (uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3));
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3) == 0) fprintf (stderr, " BP;");
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3) == 1) fprintf (stderr, " RC4;");
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3) == 2) fprintf (stderr, " DES56;");
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3) == 4) fprintf (stderr, " AES128;");
+        if ((uint8_t)ConvertBitIntoBytes(&dheader_bits[17], 3) == 5) fprintf (stderr, " AES256;");
 
         if (state->currentslot == 0)
-          state->payload_mi = (unsigned long long int)enc_mi;
-        else state->payload_miR = (unsigned long long int)enc_mi;
+          state->payload_mi = (unsigned long long int)ConvertBitIntoBytes(&dheader_bits[48], 32);
+        else state->payload_miR = (unsigned long long int)ConvertBitIntoBytes(&dheader_bits[48], 32);
 
-        if (is_enc)
-        {
-          fprintf (stderr, "\n DMRA PDU ENC Header:");
-          fprintf (stderr, " MFID: %02X;", (uint8_t)ConvertBitIntoBytes(&dheader_bits[8], 8));
-          fprintf (stderr, " ENC: %X;", enc_nibble);
-          fprintf (stderr, " Key ID: %02X;", enc_kid);
-          fprintf (stderr, " ALG: %02X;", enc_alg);
-          if (enc_alg == 0) fprintf (stderr, " BP;");
-          if (enc_alg == 1) fprintf (stderr, " RC4;");
-          if (enc_alg == 2) fprintf (stderr, " DES56;");
-          if (enc_alg == 4) fprintf (stderr, " AES128;");
-          if (enc_alg == 5) fprintf (stderr, " AES256;");
-
-          //print MI only if this is not Moto BP (no MI on those)
-          if (enc_mi != 0) fprintf (stderr, " MI(32): %08X", enc_mi);
-        }
-        else
-        {
-          //ambiguous privacy nibble with no key material -> a cleartext MNIS service header
-          fprintf (stderr, "\n DMRA PDU Extended Header: MFID: %02X; SVC: %X; (cleartext);",
-                   (uint8_t)ConvertBitIntoBytes(&dheader_bits[8], 8), enc_nibble);
-        }
+        //print MI only if this is not Moto BP (no MI on those)
+        if ((uint32_t)ConvertBitIntoBytes(&dheader_bits[48], 32) != 0)
+          fprintf (stderr, " MI(32): %08X", (uint32_t)ConvertBitIntoBytes(&dheader_bits[48], 32));
 
         //reset ks start value
         state->data_ks_start[slot] = 0;
@@ -525,6 +506,10 @@ void dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t dheader[], uint8_t
 
     //store SAP value
     state->data_header_sap[slot] = sap;
+
+    //web activity log: keeps the header fields it needs for the packet that follows
+    if (opts->web_enable == 1)
+      web_dmr_dheader (opts, state, dheader);
 
   } //End Irrecoverable Errors
 
@@ -998,6 +983,10 @@ void dmr_block_assembler (dsd_opts * opts, dsd_state * state, uint8_t block_byte
       else if (state->data_header_format[slot] == 0xF && state->data_header_sap[slot] == 1)
         CRCCorrect = 1;
 
+      //web activity log: the packet as received, before anything below deciphers it in place
+      if (opts->web_enable == 1)
+        web_dmr_pdu_raw (opts, state, CRCComputed == CRCExtracted);
+
       //check for encryption on PDU
       uint8_t enc_check = 0;
       uint8_t decrypted_pdu = 1;
@@ -1286,6 +1275,10 @@ void dmr_block_assembler (dsd_opts * opts, dsd_state * state, uint8_t block_byte
       } //end enc check
       #endif
       //End DMR Data PDU Decryption
+
+      //web activity log: decodes the completed packet on its own copy
+      if (opts->web_enable == 1)
+        web_dmr_pdu (opts, state, enc_check == 1 && decrypted_pdu == 0);
 
       //decode PDU
       if (enc_check == 1 && decrypted_pdu == 0) //check for encryption and if it was decrypted first or not

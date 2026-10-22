@@ -138,6 +138,7 @@ static struct
   int ak_cand;          //key the last silence match pointed at
   int ak_hits;          //silence frames that pointed at it
   unsigned long ak_checked; //ciphered BP voice frames examined
+  int ak_pdu;           //the key came from a packet data header (web_offer_bp_key)
 
   char bind[128];
   int port;
@@ -519,6 +520,7 @@ static void retune (dsd_opts * opts, dsd_state * state, long freq)
 {
   do_tune (opts, state, freq);
   noCarrier (opts, state);
+  web_act_retuned ();
   if (W.auto_decode) ad_restart (opts, state, 1);
   web_log ("Tuned to %.6f MHz", freq / 1e6);
 }
@@ -1391,6 +1393,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (jv_bool (cmd, "fft", 0)) s |= WEB_SUB_FFT;
     if (jv_bool (cmd, "audio", 0)) s |= WEB_SUB_AUDIO;
     if (jv_bool (cmd, "console", 0)) s |= WEB_SUB_CONSOLE;
+    if (jv_bool (cmd, "events", 0)) s |= WEB_SUB_EVENTS;
     web_set_subs (client, s);
   }
   else if (!strcmp (c, "tune") || !strcmp (c, "snap"))
@@ -1572,6 +1575,14 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   {
     for (uint8_t i = 0; i < 2; i++) init_event_history (&state->event_history_s[i], 0, 255);
   }
+  else if (!strcmp (c, "activity"))
+  {
+    web_act_send (client);
+  }
+  else if (!strcmp (c, "activity_clear"))
+  {
+    web_act_clear ();
+  }
   else if (!strcmp (c, "return_cc"))
   {
     if (opts->p25_trunk && state->p25_cc_freq) { return_to_cc (opts, state); web_log ("Return to control channel."); }
@@ -1696,12 +1707,12 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   else if (!strcmp (c, "auto_key"))
   {
     W.auto_key = jv_bool (cmd, "enable", 0);
-    W.ak_locked = 0; W.ak_found = 0; W.ak_cand = 0; W.ak_hits = 0; W.ak_checked = 0;
+    W.ak_locked = 0; W.ak_found = 0; W.ak_cand = 0; W.ak_hits = 0; W.ak_checked = 0; W.ak_pdu = 0;
     if (W.auto_key)
     {
       state->keyloader = 0; //don't let the CSV keyloader overwrite our candidate
       opts->dmr_mute_encL = 1; opts->dmr_mute_encR = 1; //stay muted until we lock a key
-      web_log ("Auto-key: hunting the DMR Basic Privacy key (it shows in the pauses of encrypted voice)...");
+      web_log ("Auto-key: hunting the DMR Basic Privacy key (it shows in the pauses of encrypted voice and in Motorola data packet headers)...");
     }
     else web_log ("Auto-key disabled.");
   }
@@ -1797,6 +1808,17 @@ void web_key_capture (dsd_opts * opts, dsd_state * state, int slot, char * ambe_
   }
 }
 
+//a key the activity log worked out from an encrypted Motorola packet header (only one key fits)
+int web_offer_bp_key (int key)
+{
+  if (!W.inited || !W.auto_key || key < 1 || key > 255) return 0;
+  if (W.ak_locked) return W.state && W.state->K == (unsigned long long)key;
+  if (!no_key_applied (W.state)) return 0;
+  W.ak_found = key;
+  W.ak_pdu = 1;
+  return 1;
+}
+
 static void run_key_hunt (dsd_opts * opts, dsd_state * state)
 {
   if (!W.ak_found || W.ak_locked) return;
@@ -1804,8 +1826,11 @@ static void run_key_hunt (dsd_opts * opts, dsd_state * state)
   opts->dmr_mute_encL = 0;
   opts->dmr_mute_encR = 0;
   W.ak_locked = 1;
-  web_log ("Auto-key: found DMR Basic Privacy key %d (%d ciphered silence frames matched, %lu frames checked).",
-           W.ak_found, W.ak_hits, W.ak_checked);
+  if (W.ak_pdu)
+    web_log ("Auto-key: found DMR Basic Privacy key %d (from the header of an encrypted data packet).", W.ak_found);
+  else
+    web_log ("Auto-key: found DMR Basic Privacy key %d (%d ciphered silence frames matched, %lu frames checked).",
+             W.ak_found, W.ak_hits, W.ak_checked);
 }
 
 //----------------------------------------------------------------------------
@@ -1929,83 +1954,10 @@ static const char * burst_label (unsigned int b)
   return "";
 }
 
-//DMR / P25 algorithm ids by name (DMR vendors reuse the low range, P25 sits at 0x80+)
-static const char * alg_name (int alg)
-{
-  switch (alg)
-  {
-    case 0x01: case 0x21: case 0xAA: return "RC4";
-    case 0x02: return "Hytera Enhanced";
-    case 0x05: case 0x25: case 0x84: return "AES-256";
-    case 0x22: case 0x81: return "DES";
-    case 0x24: case 0x85: case 0x89: return "AES-128";
-    case 0x26: return "Caltta BP";
-    case 0x82: return "2-key 3DES";
-    case 0x83: return "3DES";
-    case 0x88: return "AES-CBC";
-    case 0x9F: return "DES-XL";
-    case 0xA0: return "DVI-XL";
-    case 0xA1: return "DVP-XL";
-  }
-  if (alg >= 0x31 && alg <= 0x3A) return "Kirisun";
-  return NULL;
-}
-
-//encryption on a slot's call, by name: the ALG id where the protocol sends one, otherwise
-//what its privacy flags imply (DMR Basic Privacy carries no ALG, only the service options bit).
-//Empty when the call is clear or nothing is decoding.
-static void enc_name (dsd_state * state, int slot, char * out, size_t n)
-{
-  int st = state->lastsynctype;
-  out[0] = 0;
-  if (!state->carrier) return;
-  if ((st >= 10 && st <= 13) || (st >= 32 && st <= 34))
-  {
-    int alg = slot ? state->payload_algidR : state->payload_algid;
-    int so = slot ? state->dmr_soR : state->dmr_so;
-    int fid = slot ? state->dmr_fidR : state->dmr_fid;
-    int burst = slot ? state->dmrburstR : state->dmrburstL;
-    if (so == 0x100 || !(so & 0x40) || !(burst == 16 || burst == 0 || burst == 1)) return; //data, clear, or no call
-    const char * name = alg_name (alg);
-    if (alg == 0 && fid == 0x68) snprintf (out, n, "Hytera Basic Privacy");
-    else if (alg == 0 && fid == 0x10) snprintf (out, n, "Basic Privacy");
-    else if (alg == 0) snprintf (out, n, "Privacy (FID %02X)", fid);
-    else if (name) snprintf (out, n, "%s", name);
-    else snprintf (out, n, "ALG %02X", alg);
-  }
-  else if (st == 0 || st == 1 || st == 35 || st == 36)
-  {
-    if (slot && st < 35) return; //P25p1 has one voice channel, slot 2 would repeat slot 1
-    int p2r = slot && st >= 35;
-    int alg = p2r ? state->payload_algidR : state->payload_algid;
-    int burst = p2r ? state->dmrburstR : state->dmrburstL;
-    if (!(burst == 20 || burst == 21 || (burst >= 25 && burst <= 27))) return; //the ALG outlives the call
-    if (alg == 0 || alg == 0x80) return;
-    const char * name = alg_name (alg);
-    if (name) snprintf (out, n, "%s", name);
-    else snprintf (out, n, "ALG %02X", alg);
-  }
-  else if (st == 28 || st == 29)
-  {
-    static const char * t[] = { "", "Scrambler", "DES", "AES-256" };
-    unsigned c = state->nxdn_cipher_type;
-    if (slot || c == 0) return;
-    if (c < 4) snprintf (out, n, "%s", t[c]);
-    else snprintf (out, n, "Cipher %u", c);
-  }
-  else if (st == 8 || st == 9 || st == 16 || st == 17 || st == 86 || st == 87 || st == 98 || st == 99)
-  {
-    if (slot || state->m17_enc == 0) return;
-    if (state->m17_enc == 1) snprintf (out, n, "Scrambler %d-bit", (state->m17_enc_st + 1) * 8);
-    else if (state->m17_enc == 2) snprintf (out, n, "AES-%d", 128 + 64 * state->m17_enc_st);
-    else snprintf (out, n, "Encrypted (type %d)", state->m17_enc_st);
-  }
-}
-
 static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int on)
 {
-  char enc[32];
-  enc_name (state, slot, enc, sizeof(enc));
+  char enc[64];
+  web_enc_name (state, slot, enc, sizeof(enc));
   jb_obj (b, key);
   jb_str (b, "enc", enc);
   if (slot == 0)
@@ -2016,7 +1968,8 @@ static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int
     jb_int (b, "alg", state->payload_algid);
     jb_hex (b, "key", (unsigned long long)state->payload_keyid, 4);
     jb_str (b, "call", state->call_string[0]);
-    jb_str (b, "gps", state->dmr_lrrp_gps[0][0] ? state->dmr_lrrp_gps[0] : state->dmr_embedded_gps[0]);
+    jb_str (b, "gps", web_call_gps (0));
+    jb_str (b, "data", state->dmr_lrrp_gps[0]);
     jb_str (b, "alias", state->generic_talker_alias[0]);
     jb_int (b, "gi", state->gi[0]);
     jb_int (b, "err", state->errs & 0xF);
@@ -2031,7 +1984,8 @@ static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int
     jb_int (b, "alg", state->payload_algidR);
     jb_hex (b, "key", (unsigned long long)state->payload_keyidR, 4);
     jb_str (b, "call", state->call_string[1]);
-    jb_str (b, "gps", state->dmr_lrrp_gps[1][0] ? state->dmr_lrrp_gps[1] : state->dmr_embedded_gps[1]);
+    jb_str (b, "gps", web_call_gps (1));
+    jb_str (b, "data", state->dmr_lrrp_gps[1]);
     jb_str (b, "alias", state->generic_talker_alias[1]);
     jb_int (b, "gi", state->gi[1]);
     jb_int (b, "err", state->errsR & 0xF);
@@ -2218,8 +2172,9 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_int (b, "nxdn_cipher", state->nxdn_cipher_type);
   jb_obj_end (b);
 
-  //recent events (most recent first) from both slots, merged by time
+  //the decoder's own event history (most recent first, both slots), only while a browser shows it
   jb_arr (b, "events");
+  if (web_server_subs () & WEB_SUB_EVENTS)
   {
     const char * empty = "BUMBLEBEETUNA";
     int emitted = 0;
@@ -2229,6 +2184,9 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
       {
         Event_History * e = &state->event_history_s[slot].Event_History_Items[i];
         if (strncmp (e->event_string, empty, 13) == 0) continue;
+        const char * es = e->event_string;
+        while (*es == ' ') es++;
+        if (!*es) continue; //the in-progress entry of an idle slot
         jb_obj (b, NULL);
         jb_int (b, "slot", slot + 1);
         jb_str (b, "text", e->event_string);
@@ -2276,6 +2234,7 @@ void web_init (dsd_opts * opts, dsd_state * state)
   opts->monitor_input_audio = analog_wanted (opts);
   bm_init (opts->web_bookmarks);
   fprintf (stderr, "Web bookmarks: %s\n", bm_path ());
+  web_act_init (opts, state);
   spectrum_start ();
   //expose the per-call WAV directory for browser download (and nothing else: the working
   //directory can be anyone's home, and without a password downloads need no token)
@@ -2307,6 +2266,7 @@ void web_poll (dsd_opts * opts, dsd_state * state)
   run_auto_decode (opts, state);
   run_band_scan (opts, state);
   run_key_hunt (opts, state);
+  web_act_poll (opts, state);
 
   //broadcast status at a steady rate when someone is connected
   double now = spectrum_now ();

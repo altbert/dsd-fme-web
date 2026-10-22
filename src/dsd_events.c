@@ -827,7 +827,6 @@ void watchdog_event_current (dsd_opts * opts, dsd_state * state, uint8_t slot)
 
 void watchdog_event_datacall (dsd_opts * opts, dsd_state * state, uint32_t src, uint32_t dst, char * data_string, uint8_t slot)
 {
-  UNUSED(opts);
   state->event_history_s[slot].Event_History_Items[0].write = 0;
   if (state->event_history_s[slot].Event_History_Items[0].color_pair == 4) //if not set previously by specific decoder //don't touch this one
     state->event_history_s[slot].Event_History_Items[0].color_pair = 4; //default data color //you can change this one
@@ -867,4 +866,8 @@ void watchdog_event_datacall (dsd_opts * opts, dsd_state * state, uint32_t src, 
   //call alert on data calls
   if (opts->call_alert)
     beeper (opts, state, slot, 80, 20, 3);
+
+  //web activity log
+  if (opts->web_enable == 1)
+    web_datacall (opts, state, slot, src, dst, data_string);
 }

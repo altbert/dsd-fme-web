@@ -27,6 +27,7 @@ extern "C" {
 #define WEB_SUB_FFT      0x01
 #define WEB_SUB_AUDIO    0x02
 #define WEB_SUB_CONSOLE  0x04
+#define WEB_SUB_EVENTS   0x08 //the decoder's own event history in the status snapshots
 
 //first byte of binary websocket frames
 #define WEB_BIN_FFT      0x01
@@ -171,6 +172,19 @@ int  bm_near (long long freq, long long tol); //id of the closest bookmark withi
 int  bm_add (const web_bookmark * bm);       //add (no duplicate per channel), returns the id
 void bm_send (int client); //client < 0 sends to everybody
 int  bm_command (int client, const char * cmd, jv * j); //returns 1 if cmd was a bookmark command
+
+//----------------------------------------------------------------------------
+// Activity log and system picture (dsd_web_data.c), decoder thread only
+//----------------------------------------------------------------------------
+
+void web_act_init (dsd_opts * opts, dsd_state * state);
+void web_act_poll (dsd_opts * opts, dsd_state * state); //track calls, broadcast new items
+void web_act_send (int client);                         //everything kept, for a browser that just connected
+void web_act_clear (void);
+void web_act_retuned (void);                            //new frequency: forget the P25 site picture
+void web_enc_name (dsd_state * state, int slot, char * out, size_t n); //encryption on a slot's call, "" if clear
+const char * web_call_gps (int slot); //GPS sent during the slot's current call, "" if none
+int  web_offer_bp_key (int key); //a Basic Privacy key found in packet data; 1 if Auto-find took it (dsd_web.c)
 
 //----------------------------------------------------------------------------
 // Main thread interface (dsd_web.c)
