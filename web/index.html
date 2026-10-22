@@ -2,354 +2,585 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#1b1d20">
 <title>DSD-FME Web</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231b1d20'/%3E%3Cpath d='M4 22h5l3-12 4 16 3-9 2 5h7' fill='none' stroke='%23ffb02e' stroke-width='2.6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preload" href="/fonts/barlow-semi-condensed-regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/dsd-segments.woff2" as="font" type="font/woff2" crossorigin>
 <style>
+/* Barlow Semi Condensed (SIL OFL 1.1, fonts/OFL.txt), Latin subset; DSD Segments is tools/gen_segment_font.py */
+@font-face{font-family:'Barlow Semi Condensed';font-weight:400;font-display:swap;src:url(/fonts/barlow-semi-condensed-regular.woff2) format('woff2')}
+@font-face{font-family:'Barlow Semi Condensed';font-weight:500;font-display:swap;src:url(/fonts/barlow-semi-condensed-medium.woff2) format('woff2')}
+@font-face{font-family:'Barlow Semi Condensed';font-weight:600;font-display:swap;src:url(/fonts/barlow-semi-condensed-semibold.woff2) format('woff2')}
+@font-face{font-family:'DSD Segments';font-display:block;src:url(/fonts/dsd-segments.woff2) format('woff2')}
+
+/* A receiver front panel: graphite plates you operate, dark glass the radio reports on.
+   Amber is only for readouts, green for live / on air / enabled, red for failures,
+   violet for encryption, blue for links, bookmarks and selection. */
 :root{
-  --bg:#0b0f14; --panel:#131a22; --panel2:#0f141b; --line:#243240; --ink:#d7e3ee;
-  --dim:#8aa0b4; --accent:#35d0a5; --accent2:#5aa9ff; --warn:#ffcf5a; --bad:#ff6b6b;
-  --good:#45e07a; --chip:#1c2735;
+  color-scheme:dark;
+  --chassis:#1b1d20; --plate:#23262a; --plate-edge:#33373c;
+  --key:#2e3237; --key-hi:#383d43; --key-edge:#43494f;
+  --well:#141517; --glass:#0f100f; --glass-edge:#2b2d2a; --rule:#1f211f;
+  --silk:#dfe2dc; --silk-2:#aab0a7; --silk-3:#8b918a;
+  --amber:#ffb02e; --live:#4fe08d; --fail:#ff5f57; --cipher:#b99cff; --link:#6cb8ff;
+  --sans:'Barlow Semi Condensed','Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --mono:ui-monospace,'DejaVu Sans Mono',Menlo,Consolas,monospace;
+  --seg:'DSD Segments',var(--mono);
 }
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
-  font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-a{color:var(--accent2)}
-header{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 12px;background:linear-gradient(#141c25,#0e141b);
-  border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header h1{font-size:15px;margin:0;letter-spacing:.5px;color:#fff;font-weight:700}
-header h1 b{color:var(--accent)}
-.badge{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--chip);color:var(--dim);border:1px solid var(--line)}
-.badge.on{color:#06281f;background:var(--accent);border-color:var(--accent)}
-.badge.live{color:#06281f;background:var(--good);border-color:var(--good)}
-.badge.off{color:#fff;background:#3a2330;border-color:#5a2a3a}
-.badge.warn{color:#2a1d00;background:var(--warn);border-color:var(--warn)}
-#st-conn{min-width:86px;text-align:center} #st-carrier{min-width:64px;text-align:center}
-#st-mode{min-width:60px;max-width:240px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+html{background:var(--chassis);scroll-padding-top:72px}
+body{margin:0;min-height:100vh;background:var(--chassis);color:var(--silk);font:400 14px/1.4 var(--sans);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%}
+a{color:var(--link)}
+code{font:12.5px var(--mono);color:var(--silk-2);white-space:nowrap}
+.hidden{display:none !important}
 .vh{visibility:hidden}
 .ell{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.wrap{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;padding:12px;max-width:1500px;margin:0 auto}
-@media(max-width:980px){.wrap{grid-template-columns:minmax(0,1fr)}}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-.card h2{margin:0;padding:8px 12px;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);
-  background:var(--panel2);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
-.card .body{padding:12px}
-.spec-wrap{position:relative;background:#05080c}
-canvas{display:block;width:100%}
-#spec{height:150px}
-#wf{height:230px}
-.specinfo{position:absolute;top:6px;left:10px;font-size:11px;color:var(--dim);text-shadow:0 1px 2px #000;pointer-events:none}
-#cursor{position:absolute;top:0;bottom:0;width:1px;background:rgba(90,169,255,.5);pointer-events:none;display:none}
-.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
-.row>label{color:var(--dim);min-width:84px}
-input,select,button,textarea{font:inherit;color:var(--ink);background:var(--panel2);border:1px solid var(--line);
-  border-radius:7px;padding:6px 8px}
-input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent2)}
-input[type=range]{padding:0;background:none;border:none}
-button{cursor:pointer;background:#1a2634;border-color:#2a3a4c}
-button:hover{border-color:var(--accent2)}
-button.p{background:var(--accent);color:#06281f;border-color:var(--accent);font-weight:700}
-button.bad{background:var(--bad);color:#2b0606;border-color:var(--bad);font-weight:700}
-button.sm{padding:3px 8px;font-size:12px}
-button.tgl{min-width:52px}
-button.tgl.on{background:var(--accent);color:#06281f;border-color:var(--accent)}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12px}
-.kv .k{color:var(--dim)}
-.kv .v{color:var(--ink);word-break:break-word}
-.freq{font-size:30px;font-weight:700;letter-spacing:1px;color:#fff}
-.freq .u{font-size:14px;color:var(--dim);font-weight:400}
-.meter{height:8px;border-radius:5px;background:#0a1017;overflow:hidden;border:1px solid var(--line)}
-.meter>i{display:block;height:100%;background:linear-gradient(90deg,var(--good),var(--warn),var(--bad));width:0}
-.meter>i.prog{background:var(--accent2);transition:width .3s}
-button:disabled,input:disabled{opacity:.45;cursor:default}
-button:disabled:hover{border-color:#2a3a4c}
-.slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}
-@media(max-width:640px){.slots{grid-template-columns:minmax(0,1fr)}}
-.slot{border:1px solid var(--line);border-radius:8px;padding:6px 8px;background:var(--panel2);height:132px;overflow:hidden;min-width:0}
-.slot.active{border-color:var(--good);box-shadow:0 0 0 1px var(--good) inset}
-.slot.off{opacity:.45}
-.slot .hd{display:flex;gap:8px;color:var(--dim);font-size:11px;height:16px;line-height:16px}
-.slot .hd .tm{color:var(--good);min-width:5ch}
-.slot .hd .bu{margin-left:auto;white-space:nowrap}
-.slot .big{font-size:16px;color:#fff;height:24px;line-height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.slot .big .lb{font-size:11px;color:var(--dim)}
-.slot .ln{height:18px;line-height:18px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.slot .ln.l3{color:var(--dim);font-size:11px}
-.slot .ln a{cursor:pointer}
-.sysbox{height:156px;overflow:auto;margin-top:8px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
-.sysbox .sysg{margin-top:0}
-.dtop{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end}
-#d-info{width:290px;max-width:100%}
-#d-info .kv{grid-template-columns:70px minmax(0,1fr)}
-#d-info .kv .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#d-rmsv{display:inline-block;width:10ch;text-align:right}
-#ad-stat{flex:1 1 180px;min-height:1.45em;margin:0}
-.tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:5px;background:var(--chip);border:1px solid var(--line);color:var(--dim)}
-.tag.enc{background:#3a2330;border-color:#5a2a3a;color:var(--warn)}
-.tag.grp{color:var(--accent2)} .tag.prv{color:var(--warn)}
-.log{height:220px;overflow:auto;font-size:11.5px;background:#05080c;border-radius:7px;padding:6px;white-space:pre-wrap;word-break:break-word}
-.log .e{padding:2px 4px;border-bottom:1px solid #121a22}
-.c1{color:var(--warn)} .c2{color:var(--bad)} .c3{color:var(--good)} .c4{color:var(--accent2)} .c5{color:#c58bff}
-.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:8px 8px 0}
-.tabs button{border-radius:7px 7px 0 0;border-bottom:none;color:var(--dim)}
-.tabs button.on{color:#fff;background:var(--panel);border-color:var(--line)}
-.tabpane{display:none;padding:12px;border-top:1px solid var(--line)}
-.tabpane.on{display:block}
-.hint{color:var(--dim);font-size:11px;margin:4px 0}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{font-size:11px;padding:3px 8px;border-radius:999px;background:var(--chip);border:1px solid var(--line);cursor:pointer}
-.chip.on{background:var(--accent2);color:#04121f;border-color:var(--accent2)}
-textarea{width:100%;min-height:90px;resize:vertical}
-.flist{max-height:180px;overflow:auto;font-size:12px}
-.flist a{display:block;padding:3px 0;border-bottom:1px solid #121a22}
-.overlay{position:fixed;inset:0;background:rgba(5,8,12,.85);display:flex;align-items:center;justify-content:center;z-index:50}
-.overlay .box{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;width:320px;text-align:center}
-.hidden{display:none !important}
-small.mono{color:var(--dim)}
-.bmlist{max-height:260px;overflow:auto;margin:6px 0;border:1px solid var(--line);border-radius:7px;background:var(--panel2)}
-.bmlist .hint{padding:8px}
-.bm{display:flex;gap:6px;align-items:center;padding:4px 6px;border-bottom:1px solid #121a22;cursor:pointer}
-.bm:last-child{border-bottom:none}
-.bm:hover{background:#17212c}
-.bm.on{box-shadow:inset 3px 0 0 var(--warn);background:#1b1f17}
-.bm .bm-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff}
-.bm .bm-f{color:var(--accent);font-size:12px}
-.bm-g{padding:4px 6px 2px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);background:#0b1016;border-bottom:1px solid #121a22}
-.bm button{padding:1px 6px;font-size:12px}
-.bmname{color:var(--warn);min-height:1.45em}
-details summary{cursor:pointer;color:var(--dim);font-size:12px;margin-top:6px}
-.acts,#events{height:460px;overflow:auto;background:#05080c;border-radius:7px;font-size:12px}
-.act{padding:5px 8px;border-bottom:1px solid #121a22;cursor:pointer}
-.act:hover{background:#0b121a}
-.act .l1{display:flex;align-items:center;gap:8px;height:18px;min-width:0}
-.act .t{color:var(--dim);font-size:11px}
-.act .ty{font-size:11px;padding:0 6px;border-radius:5px;border:1px solid var(--line);background:var(--chip);color:var(--accent2)}
-.act.k-call .ty{color:var(--good)} .act.k-sig .ty{color:#c58bff} .act.k-sys .ty{color:var(--dim)}
-.act.err .ty{color:var(--bad)} .act.err .sum{color:var(--dim)}
-.act .sl{font-size:10px;color:var(--dim);border:1px solid var(--line);border-radius:4px;padding:0 4px}
-.act .who{color:#fff;flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.act .t,.act .ty,.act .sl{flex:0 0 auto;white-space:nowrap}
-.act .who i,.rtab i{color:var(--dim);font-style:normal}
-.act .meta{margin-left:auto;display:flex;gap:4px;align-items:center;flex:0 0 auto;white-space:nowrap}
-.act .meta a,.act .meta .lnk{text-decoration:none;cursor:pointer}
-.act .meta .enc{max-width:16ch;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
-.act .sum{margin-top:1px;height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.act.open .sum{height:auto;white-space:normal;word-break:break-word}
-.act .dur{color:var(--dim);font-size:11px;display:inline-block;min-width:6ch;text-align:right}
-.act.live .dur{color:var(--good)}
-.act.live .dur::before{content:'\25CF ';animation:blink 1s infinite}
-@keyframes blink{50%{opacity:.2}}
-.tag.ok{color:var(--good)}
-.det{margin-top:6px;padding:6px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;cursor:auto}
-.det .kv{font-size:11.5px}
-.hexd{margin:6px 0 0;font-size:11px;line-height:1.35;white-space:pre;overflow:auto;color:var(--dim)}
-.acthint{padding:10px;color:var(--dim)}
-.rwrap{height:320px;overflow-x:hidden;overflow-y:auto}
-.rtab .pin{display:none}
-.rtab{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed}
-.rtab th{text-align:left;color:var(--dim);font-weight:400;padding:3px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
-.rtab td{padding:3px 6px;border-bottom:1px solid #121a22;height:24px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rtab tr.talk td:first-child{box-shadow:inset 3px 0 0 var(--good)}
-.rtab tr.tx td:first-child{box-shadow:inset 3px 0 0 var(--accent2)}
-.rtab td.empty{color:var(--dim);white-space:normal;height:auto;padding:10px 6px;border-bottom:none}
-.rtab a{cursor:pointer}
-.sysg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 16px;margin-top:10px}
-.sysg h4{margin:0 0 3px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);font-weight:400}
-.rtab th.c-id{width:22%} .rtab th.c-heard{width:12%} .rtab th.c-tg{width:17%} .rtab th.c-pos{width:22%}
-@media(max-width:600px){.rtab .opt,.rtab .coords{display:none} .rtab .pin{display:inline} .rtab th.c-id{width:26%} .rtab th.c-heard{width:21%} .rtab th.c-pos{width:12%}}
-.bmlist{height:260px}
-#bm-msg{min-height:1.45em}
-#bs-stat{height:5.8em;overflow:hidden}
-.card h2 .hr{display:flex;gap:6px;align-items:center}
-button.fold{padding:0 6px;font-size:12px;line-height:18px;min-width:24px}
+.i{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+
+/* ---------- controls: keys, toggles with an indicator LED, recessed fields ---------- */
+button,a.btn{font:500 13.5px/1.2 var(--sans);color:var(--silk);background:var(--key);border:1px solid var(--key-edge);border-radius:5px;
+  padding:5px 12px;min-height:32px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  white-space:nowrap;text-decoration:none;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 1px 0 rgba(0,0,0,.45)}
+button:hover,a.btn:hover{background:var(--key-hi)}
+button:active,a.btn:active{transform:translateY(1px);box-shadow:inset 0 1px 2px rgba(0,0,0,.55)}
+button.sm,a.btn{min-height:28px;padding:3px 9px;font-size:13px}
+button.p{background:var(--silk);color:#16181b;border-color:#f3f5ef;font-weight:600}
+button.p:hover{background:#fff}
+button.bad{color:#ff8a83}
+button:disabled{opacity:.4;cursor:default;transform:none}
+button:disabled:hover{background:var(--key)}
+button.p:disabled:hover{background:var(--silk)}
+button.tgl{justify-content:flex-start}
+button.tgl::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:#45493f;box-shadow:inset 0 1px 1px rgba(0,0,0,.75)}
+button.tgl.on::before{background:var(--live);box-shadow:0 0 0 1px rgba(79,224,141,.3),0 0 8px rgba(79,224,141,.8)}
+button.icon{padding:0;width:28px;min-width:28px}
+input,select,textarea{font:400 14px/1.3 var(--sans);color:var(--silk);background:var(--well);border:1px solid var(--plate-edge);
+  border-radius:5px;padding:5px 8px;min-height:32px;min-width:0;box-shadow:inset 0 1px 2px rgba(0,0,0,.5)}
+input::placeholder,textarea::placeholder{color:#6f756e}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--link);box-shadow:0 0 0 2px rgba(108,184,255,.22)}
+input:disabled{opacity:.45}
+select{appearance:none;-webkit-appearance:none;padding-right:28px;cursor:pointer;background:var(--well) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m6 9 6 6 6-6' fill='none' stroke='%23aab0a7' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 8px center/14px}
+optgroup,option{background:#202326;color:var(--silk)}
+textarea{width:100%;min-height:92px;resize:vertical;font:12.5px/1.45 var(--mono)}
+input[type=number]{width:72px}
+input[type=range]{-webkit-appearance:none;appearance:none;background:none;border:none;box-shadow:none;padding:0;min-height:26px;height:26px;cursor:pointer}
+input[type=range]:focus{box-shadow:none}
+input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:#0b0c0b;box-shadow:0 0 0 1px var(--plate-edge)}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:#0b0c0b;box-shadow:0 0 0 1px var(--plate-edge)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:20px;margin-top:-8px;border-radius:3px;border:1px solid #f6f7f3;
+  background:linear-gradient(var(--silk) 0 44%,#5d625b 44% 56%,var(--silk) 56%);box-shadow:0 1px 3px rgba(0,0,0,.7)}
+input[type=range]::-moz-range-thumb{width:10px;height:18px;border-radius:3px;border:1px solid #f6f7f3;
+  background:linear-gradient(var(--silk) 0 44%,#5d625b 44% 56%,var(--silk) 56%);box-shadow:0 1px 3px rgba(0,0,0,.7)}
+input[type=range]:disabled{opacity:.4;cursor:default}
+
+/* ---------- status lamps ---------- */
+.badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px 0 8px;border-radius:12px;background:var(--well);
+  border:1px solid var(--plate-edge);color:var(--silk-2);font-size:13px;font-weight:500;white-space:nowrap}
+.badge::before{content:'';flex:none;width:7px;height:7px;border-radius:50%;background:#45493f;box-shadow:inset 0 1px 1px rgba(0,0,0,.75)}
+.badge.live{color:var(--silk)} .badge.live::before{background:var(--live);box-shadow:0 0 7px rgba(79,224,141,.85)}
+.badge.warn{color:var(--silk)} .badge.warn::before{background:var(--amber);box-shadow:0 0 7px rgba(255,176,46,.8)}
+.badge.off{color:var(--silk)} .badge.off::before{background:var(--fail);box-shadow:0 0 7px rgba(255,95,87,.8)}
+.count{font-size:13px;font-weight:500;color:var(--silk-3);min-width:3ch;text-align:right}
+.mode{font-size:13px;font-weight:600;color:var(--silk);letter-spacing:.02em;max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- header ---------- */
+.bar{position:sticky;top:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding:8px 16px;
+  background:rgba(27,29,32,.95);border-bottom:1px solid var(--plate-edge);backdrop-filter:blur(6px)}
+.brand{font-size:17px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.brand span{color:var(--silk-3);font-weight:400;margin-left:5px}
+.lamps{display:flex;align-items:center;gap:6px;min-width:0}
+#st-conn{min-width:112px} #st-carrier{min-width:86px}
+.bar-ctl{display:flex;align-items:center;gap:8px;margin-left:auto}
+#btn-audio{min-width:112px}
+#vol{width:96px}
+
+/* ---------- layout: plates ---------- */
+.wrap{display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:14px;padding:14px 16px 28px;max-width:1600px;margin:0 auto}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035);min-width:0}
+.card>h2{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0;padding:10px 14px 0;min-height:44px;
+  font-size:16px;font-weight:600;color:var(--silk);letter-spacing:.01em}
+.card>.body{padding:10px 14px 14px}
+.hr{display:flex;align-items:center;gap:8px}
+.glass{background:var(--glass);border:1px solid var(--glass-edge);border-radius:5px;box-shadow:inset 0 1px 3px rgba(0,0,0,.65)}
+button.fold{padding:0;width:28px;min-width:28px;color:var(--silk-2)}
+button.fold .i{transition:transform .15s}
 .card.folded>.body{display:none}
-.card.folded>h2{border-bottom:none}
-/* map modal */
-.mapbox{width:min(1200px,96vw);height:min(820px,92vh);background:var(--panel);border:1px solid var(--line);border-radius:12px;
-  display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:minmax(0,1fr) 270px;overflow:hidden}
-.maphd{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel2)}
-.maphd b{color:#fff;font-size:13px}
-a.btn{display:inline-block;text-decoration:none;color:var(--ink);background:#1a2634;border:1px solid #2a3a4c;border-radius:7px;padding:3px 8px;font-size:12px}
-a.btn:hover{border-color:var(--accent2)}
-.mapview{position:relative;overflow:hidden;background:#0a1118;cursor:grab;touch-action:none;user-select:none}
+.card.folded button.fold .i{transform:rotate(-90deg)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.row:first-child{margin-top:0}
+.row>label,.lbl{color:var(--silk-3);min-width:88px;font-size:13.5px}
+.ctl{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1;min-width:0}
+.row:has(>.ctl){align-items:flex-start}
+.row:has(>.ctl)>.lbl{line-height:28px}
+.pair{display:inline-flex;align-items:center;gap:6px;color:var(--silk-3);font-size:13.5px}
+.unit{color:var(--silk-3);font-size:13.5px}
+.hint{color:var(--silk-3);font-size:13px;margin:6px 0;line-height:1.4}
+.err-text{color:var(--fail)}
+h3.sub{margin:16px 0 6px;font-size:14px;font-weight:600;color:var(--silk-2)}
+details summary{cursor:pointer;color:var(--silk-2);font-size:13.5px;margin-top:8px;width:max-content}
+.tag{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:500;line-height:16px;padding:0 5px;border-radius:3px;
+  border:1px solid #3b3f3a;color:var(--silk-2);white-space:nowrap}
+.tag.enc{color:var(--cipher);border-color:rgba(185,156,255,.45)}
+.tag.grp,.tag.prv{color:var(--silk);border-color:#555a52}
+.tag.ok{color:var(--live);border-color:rgba(79,224,141,.4)}
+.tag .i{width:12px;height:12px;vertical-align:-2px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:1px 8px;border-radius:3px;background:#191b19;border:1px solid #333632;color:var(--silk-2)}
+
+/* ---------- spectrum ---------- */
+.card>h2 .meta{display:flex;gap:12px;font-size:13px;font-weight:500;color:var(--silk-3);white-space:nowrap;overflow:hidden;min-width:0}
+.card>h2 .meta b{color:var(--silk-2);font-weight:500}
+.spec-wrap{position:relative;margin:10px 14px 0;overflow:hidden;cursor:crosshair}
+canvas{display:block;width:100%}
+#spec{height:150px;border-bottom:1px solid #222420}
+#wf{height:230px}
+.specinfo{position:absolute;top:6px;left:8px;font-size:12.5px;font-weight:500;color:var(--silk);pointer-events:none;
+  background:rgba(15,16,15,.82);padding:0 6px;border-radius:3px}
+.specinfo:empty{display:none}
+#cursor{position:absolute;top:0;bottom:0;width:1px;background:rgba(108,184,255,.65);pointer-events:none;display:none}
+.tune{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.tune-in,.tune-auto{display:flex;align-items:center;gap:6px}
+#tunefreq{width:210px}
+#ad-stat{flex:1 1 200px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1.4em}
+.fftrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-top:10px}
+.fftrow input[type=number]{width:60px}
+#dbrange{width:120px}
+
+/* ---------- decode: readout and slot displays ---------- */
+.card-dec>.body{container-type:inline-size}
+.dec{display:grid;gap:10px;grid-template-columns:minmax(0,1fr)}
+.seg{font-family:var(--seg);font-weight:400;font-variant-numeric:normal;color:var(--amber);position:relative;display:inline-block;
+  line-height:1;text-align:right;white-space:pre;text-shadow:0 0 12px rgba(255,176,46,.28)}
+.seg::before{content:attr(data-ghost);position:absolute;right:0;top:0;color:var(--amber);opacity:.085;text-shadow:none}
+.slot .seg::before{opacity:.06}
+#d-info{padding:12px 14px;overflow:hidden;min-width:0}
+.freq{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+#d-freq{font-size:42px;width:6.4em}
+.freq .u{font-size:14px;color:var(--silk-3);font-weight:500}
+.bmname{color:var(--link);font-weight:500;height:20px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bmname .i{width:14px;height:14px;vertical-align:-2px}
+.kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:1px 12px;font-size:13px}
+.kv .k{color:var(--silk-3)}
+.kv .v{color:var(--silk);word-break:break-word}
+#d-info .kv{margin-top:6px;grid-template-columns:76px minmax(0,1fr)}
+#d-info .kv .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
+.slot{height:156px;padding:8px 12px;overflow:hidden;min-width:0;transition:border-color .2s,box-shadow .2s}
+.slot.active{border-color:rgba(79,224,141,.6);box-shadow:inset 0 0 0 1px rgba(79,224,141,.3),inset 0 1px 3px rgba(0,0,0,.65)}
+.slot.off{opacity:.55}
+.slot .hd{display:flex;align-items:center;gap:10px;height:18px;font-size:13px;color:var(--silk-3)}
+.slot .hd .nm{color:var(--silk-2);font-weight:600}
+.slot .hd .tm{color:var(--live);font-weight:600;min-width:4ch}
+.slot .hd .bu{margin-left:auto;white-space:nowrap}
+.slot .big{display:flex;gap:18px;height:42px;margin:6px 0 4px}
+.slot .fld{display:flex;flex-direction:column;gap:3px}
+.slot .fld .lb{font-size:11.5px;color:var(--silk-3);line-height:1}
+.slot .seg{font-size:21px;width:4.96em}
+.slot .ln{height:18px;line-height:18px;font-size:13px;color:var(--silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.slot .ln.tags{display:flex;gap:5px;align-items:center}
+.slot .ln.l3{color:var(--silk-3);font-size:12.5px}
+.slot .gps{all:unset;cursor:pointer;color:var(--link);display:inline-flex;align-items:center;gap:4px;max-width:100%}
+.slot .gps:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.meters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;margin-top:10px}
+.mrow{display:flex;align-items:center;gap:10px;min-width:0}
+.mrow .k{color:var(--silk-3);font-size:13px;width:66px;flex:none}
+.meter{position:relative;flex:1;height:10px;border-radius:2px;background:#0b0c0b;box-shadow:0 0 0 1px var(--plate-edge);overflow:hidden;container-type:inline-size}
+/* the scale spans the whole meter (100cqw), so a short bar is green, not a squeezed green-to-red */
+.meter>i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--live),var(--amber) 70%,var(--fail)) 0 0/100cqw 100% no-repeat}
+.meter.segd::after{content:'';position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 5px,#0b0c0b 5px 7px)}
+.meter.sq::before{content:'';position:absolute;left:50%;top:-2px;bottom:-2px;width:2px;background:var(--silk-2);z-index:1}
+.meter>i.prog{background:var(--link);transition:width .3s}
+#d-rmsv{flex:none;min-width:9ch;text-align:right;font-size:13px;color:var(--silk-2)}
+.sysbox{height:156px;overflow:auto;margin-top:10px;padding:8px 12px}
+.sysbox .kv:empty{display:none}
+#chanlist{margin-top:8px}
+#chanlist:empty{display:none}
+.sysg{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px 20px}
+.sysg h4,.mapside h4{margin:0 0 4px;font-size:13px;font-weight:600;color:var(--silk-2)}
+@container (min-width:520px){
+  #d-info{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:24px;align-content:start}
+  #d-info .freq,#d-info .bmname{grid-column:1}
+  #d-info .kv{grid-column:2;grid-row:1/3;margin-top:4px}
+}
+@container (min-width:880px){
+  .dec{grid-template-columns:316px minmax(0,1fr)}
+  #d-info{display:block;height:156px}
+  #d-info .kv{margin-top:6px}
+}
+@container (max-width:519px){
+  #slots{grid-template-columns:minmax(0,1fr)}
+  .meters{grid-template-columns:minmax(0,1fr)}
+}
+
+/* ---------- activity ---------- */
+.actbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+/* a segmented switch: the 1px gaps let the frame color through as separators */
+.segctl{display:inline-flex;flex-wrap:wrap;gap:1px;border:1px solid var(--key-edge);border-radius:5px;overflow:hidden;background:var(--key-edge)}
+.segctl .chip{border:none;border-radius:0;background:var(--key);box-shadow:none;min-height:28px;padding:3px 11px;font-size:13px;color:var(--silk-2)}
+.segctl .chip:hover{background:var(--key-hi)}
+.segctl .chip.on{background:var(--silk);color:#16181b;font-weight:600}
+#act-q{flex:1 1 180px}
+.acts,#events{height:460px;overflow:auto;font-size:13.5px}
+.act{padding:6px 10px;border-bottom:1px solid var(--rule);cursor:pointer}
+.act:hover{background:#151715}
+.act:focus-visible{outline-offset:-2px}
+.act .l1{display:flex;align-items:center;gap:8px;height:20px;min-width:0}
+.act .t{flex:none;width:56px;color:var(--silk-3);font-size:12.5px}
+.act .ty{flex:none;font-size:13px;font-weight:600;color:var(--link);white-space:nowrap}
+.act.k-call .ty{color:var(--live)} .act.k-sig .ty{color:var(--silk-2)} .act.k-sys .ty{color:var(--silk-3)}
+.act.err .ty{color:var(--fail)} .act.err .sum{color:var(--silk-3)}
+.act .sl{flex:none;font-size:11px;color:var(--silk-3);border:1px solid #393c38;border-radius:3px;padding:0 4px;line-height:15px}
+.act .who{flex:1 1 auto;min-width:0;color:var(--silk);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act .who i,.rtab i{color:var(--silk-3);font-style:normal;font-weight:400}
+.act .meta{margin-left:auto;display:flex;gap:4px;align-items:center;flex:none;white-space:nowrap}
+.act .meta .enc{max-width:18ch;overflow:hidden;text-overflow:ellipsis}
+.act .meta .lnk{cursor:pointer;color:var(--link);border-color:rgba(108,184,255,.4);background:none;min-height:0;box-shadow:none;padding:0 5px;font:500 11.5px/16px var(--sans)}
+.act .meta .lnk:hover{background:rgba(108,184,255,.12)}
+.act .sum{padding-left:64px;margin-top:1px;height:20px;line-height:20px;color:var(--silk-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.act.open .sum{height:auto;white-space:normal;word-break:break-word}
+.act .dur{color:var(--silk-3);font-size:12.5px;display:inline-block;min-width:6ch;text-align:right}
+.act.live .dur{color:var(--live);font-weight:600}
+.act.live .dur::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--live);margin-right:5px;vertical-align:1px;animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.15}}
+.det{margin:6px 0 2px 64px;padding:8px 10px;background:#161816;border:1px solid var(--glass-edge);border-radius:4px;cursor:auto}
+.det .kv{font-size:13px}
+.hexd{margin:8px 0 0;font:12px/1.4 var(--mono);white-space:pre;overflow:auto;color:var(--silk-3)}
+.acthint{padding:14px 12px;color:var(--silk-3)}
+.log{height:260px;overflow:auto;font:12.5px/1.45 var(--mono);padding:6px;white-space:pre-wrap;word-break:break-word}
+#events{font:12.5px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word}
+.log .e,#events .e{padding:2px 6px;border-bottom:1px solid var(--rule)}
+.c1{color:var(--amber)} .c2{color:var(--fail)} .c3{color:var(--live)} .c4{color:var(--link)} .c5{color:var(--cipher)}
+
+/* ---------- radios ---------- */
+.rwrap{height:320px;overflow-x:hidden;overflow-y:auto}
+.rtab{width:100%;border-collapse:collapse;font-size:13.5px;table-layout:fixed}
+.rtab th{text-align:left;color:var(--silk-3);font-weight:500;padding:6px 8px;border-bottom:1px solid #2c2f2b;position:sticky;top:0;background:var(--glass);z-index:1}
+.rtab td{padding:3px 8px;border-bottom:1px solid var(--rule);height:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rtab td b{font-weight:600}
+.rtab tr.talk td:first-child{box-shadow:inset 3px 0 0 var(--live)}
+.rtab tr.tx td:first-child{box-shadow:inset 3px 0 0 var(--link)}
+.rtab td.empty{color:var(--silk-3);white-space:normal;height:auto;padding:14px 8px;border-bottom:none}
+.rtab .air{color:var(--live);font-weight:600}
+.rtab .pos{all:unset;cursor:pointer;color:var(--link);display:inline-flex;align-items:center;gap:4px;max-width:100%}
+.rtab .pos:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.rtab .pin{display:none}
+.rtab th.c-id{width:19%} .rtab th.c-heard{width:11%} .rtab th.c-tg{width:16%} .rtab th.c-pos{width:24%}
+
+/* ---------- bookmarks ---------- */
+.bmlist{height:260px;overflow:auto;margin:8px 0 0}
+.bmlist .hint{padding:10px 12px;margin:0}
+.bm{display:flex;gap:6px;align-items:center;padding:3px 6px 3px 10px;border-bottom:1px solid var(--rule);cursor:pointer;min-height:36px}
+.bm:last-child{border-bottom:none}
+.bm:hover{background:#161816}
+.bm:focus-visible{outline-offset:-2px}
+.bm.on{box-shadow:inset 3px 0 0 var(--amber);background:#1a1912}
+.bm .bm-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silk)}
+.bm .bm-f{color:var(--silk-2);font-size:13.5px}
+.bm.on .bm-f{color:var(--amber)}
+.bm .tag{min-width:42px;justify-content:center}
+.bm button{width:28px;min-width:28px;min-height:28px;padding:0;color:var(--silk-2)}
+.bm-g{padding:8px 10px 3px;font-size:12.5px;font-weight:600;color:var(--silk-3);border-bottom:1px solid var(--rule);background:#121312;position:sticky;top:0}
+#bm-msg{min-height:1.4em}
+#bm-form{margin-top:8px;padding-top:4px;border-top:1px solid var(--plate-edge)}
+
+/* ---------- band scan ---------- */
+#bs-stat{height:5.6em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;margin-bottom:0}
+.btns{display:flex;flex-wrap:wrap;gap:6px}
+#bs-thr{width:64px}
+#bs-lo,#bs-hi{width:84px}
+#bs-excl{min-height:56px;flex:1;min-width:0;height:56px;font:14px/1.3 var(--sans)}
+
+/* ---------- settings tabs ---------- */
+.tabs{display:flex;gap:2px;padding:6px 10px 0;border-bottom:1px solid var(--plate-edge);overflow-x:auto;scrollbar-width:none}
+.tabs button{background:none;border:none;border-radius:0;box-shadow:none;color:var(--silk-3);min-height:40px;padding:6px 10px;position:relative;font-size:14px}
+.tabs button:hover{background:none;color:var(--silk)}
+.tabs button:active{transform:none}
+.tabs button.on{color:var(--silk);font-weight:600}
+.tabs button.on::after{content:'';position:absolute;left:8px;right:8px;bottom:-1px;height:2px;border-radius:2px;background:var(--silk)}
+.tabpane{display:none;padding:14px}
+.tabpane.on{display:block}
+.tabpane select{max-width:100%}
+.flist{max-height:220px;overflow:auto;font-size:13.5px}
+.flist a{display:block;padding:5px 2px;border-bottom:1px solid var(--rule);text-decoration:none;word-break:break-all}
+.flist a:hover{text-decoration:underline}
+#autokey-stat{color:var(--silk-2);font-size:13px}
+#autokey-stat .found{color:var(--live);font-weight:600}
+#rtlratev{margin:0}
+
+/* ---------- overlays: login, map ---------- */
+.overlay{position:fixed;inset:0;background:rgba(10,11,12,.82);display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
+.login{background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;padding:22px;width:min(340px,100%)}
+.login h3{margin:0 0 4px;font-size:18px;font-weight:600}
+.login input{width:100%;margin:12px 0 10px}
+.login button{width:100%}
+.mapbox{width:min(1200px,100%);height:min(820px,100%);background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;
+  display:grid;grid-template-rows:auto minmax(0,1fr);grid-template-columns:minmax(0,1fr) 280px;overflow:hidden}
+.maphd{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--plate-edge)}
+.maphd b{font-size:16px;font-weight:600;margin-right:6px}
+.maphd .sp{flex:1}
+.mapview{position:relative;overflow:hidden;background:#101211;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .mapview.drag{cursor:grabbing}
-.mapview .tile{position:absolute;left:0;top:0;width:256px;height:256px;filter:invert(.92) hue-rotate(180deg) saturate(.55) brightness(.95)}
+.mapview .tile{position:absolute;left:0;top:0;width:256px;height:256px;transform-origin:0 0;
+  filter:invert(1) hue-rotate(180deg) saturate(.3) brightness(.82) contrast(.95)}
 .mapview .tile.miss{visibility:hidden}
 .marks{position:absolute;inset:0;pointer-events:none}
 .mk{position:absolute;left:0;top:0;pointer-events:auto;cursor:pointer;white-space:nowrap}
-.mk i{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#5d6f80;border:1px solid #05080c}
-.mk.recent i{background:var(--warn)} .mk.fresh i{background:var(--good)}
-.mk span{position:absolute;left:8px;top:-9px;font-size:11px;color:#e8f0f7;text-shadow:0 0 3px #000,0 0 2px #000}
-.mk.air{z-index:2} .mk.air i{left:-7px;top:-7px;width:14px;height:14px;background:var(--bad);animation:pulse 1.2s infinite}
-.mk.air span{color:#fff;font-weight:700}
+.mk i{position:absolute;left:-5px;top:-5px;width:10px;height:10px;border-radius:50%;background:#6c726b;border:1px solid #0b0c0b}
+.mk.recent i{background:#a8762a} .mk.fresh i{background:var(--amber)}
+.mk span{position:absolute;left:8px;top:-9px;font-size:12px;font-weight:500;color:#eef0ea;text-shadow:0 0 3px #000,0 0 2px #000,0 0 1px #000}
+.mk.air{z-index:2} .mk.air i{left:-7px;top:-7px;width:14px;height:14px;background:var(--live);animation:pulse 1.2s infinite}
+.mk.air span{color:#fff;font-weight:600}
 .mk.tx i{animation:flash .5s 4}
-.mk.sel span{background:rgba(5,8,12,.85);border:1px solid var(--accent2);border-radius:4px;padding:0 4px}
+.mk.sel span{background:rgba(15,16,15,.88);border:1px solid var(--link);border-radius:3px;padding:0 4px}
 .mk.nl span{display:none} .mk.nl:hover span{display:inline;z-index:3}
-.mk.focus i{left:-9px;top:-9px;width:18px;height:18px;background:none;border:2px solid var(--accent2)}
-@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,107,107,.75)}100%{box-shadow:0 0 0 16px rgba(255,107,107,0)}}
-@keyframes flash{50%{box-shadow:0 0 0 6px rgba(90,169,255,.8)}}
-.mapattr{position:absolute;right:4px;bottom:2px;font-size:10px;color:#9fb0c0;background:rgba(5,8,12,.65);padding:0 4px;border-radius:3px}
-.mapattr a{color:#9fb0c0}
-.mapscale{position:absolute;left:8px;bottom:6px;font-size:10px;color:#cfd8e2;border:2px solid #cfd8e2;border-top:none;padding:0 3px;height:8px;line-height:0;text-shadow:0 0 2px #000}
-.mapempty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);pointer-events:none;text-align:center;padding:20px}
-.mapside{border-left:1px solid var(--line);overflow:auto;padding:8px 10px;font-size:12px}
-.mapside h4{margin:8px 0 4px;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:var(--dim);font-weight:400}
-.mapside .it{padding:3px 4px;border-bottom:1px solid #121a22;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mapside .it:hover{background:#0b121a}
-.mapside .it.air{color:var(--bad)}
-.mapside .it.sel{background:#0b121a;color:#fff}
-@media(max-width:760px){.mapbox{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 150px}.mapside{border-left:none;border-top:1px solid var(--line)}}
+.mk.focus i{left:-9px;top:-9px;width:18px;height:18px;background:none;border:2px solid var(--link)}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(79,224,141,.8)}100%{box-shadow:0 0 0 16px rgba(79,224,141,0)}}
+@keyframes flash{50%{box-shadow:0 0 0 6px rgba(108,184,255,.85)}}
+.mapattr{position:absolute;right:4px;bottom:2px;font-size:11px;color:#a3a99f;background:rgba(15,16,15,.7);padding:0 4px;border-radius:3px}
+.mapattr a{color:#a3a99f}
+.mapscale{position:absolute;left:8px;bottom:6px;font-size:11px;color:#d6dad2;border:2px solid #d6dad2;border-top:none;padding:0 3px;height:8px;line-height:0;text-shadow:0 0 2px #000}
+.mapempty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--silk-3);pointer-events:none;text-align:center;padding:20px}
+.mapside{border-left:1px solid var(--plate-edge);overflow:auto;padding:10px 12px;font-size:13.5px}
+.mapside h4{margin:4px 0 4px}
+.mapside h4+.hint{margin-top:0}
+.mapside .it{all:unset;box-sizing:border-box;display:flex;gap:6px;width:100%;padding:4px 6px;border-bottom:1px solid var(--rule);cursor:pointer;white-space:nowrap;overflow:hidden}
+.mapside .it span{overflow:hidden;text-overflow:ellipsis}
+.mapside .it .x{color:var(--silk-3);flex:none}
+.mapside .it:hover,.mapside .it.sel{background:#1b1d1b}
+.mapside .it.sel{box-shadow:inset 2px 0 0 var(--link)}
+.mapside .it.air{color:var(--live)}
+.mapside .it:focus-visible{outline:2px solid var(--link);outline-offset:-2px}
+.mapside .it+h4{margin-top:14px}
+
+/* ---------- smaller screens ---------- */
+@media (max-width:1020px){ .wrap{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:760px){
+  .mapbox{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) 150px}
+  .mapside{border-left:none;border-top:1px solid var(--plate-edge)}
+}
+@media (max-width:640px){
+  .bar{padding:6px 12px;gap:6px 10px}
+  .brand{font-size:16px}
+  .bar-ctl{order:2}
+  .lamps{order:3;width:100%}
+  #st-conn{min-width:104px}
+  #vol{width:80px}
+  #btn-audio{min-width:0}
+  #btn-map{width:32px;padding:0}
+  #btn-map .nar{display:none}
+  .segctl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
+  .lamps{flex-wrap:wrap}
+  #st-bs.vh{display:none}
+  .wrap{padding:10px 10px 24px;gap:10px}
+  .col{gap:10px}
+  .card>h2{padding:8px 12px 0;min-height:40px}
+  .card>.body{padding:8px 12px 12px}
+  .spec-wrap{margin:8px 12px 0}
+  #spec{height:110px} #wf{height:170px}
+  .card>h2 .meta{gap:8px;font-size:12.5px}
+  .tune-in{flex:1 1 100%} #tunefreq{flex:1;width:auto}
+  #ad-stat{flex-basis:100%}
+  .fftrow{gap:8px 14px}
+  .acts,#events{height:420px}
+  .act .l1{flex-wrap:wrap;height:auto;row-gap:2px}
+  .act .who{order:9;flex-basis:100%;padding-left:64px}
+  .rtab .opt,.rtab .coords{display:none} .rtab .pin{display:inline}
+  .rtab th.c-id{width:26%} .rtab th.c-heard{width:21%} .rtab th.c-pos{width:12%}
+  .row>label,.lbl{min-width:84px}
+  .tabpane{padding:12px}
+}
+@media (max-width:360px){
+  .brand span{display:none}
+  #vol{width:64px}
+}
+@media (pointer:coarse){
+  input,select,textarea{font-size:16px}
+  textarea{font-size:14px}
+  button.sm{min-height:34px}
+  .row:has(>.ctl)>.lbl{line-height:34px}
+  .bm button{width:34px;min-width:34px;min-height:34px}
+  .segctl .chip{min-height:34px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
 </style>
 </head>
 <body>
-<header>
-  <h1>DSD<b>·</b>FME <span style="color:var(--dim);font-weight:400">web</span></h1>
-  <span id="st-conn" class="badge off">offline</span>
-  <span id="st-carrier" class="badge">no sync</span>
-  <span id="st-mode" class="badge">—</span>
-  <span id="st-bs" class="badge warn vh">BAND SCAN</span>
-  <span style="flex:1"></span>
-  <button id="btn-map" class="sm" title="Map of radio positions; radios on air pulse">🗺 Map</button>
-  <button id="btn-audio" class="sm">🔊 Audio off</button>
-  <input id="vol" type="range" min="0" max="100" value="80" title="Volume" style="width:90px">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></symbol>
+  <symbol id="i-spk" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM16.5 8.5a5 5 0 0 1 0 7M19.2 6a8.5 8.5 0 0 1 0 12"/></symbol>
+  <symbol id="i-spk-off" viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 9.5l5 5M22 9.5l-5 5"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-5.7-6.5-11a6.5 6.5 0 0 1 13 0c0 5.3-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9.5" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></symbol>
+  <symbol id="i-star-on" viewBox="0 0 24 24"><path fill="currentColor" d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4.5 19.5h4l10-10-4-4-10 10zM13 7l4 4"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 5.5v13l11-6.5z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+</svg>
+
+<header class="bar" id="top">
+  <div class="brand">DSD-FME<span>web</span></div>
+  <div class="lamps">
+    <span id="st-conn" class="badge off">Offline</span>
+    <span id="st-carrier" class="badge">No sync</span>
+    <span id="st-mode" class="mode" title="Decoder">—</span>
+    <span id="st-bs" class="badge warn vh">Band scan</span>
+  </div>
+  <div class="bar-ctl">
+    <button id="btn-map" class="sm" title="Map of radio positions; radios on air pulse" aria-label="Map"><svg class="i" aria-hidden="true"><use href="#i-map"/></svg><span class="nar">Map</span></button>
+    <button id="btn-audio" class="sm tgl" aria-pressed="false" title="Play the decoded and analog audio in this browser"><svg class="i" aria-hidden="true"><use href="#i-spk-off"/></svg>Audio off</button>
+    <input id="vol" type="range" min="0" max="100" value="80" title="Volume" aria-label="Volume">
+  </div>
 </header>
 
 <div id="login" class="overlay hidden">
-  <div class="box">
-    <h3 style="margin-top:0">Password required</h3>
-    <input id="pw" type="password" placeholder="password" style="width:100%;margin:8px 0">
-    <button class="p" id="pw-go" style="width:100%">Connect</button>
-    <div id="pw-err" class="hint" style="color:var(--bad)"></div>
-  </div>
+  <form class="login" id="pw-form" aria-labelledby="pw-title">
+    <h3 id="pw-title">Password required</h3>
+    <div class="hint">Enter the password DSD-FME was started with (<code>--web-pass</code>).</div>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+    <button type="submit" class="p" id="pw-go">Connect</button>
+    <div id="pw-err" class="hint err-text" role="alert"></div>
+  </form>
 </div>
 
-<div class="wrap">
-  <!-- LEFT: spectrum + decode -->
+<main class="wrap" id="main">
+  <!-- left: spectrum, decode, activity, radios -->
   <div class="col">
-    <div class="card">
-      <h2>Spectrum / Waterfall
-        <span><span id="specmeta" class="badge">—</span></span>
-      </h2>
-      <div class="spec-wrap" id="specbox">
+    <section class="card card-spec">
+      <h2>Spectrum <span id="specmeta" class="meta"></span></h2>
+      <div class="spec-wrap glass" id="specbox">
         <canvas id="spec"></canvas>
         <canvas id="wf"></canvas>
         <div class="specinfo" id="specinfo"></div>
         <div id="cursor"></div>
       </div>
       <div class="body">
-        <div class="row">
-          <label>Tune</label>
-          <input id="tunefreq" placeholder="e.g. 851.0125M or 154987500" style="width:150px">
-          <button class="p sm" id="btn-tune">Tune</button>
-          <button class="sm" id="btn-bm" title="Bookmark this frequency">☆</button>
-          <button class="tgl sm" id="tg-autotune" title="Snap onto the strongest nearby peak">Auto-tune</button>
-          <button class="tgl sm" id="tg-autodec" title="Cycle decoders until a sync holds. With Analog on, a signal no decoder syncs to is played as analog FM.">Auto-decode</button>
-          <button class="tgl sm on" id="tg-autoana" title="In AUTO and Auto-decode, also play analog (non-digital) FM whenever there is no digital sync. Set the RF squelch so noise stays muted.">Analog</button>
+        <div class="tune">
+          <div class="tune-in">
+            <input id="tunefreq" aria-label="Frequency" placeholder="e.g. 851.0125M or 154987500" enterkeyhint="go">
+            <button class="p sm" id="btn-tune">Tune</button>
+            <button class="sm icon" id="btn-bm" title="Bookmark this frequency" aria-label="Bookmark this frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
+          </div>
+          <div class="tune-auto">
+            <button class="tgl sm" id="tg-autotune" title="Snap onto the strongest nearby peak">Auto-tune</button>
+            <button class="tgl sm" id="tg-autodec" title="Cycle decoders until a sync holds. With Analog on, a signal no decoder syncs to is played as analog FM.">Auto-decode</button>
+            <button class="tgl sm on" id="tg-autoana" title="In AUTO and Auto-decode, also play analog (non-digital) FM whenever there is no digital sync. Set the RF squelch so noise stays muted.">Analog</button>
+          </div>
           <span class="hint" id="ad-stat"></span>
         </div>
-        <div class="row">
-          <label>FFT</label>
-          <select id="fftsize">
+        <div class="fftrow">
+          <label class="pair">FFT <select id="fftsize">
             <option>1024</option><option>2048</option><option selected>4096</option>
             <option>8192</option><option>16384</option>
-          </select>
-          <label style="min-width:auto">FPS</label><input id="fps" type="number" value="15" min="1" max="60" style="width:60px">
-          <label style="min-width:auto">Avg</label><input id="avg" type="number" value="2" min="1" max="32" style="width:60px">
-          <label style="min-width:auto">Range</label><input id="dbrange" type="range" min="30" max="120" value="80" style="width:110px">
+          </select></label>
+          <label class="pair">FPS <input id="fps" type="number" value="15" min="1" max="60"></label>
+          <label class="pair">Average <input id="avg" type="number" value="2" min="1" max="32"></label>
+          <label class="pair">Range <input id="dbrange" type="range" min="30" max="120" value="80"></label>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card" style="margin-top:12px">
+    <section class="card card-dec">
       <h2>Decode</h2>
       <div class="body">
-        <div class="dtop">
-          <div id="d-info">
-            <div class="freq"><span id="d-freq">—</span> <span class="u">MHz</span></div>
+        <div class="dec">
+          <div id="d-info" class="glass">
+            <div class="freq"><span id="d-freq" class="seg" data-ghost="8888.888888"></span><span class="u">MHz</span></div>
             <div class="bmname" id="d-bm"></div>
-            <div class="kv" style="margin-top:4px">
-              <span class="k">system</span><span class="v" id="d-sys">—</span>
-              <span class="k">frame</span><span class="v" id="d-ftype">—</span>
-              <span class="k">mod/rate</span><span class="v" id="d-mod">—</span>
+            <div class="kv">
+              <span class="k">System</span><span class="v" id="d-sys">—</span>
+              <span class="k">Frame</span><span class="v" id="d-ftype">—</span>
+              <span class="k">Mod / rate</span><span class="v" id="d-mod">—</span>
             </div>
           </div>
-          <div style="flex:1;min-width:160px">
-            <div class="row"><label>Level</label><div class="meter" style="flex:1"><i id="d-level"></i></div></div>
-            <div class="row"><label>RMS / SQL</label><div class="meter" style="flex:1"><i id="d-rms"></i></div><span id="d-rmsv" class="mono"></span></div>
-          </div>
+          <div id="slots"><div class="slot glass" id="slot1"></div><div class="slot glass" id="slot2"></div></div>
         </div>
-
-        <div class="slots" id="slots"><div class="slot" id="slot1"></div><div class="slot" id="slot2"></div></div>
-
-        <div class="sysbox" id="sysbox">
+        <div class="meters">
+          <div class="mrow"><span class="k">Level</span><div class="meter segd"><i id="d-level"></i></div></div>
+          <div class="mrow" title="RF level (RMS) against the squelch; the mark is the squelch level"><span class="k">RMS / SQL</span><div class="meter segd sq"><i id="d-rms"></i></div><span id="d-rmsv"></span></div>
+        </div>
+        <div class="sysbox glass" id="sysbox">
           <div class="kv" id="siteinfo"></div>
           <div id="sysinfo"><div class="hint">System details show up here once a repeater or control channel identifies itself.</div></div>
-          <div id="chanlist" class="chips" style="margin-top:6px"></div>
+          <div id="chanlist" class="chips"></div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="card" style="margin-top:12px">
-      <h2>Activity <span id="act-count" class="badge">0</span></h2>
+    <section class="card card-act">
+      <h2>Activity <span id="act-count" class="count">0</span></h2>
       <div class="body">
-        <div class="row" style="margin-top:0">
-          <span class="chips" id="act-kinds">
-            <span class="chip on" data-k="">All</span><span class="chip" data-k="call">Calls</span><span class="chip" data-k="data">Data</span><span class="chip" data-k="sig" title="Trunking and data link signalling: grants, registrations, affiliations, delivery reports">Signalling</span><span class="chip" data-k="sys">System</span><span class="chip" data-k="log" title="The decoder's own event history, as the console terminal shows it">Decoder log</span>
-          </span>
-          <input id="act-q" placeholder="Filter: radio, talkgroup, text" style="flex:1;min-width:140px">
+        <div class="actbar">
+          <div class="segctl" id="act-kinds" role="group" aria-label="Show">
+            <button class="chip on" data-k="" aria-pressed="true">All</button><button class="chip" data-k="call" aria-pressed="false">Calls</button><button class="chip" data-k="data" aria-pressed="false">Data</button><button class="chip" data-k="sig" aria-pressed="false" title="Trunking and data link signalling: grants, registrations, affiliations, delivery reports">Signalling</button><button class="chip" data-k="sys" aria-pressed="false">System</button><button class="chip" data-k="log" aria-pressed="false" title="The decoder's own event history, as the console terminal shows it">Decoder log</button>
+          </div>
+          <input id="act-q" placeholder="Filter: radio, talkgroup, text" aria-label="Filter activity">
           <button class="tgl sm" id="act-err" title="Also list packets that failed their CRC check">Errors</button>
           <button class="sm" id="act-clear" title="Clear the activity and the decoder's event history">Clear</button>
         </div>
-        <div class="acts" id="acts"></div>
-        <div class="log hidden" id="events"></div>
+        <div class="acts glass" id="acts"></div>
+        <div class="glass hidden" id="events"></div>
       </div>
-    </div>
+    </section>
 
-    <div class="card" style="margin-top:12px">
-      <h2>Radios <span class="hr"><span id="rad-count" class="badge">0</span><button class="sm" id="rad-map" title="Map of radio positions; radios on air pulse">🗺 Map</button></span></h2>
+    <section class="card card-rad">
+      <h2>Radios <span class="hr"><span id="rad-count" class="count">0</span><button class="sm" id="rad-map" title="Map of radio positions; radios on air pulse"><svg class="i" aria-hidden="true"><use href="#i-map"/></svg>Map</button></span></h2>
       <div class="body">
-        <div class="rwrap"><table class="rtab">
-          <thead><tr><th class="c-id">Radio</th><th class="c-heard">Heard</th><th>Last activity</th><th class="opt c-tg">Talkgroup</th><th class="c-pos"><span class="coords">Position</span><span class="pin">📍</span></th></tr></thead><tbody id="rad-body"></tbody></table></div>
+        <div class="rwrap glass"><table class="rtab">
+          <thead><tr><th class="c-id">Radio</th><th class="c-heard">Heard</th><th>Last activity</th><th class="opt c-tg">Talkgroup</th><th class="c-pos"><span class="coords">Position</span><span class="pin"><svg class="i" aria-label="Position"><use href="#i-pin"/></svg></span></th></tr></thead><tbody id="rad-body"></tbody></table></div>
       </div>
-    </div>
+    </section>
   </div>
 
-  <!-- RIGHT: bookmarks + controls -->
+  <!-- right: bookmarks, band scan, settings -->
   <div class="col">
-    <div class="card" id="card-bm">
-      <h2>Bookmarks <span class="hr"><button class="sm" id="bm-add" title="Bookmark the tuned frequency">+ Add</button><button class="fold" data-fold="card-bm" aria-expanded="true" title="Hide bookmarks">▾</button></span></h2>
+    <section class="card" id="card-bm">
+      <h2>Bookmarks <span class="hr"><button class="sm" id="bm-add" title="Bookmark the tuned frequency"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add</button><button class="fold" data-fold="card-bm" aria-expanded="true" title="Hide bookmarks"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button></span></h2>
       <div class="body">
-        <div class="row" style="margin-top:0">
-          <input id="bm-q" placeholder="Search" title="Matches name, group or MHz" style="flex:1;min-width:110px">
-          <select id="bm-grp"><option value="">All groups</option></select>
+        <div class="row">
+          <input id="bm-q" placeholder="Search" title="Matches name, group or MHz" aria-label="Search bookmarks" style="flex:1;min-width:110px">
+          <select id="bm-grp" aria-label="Group"><option value="">All groups</option></select>
         </div>
-        <div class="bmlist" id="bm-list"></div>
-        <div id="bm-msg" class="hint"></div>
+        <div class="bmlist glass" id="bm-list"></div>
+        <div id="bm-msg" class="hint" role="status"></div>
         <div id="bm-form" class="hidden">
-          <div class="row"><label>Name</label><input id="bm-name" maxlength="90" style="flex:1" placeholder="e.g. County Fire"></div>
-          <div class="row"><label>Frequency</label><input id="bm-freq" style="width:130px" placeholder="851.0125M">
+          <div class="row"><label for="bm-name">Name</label><input id="bm-name" maxlength="90" style="flex:1" placeholder="e.g. County Fire"></div>
+          <div class="row"><label for="bm-freq">Frequency</label><input id="bm-freq" style="width:130px" placeholder="851.0125M">
             <button class="sm" id="bm-cur" title="Use the tuned frequency and decoder">Current</button></div>
-          <div class="row"><label>Decoder</label><select id="bm-mode" style="flex:1;min-width:0"></select></div>
-          <div class="row"><label>Modulation</label>
+          <div class="row"><label for="bm-mode">Decoder</label><select id="bm-mode" style="flex:1;min-width:0"></select></div>
+          <div class="row"><label for="bm-mod">Modulation</label>
             <select id="bm-mod"><option value="">Default</option><option value="c4fm">C4FM</option><option value="qpsk">QPSK</option><option value="gfsk">GFSK</option></select></div>
-          <div class="row"><label>Group</label><input id="bm-group" list="bm-groups" maxlength="40" style="flex:1" placeholder="optional"><datalist id="bm-groups"></datalist></div>
+          <div class="row"><label for="bm-group">Group</label><input id="bm-group" list="bm-groups" maxlength="40" style="flex:1" placeholder="optional"><datalist id="bm-groups"></datalist></div>
           <div class="row"><button class="p sm" id="bm-save">Add bookmark</button><button class="sm" id="bm-cancel">Cancel</button></div>
         </div>
         <details>
           <summary>Import / export</summary>
-          <div class="row"><button class="sm" id="bm-export">Export</button><button class="sm" id="bm-import">Import…</button>
+          <div class="row" style="margin-top:8px"><button class="sm" id="bm-export">Export</button><button class="sm" id="bm-import">Import…</button>
             <input type="file" id="bm-file" accept=".json,.csv,.txt" class="hidden"></div>
           <div class="hint">Import takes a DSD-FME export, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.
             Bookmarks are saved on the DSD-FME host in <span id="bm-path">—</span>.</div>
         </details>
       </div>
-    </div>
+    </section>
 
-    <div class="card" id="card-bs" style="margin-top:12px">
-      <h2>Band scan <span class="hr"><span id="bs-badge" class="badge">off</span><button class="fold" data-fold="card-bs" aria-expanded="true" title="Hide band scan">▾</button></span></h2>
+    <section class="card" id="card-bs">
+      <h2>Band scan <span class="hr"><span id="bs-badge" class="badge">Off</span><button class="fold" data-fold="card-bs" aria-expanded="true" title="Hide band scan"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button></span></h2>
       <div class="body">
-        <div class="row" style="margin-top:0"><label>Bands</label>
+        <div class="row"><label for="bs-preset">Bands</label>
           <select id="bs-preset" style="flex:1;min-width:0">
             <option value="lmr">All land mobile (136–941 MHz)</option>
             <option value="vhf">VHF 136–174 MHz</option>
@@ -361,40 +592,40 @@ a.btn:hover{border-color:var(--accent2)}
             <option value="pmr">PMR446 (446.0–446.2)</option>
             <option value="custom">Custom range</option>
           </select></div>
-        <div class="row hidden" id="bs-custom"><label>Range</label>
-          <input id="bs-lo" style="width:80px" placeholder="450"> to <input id="bs-hi" style="width:80px" placeholder="470"> MHz</div>
-        <div class="row"><label>Threshold</label><input id="bs-thr" type="number" value="10" min="4" max="40" style="width:58px"> dB over noise</div>
-        <div class="row"><label>Exclude</label>
-          <textarea id="bs-excl" rows="2" style="flex:1;min-width:0;min-height:0" placeholder="one per line: 462.5625 or 460-461"
+        <div class="row hidden" id="bs-custom"><label for="bs-lo">Range</label>
+          <input id="bs-lo" placeholder="450" aria-label="From MHz"><span class="unit">to</span><input id="bs-hi" placeholder="470" aria-label="To MHz"><span class="unit">MHz</span></div>
+        <div class="row"><label for="bs-thr">Threshold</label><input id="bs-thr" type="number" value="10" min="4" max="40"><span class="unit">dB over noise</span></div>
+        <div class="row"><label for="bs-excl">Exclude</label>
+          <textarea id="bs-excl" rows="2" placeholder="one per line: 462.5625 or 460-461"
             title="Frequencies (±3 kHz) or ranges in MHz the scan never stops on. Ranges covering a whole window aren't tuned at all."></textarea></div>
-        <div class="row">
+        <div class="row"><span class="lbl"></span><div class="ctl">
           <button class="tgl sm on" id="bs-skip" title="Don't stop on frequencies that are already bookmarked">Skip bookmarked</button>
           <button class="tgl sm" id="bs-keep" title="Bookmark every find and keep scanning instead of stopping on it">Keep going</button>
-        </div>
-        <div class="row">
-          <button class="p sm" id="bs-start">▶ Start</button>
+        </div></div>
+        <div class="row btns">
+          <button class="p sm" id="bs-start"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Start</button>
+          <button class="sm" id="bs-stop" disabled>Stop</button>
           <button class="sm" id="bs-cont" disabled>Continue</button>
           <button class="bad sm" id="bs-excl-cont" title="Add the frequency the scan is on (or the tuned one) to the Exclude list and keep scanning">Exclude &amp; continue</button>
-          <button class="sm" id="bs-stop" disabled>Stop</button>
         </div>
-        <div class="meter"><i id="bs-prog" class="prog"></i></div>
-        <div class="hint" id="bs-stat"></div>
+        <div class="meter" style="margin-top:12px"><i id="bs-prog" class="prog"></i></div>
+        <div class="hint" id="bs-stat" role="status"></div>
       </div>
-    </div>
+    </section>
 
-    <div class="card" style="margin-top:12px">
-      <div class="tabs" id="tabs">
-        <button data-t="dec" class="on">Decode</button>
-        <button data-t="rf">RF</button>
-        <button data-t="trunk">Trunk</button>
-        <button data-t="keys">Keys</button>
-        <button data-t="files">Files</button>
-        <button data-t="log">Log</button>
+    <section class="card card-set">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Settings">
+        <button data-t="dec" class="on" role="tab" aria-selected="true">Decoder</button>
+        <button data-t="rf" role="tab" aria-selected="false">RF</button>
+        <button data-t="trunk" role="tab" aria-selected="false">Trunk</button>
+        <button data-t="keys" role="tab" aria-selected="false">Keys</button>
+        <button data-t="files" role="tab" aria-selected="false">Files</button>
+        <button data-t="log" role="tab" aria-selected="false">Log</button>
       </div>
 
-      <div class="tabpane on" data-t="dec">
-        <div class="row"><label>Decoder</label>
-          <select id="mode">
+      <div class="tabpane on" data-t="dec" role="tabpanel">
+        <div class="row"><label for="mode">Decoder</label>
+          <select id="mode" style="flex:1;min-width:0">
             <option value="auto">AUTO (P25/DMR/YSF/DSTAR/X2)</option>
             <option value="tdma">TDMA Trunk (P25p1/p2/DMR)</option>
             <option value="p25p1">P25 Phase 1</option>
@@ -411,93 +642,95 @@ a.btn:hover{border-color:var(--accent2)}
             <option value="analog">Analog FM (no digital)</option>
           </select>
         </div>
-        <div class="row"><label>Modulation</label>
+        <div class="row"><label for="modu">Modulation</label>
           <select id="modu"><option value="c4fm">C4FM</option><option value="qpsk">QPSK</option><option value="gfsk">GFSK</option></select>
           <button class="tgl sm" id="tg-inv">Invert</button>
         </div>
-        <div class="row"><label>Slots</label>
+        <div class="row"><span class="lbl">Slots</span><div class="ctl">
           <button class="tgl sm on" id="tg-s1">Slot 1</button>
           <button class="tgl sm on" id="tg-s2">Slot 2</button>
-        </div>
-        <div class="row"><label>Digi gain</label><input id="gdig" type="range" min="0" max="50" value="0" style="flex:1"><span id="gdigv" class="mono">auto</span></div>
-        <div class="row"><label>Analog gain</label><input id="gana" type="range" min="0" max="100" value="50" style="flex:1"><span id="ganav" class="mono"></span></div>
-        <div class="row"><label>Filters</label>
+        </div></div>
+        <div class="row"><label for="gdig">Digital gain</label><input id="gdig" type="range" min="0" max="50" value="0" style="flex:1"><span id="gdigv" class="unit" style="min-width:5ch">auto</span></div>
+        <div class="row"><label for="gana">Analog gain</label><input id="gana" type="range" min="0" max="100" value="50" style="flex:1"><span id="ganav" class="unit" style="min-width:5ch"></span></div>
+        <div class="row"><span class="lbl">Filters</span><div class="ctl">
           <button class="tgl sm" id="tg-hpfd">HPF-D</button>
           <button class="tgl sm" id="tg-hpf">HPF</button>
           <button class="tgl sm" id="tg-lpf">LPF</button>
           <button class="tgl sm" id="tg-pbf">PBF</button>
-        </div>
-        <div class="row">
+        </div></div>
+        <div class="row"><span class="lbl">Output</span><div class="ctl">
           <button class="tgl sm" id="tg-payload">Payload</button>
           <button class="tgl sm" id="tg-monitor" title="Always play analog (non-digital) audio when there is no digital sync, in any decoder">Monitor</button>
           <button class="tgl sm" id="tg-wav">Rec WAV</button>
           <button class="sm" id="btn-resetev">Clear events</button>
-        </div>
-        <div class="row"><label>P2 params</label>
-          <input id="p2wacn" placeholder="WACN hex" style="width:84px">
-          <input id="p2sys" placeholder="SYS" style="width:60px">
-          <input id="p2cc" placeholder="CC/NAC" style="width:70px">
+        </div></div>
+        <div class="row"><span class="lbl">P2 params</span><div class="ctl">
+          <input id="p2wacn" placeholder="WACN hex" aria-label="WACN (hex)" style="width:90px">
+          <input id="p2sys" placeholder="SYS" aria-label="System ID (hex)" style="width:60px">
+          <input id="p2cc" placeholder="CC/NAC" aria-label="CC / NAC (hex)" style="width:72px">
           <button class="sm" id="btn-p2">Set</button>
-        </div>
+        </div></div>
       </div>
 
-      <div class="tabpane" data-t="rf">
-        <div class="hint">RTL-SDR live tuning (requires <code>-i rtl</code>). RIGCTL also supported.</div>
-        <div class="row"><label>LNA gain</label><input id="rtlgain" type="range" min="1" max="49" value="30" style="flex:1"><span id="rtlgainv" class="mono">auto</span></div>
-        <div class="row"><label>AGC</label>
+      <div class="tabpane" data-t="rf" role="tabpanel">
+        <div class="hint" style="margin-top:0">RTL-SDR live tuning (requires <code>-i rtl</code>). RIGCTL also supported.</div>
+        <div class="row"><label for="rtlgain">LNA gain</label><input id="rtlgain" type="range" min="1" max="49" value="30" style="flex:1"><span id="rtlgainv" class="unit" style="min-width:6ch">auto</span></div>
+        <div class="row"><span class="lbl">AGC</span><div class="ctl">
           <button class="tgl sm on" id="tg-agc" title="Tuner hardware AGC: the tuner sets its own LNA and mixer gain (close to maximum on weak signals), so the manual LNA gain is disabled while it is on">Tuner AGC</button>
-          <button class="tgl sm" id="tg-dagc" title="RTL2832 digital AGC: digital gain after the ADC that holds the output level, independent of the tuner gain. It lifts noise to the level of signals, so the RMS squelch (NXDN/dPMR/M17 sync, analog monitor, band scan) works poorly while it is on">RTL AGC</button></div>
+          <button class="tgl sm" id="tg-dagc" title="RTL2832 digital AGC: digital gain after the ADC that holds the output level, independent of the tuner gain. It lifts noise to the level of signals, so the RMS squelch (NXDN/dPMR/M17 sync, analog monitor, band scan) works poorly while it is on">RTL AGC</button></div></div>
         <div class="hint">Tuner AGC runs the LNA gain itself (the slider is off meanwhile). RTL AGC is digital gain in the RTL2832: it lifts noise too, so the RMS squelch can't tell it from signals.</div>
-        <div class="row"><label>PPM</label><input id="rtlppm" type="number" value="0" style="width:70px"><button class="sm" id="btn-ppm">Set</button>
-          <label style="min-width:auto">Vol</label><select id="rtlvol"><option>1</option><option selected>2</option><option>3</option></select></div>
-        <div class="row"><label>Bandwidth</label><select id="rtlbw"><option>4</option><option>6</option><option>8</option><option selected>12</option><option>16</option><option>24</option></select>kHz
+        <div class="row"><label for="rtlppm">PPM</label><input id="rtlppm" type="number" value="0"><button class="sm" id="btn-ppm">Set</button></div>
+        <div class="row"><label for="rtlvol">Volume</label><select id="rtlvol"><option>1</option><option selected>2</option><option>3</option></select><span class="unit">× multiplier</span></div>
+        <div class="row"><label for="rtlbw">Bandwidth</label><select id="rtlbw"><option>4</option><option>6</option><option>8</option><option selected>12</option><option>16</option><option>24</option></select><span class="unit">kHz</span>
           <button class="sm" id="btn-bw">Set</button></div>
-        <div class="row"><label>Sample rate</label><select id="rtlrate" title="RTL capture rate: the spectrum span and how much the band scan sees per window. Above 2.4 MSPS most dongles drop samples.">
+        <div class="row"><label for="rtlrate">Sample rate</label><select id="rtlrate" style="flex:1;min-width:0" title="RTL capture rate: the spectrum span and how much the band scan sees per window. Above 2.4 MSPS most dongles drop samples.">
             <option value="0">Default (~1 MSPS)</option><option value="250000">0.25 MSPS</option>
             <option value="960000">0.96 MSPS</option><option value="1024000">1.024 MSPS</option><option value="1200000">1.2 MSPS</option>
             <option value="1440000">1.44 MSPS</option><option value="1600000">1.6 MSPS</option><option value="1800000">1.8 MSPS</option>
             <option value="1920000">1.92 MSPS</option><option value="2048000">2.048 MSPS</option><option value="2400000">2.4 MSPS</option>
             <option value="2560000">2.56 MSPS (unstable)</option><option value="2880000">2.88 MSPS (unstable)</option><option value="3200000">3.2 MSPS (unstable)</option>
-          </select><span id="rtlratev" class="mono hint"></span></div>
-        <div class="row"><label>Squelch</label><input id="rtlsq" type="number" value="100" style="width:80px"><span class="hint">RMS (NXDN/dPMR/analog/scan)</span><button class="sm" id="btn-sq">Set</button></div>
-        <div class="row"><label>SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:80px">Hz (RIGCTL)<button class="sm" id="btn-smb">Set</button></div>
+          </select></div>
+        <div class="row"><span class="lbl"></span><span id="rtlratev" class="hint"></span></div>
+        <div class="row"><label for="rtlsq">Squelch</label><input id="rtlsq" type="number" value="100" style="width:84px"><span class="unit">RMS</span><button class="sm" id="btn-sq">Set</button></div>
+        <div class="hint">The RMS squelch gates NXDN, dPMR and M17 sync, the analog monitor and the band scan.</div>
+        <div class="row"><label for="setmodbw">SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:84px"><span class="unit">Hz (RIGCTL)</span><button class="sm" id="btn-smb">Set</button></div>
       </div>
 
-      <div class="tabpane" data-t="trunk">
+      <div class="tabpane" data-t="trunk" role="tabpanel">
         <div class="row">
           <button class="tgl" id="tg-trunk">Trunking</button>
           <button class="tgl" id="tg-scan">Scanner</button>
           <button class="sm" id="btn-cc">Return CC</button>
-          <button class="sm" id="btn-cycle">Cycle ►</button>
+          <button class="sm" id="btn-cycle">Cycle</button>
         </div>
-        <div class="row"><label>Tune calls</label>
+        <div class="row"><span class="lbl">Tune calls</span><div class="ctl">
           <button class="tgl sm on" id="tg-grp">Group</button>
           <button class="tgl sm on" id="tg-prv">Private</button>
           <button class="tgl sm" id="tg-data">Data</button>
           <button class="tgl sm on" id="tg-enc">Enc</button>
-        </div>
-        <div class="row">
+        </div></div>
+        <div class="row"><span class="lbl"></span>
           <button class="tgl sm" id="tg-allow">Allow-list only</button>
-          <label style="min-width:auto">Hang</label><input id="hang" type="number" step="0.5" value="1" style="width:64px">s
-          <button class="sm" id="btn-hang">Set</button>
         </div>
-        <div class="row"><label>TG hold</label><input id="tghold" type="number" value="0" style="width:100px"><button class="sm" id="btn-tgh">Hold</button></div>
-        <h3 style="color:var(--dim);font-size:12px">Channel map CSV</h3>
+        <div class="row"><label for="hang">Hang time</label><input id="hang" type="number" step="0.5" value="1"><span class="unit">s</span>
+          <button class="sm" id="btn-hang">Set</button></div>
+        <div class="row"><label for="tghold">TG hold</label><input id="tghold" type="number" value="0" style="width:100px"><button class="sm" id="btn-tgh">Hold</button></div>
+        <h3 class="sub"><label for="csv-chan">Channel map CSV</label></h3>
         <textarea id="csv-chan" placeholder="ChannelNumber(dec),frequency(Hz)&#10;1,851012500"></textarea>
         <div class="row"><button class="sm" id="btn-chan">Import channel map</button></div>
-        <h3 style="color:var(--dim);font-size:12px">Group list CSV</h3>
+        <h3 class="sub"><label for="csv-group">Group list CSV</label></h3>
         <textarea id="csv-group" placeholder="DEC,Mode,Name,Tag&#10;1449,A,Fire Dispatch,Fire"></textarea>
         <div class="row"><button class="sm" id="btn-group">Import groups</button></div>
-        <h3 style="color:var(--dim);font-size:12px">Scanner frequencies</h3>
+        <h3 class="sub"><label for="scanlist">Scanner frequencies</label></h3>
         <textarea id="scanlist" placeholder="one freq per line&#10;154.9875M&#10;155.145M"></textarea>
         <div class="row"><button class="sm" id="btn-scanset">Apply scan list</button>
           <button class="sm" id="btn-scanbm" title="Fill with the bookmarks shown in the list (search / group filter, first 26)">From bookmarks</button></div>
       </div>
 
-      <div class="tabpane" data-t="keys">
-        <div class="hint">Encrypted-comms key entry. Keys are applied to the running decoder (you must be authorized to decode the traffic).</div>
-        <div class="row"><label>Type</label>
-          <select id="ktype">
+      <div class="tabpane" data-t="keys" role="tabpanel">
+        <div class="hint" style="margin-top:0">Keys are applied to the running decoder. Only decode traffic you are authorized to.</div>
+        <div class="row"><label for="ktype">Type</label>
+          <select id="ktype" style="flex:1;min-width:0">
             <optgroup label="Common">
               <option value="bp">DMR Basic Privacy (dec)</option>
               <option value="scrambler">NXDN/dPMR Scrambler (dec)</option>
@@ -522,29 +755,29 @@ a.btn:hover{border-color:var(--accent2)}
             </optgroup>
           </select>
         </div>
-        <div class="row"><label>Value</label><input id="kval" style="flex:1" placeholder="key value"></div>
-        <div class="row">
+        <div class="row"><label for="kval">Value</label><input id="kval" style="flex:1" placeholder="key value" autocomplete="off" spellcheck="false"></div>
+        <div class="row"><span class="lbl"></span><span class="hint" id="khint" style="margin:0"></span></div>
+        <div class="row"><span class="lbl"></span><div class="ctl">
           <button class="p sm" id="btn-key">Apply key</button>
           <button class="sm" id="btn-keyclear">Clear all keys</button>
           <button class="tgl sm" id="tg-force">Force key</button>
-        </div>
-        <div class="hint" id="khint"></div>
-        <h3 style="color:var(--dim);font-size:12px">Auto-find key</h3>
+        </div></div>
+        <h3 class="sub">Auto-find key</h3>
         <div class="hint">Finds a DMR Basic Privacy key (1–255): in speech pauses radios send a fixed silence frame, so the encrypted pauses give the key away. Let it run over some encrypted BP voice. Strong ciphers (AES/DES/RC4) cannot be found this way.</div>
         <div class="row">
-          <button class="tgl" id="tg-autokey">Auto-find BP key</button>
-          <span id="autokey-stat" class="mono"></span>
+          <button class="tgl sm" id="tg-autokey">Auto-find BP key</button>
+          <span id="autokey-stat" role="status"></span>
         </div>
-        <h3 style="color:var(--dim);font-size:12px">Key list CSV</h3>
+        <h3 class="sub"><label for="csv-keys">Key list CSV</label></h3>
         <div class="row">
-          <select id="kcsvkind"><option value="keys_hex">Hex key list</option><option value="keys_dec">Decimal key list</option></select>
+          <select id="kcsvkind" aria-label="Key list format"><option value="keys_hex">Hex key list</option><option value="keys_dec">Decimal key list</option></select>
         </div>
         <textarea id="csv-keys" placeholder="keyid,keyvalue"></textarea>
         <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
       </div>
 
-      <div class="tabpane" data-t="files">
-        <div class="row"><label>Recording</label>
+      <div class="tabpane" data-t="files" role="tabpanel">
+        <div class="row"><span class="lbl">Recording</span>
           <button class="tgl sm" id="tg-wav2">Per-call WAV</button>
         </div>
         <div class="hint">Decoded per-call WAV files appear here for download.</div>
@@ -552,24 +785,25 @@ a.btn:hover{border-color:var(--accent2)}
         <div class="flist" id="filelist"></div>
       </div>
 
-      <div class="tabpane" data-t="log">
-        <div class="log" id="console"></div>
+      <div class="tabpane" data-t="log" role="tabpanel">
+        <div class="log glass" id="console"></div>
       </div>
-    </div>
+    </section>
   </div>
-</div>
+</main>
+
 <div id="mapdlg" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="map-title">
   <div class="mapbox">
     <div class="maphd">
       <b id="map-title">Radio map</b>
-      <span id="map-onair" class="badge">nobody on air</span>
-      <span style="flex:1"></span>
+      <span id="map-onair" class="badge">Nobody on air</span>
+      <span class="sp"></span>
       <button class="tgl sm on" id="map-follow" title="Bring radios that go on air into view">Follow on air</button>
-      <button class="sm" id="map-fit" title="Show every radio with a position">Fit all</button>
-      <button class="sm" id="map-zin" title="Zoom in" aria-label="Zoom in">+</button>
-      <button class="sm" id="map-zout" title="Zoom out" aria-label="Zoom out">−</button>
-      <a class="btn" id="map-osm" target="_blank" rel="noopener" title="Open this view on openstreetmap.org">OSM ↗</a>
-      <button class="sm" id="map-close" title="Close (Esc)" aria-label="Close map">✕</button>
+      <button class="sm" id="map-fit" title="Show every radio with a position"><svg class="i" aria-hidden="true"><use href="#i-fit"/></svg>Fit all</button>
+      <button class="sm icon" id="map-zin" title="Zoom in" aria-label="Zoom in"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
+      <button class="sm icon" id="map-zout" title="Zoom out" aria-label="Zoom out"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg></button>
+      <a class="btn" id="map-osm" target="_blank" rel="noopener" title="Open this view on openstreetmap.org">OSM<svg class="i" aria-hidden="true"><use href="#i-ext"/></svg></a>
+      <button class="sm icon" id="map-close" title="Close (Esc)" aria-label="Close map"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div class="mapview" id="mapview">
       <div id="maptiles"></div>

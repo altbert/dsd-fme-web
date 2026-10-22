@@ -1,6 +1,8 @@
 /* DSD-FME web client */
 'use strict';
 const $ = (id) => document.getElementById(id);
+// a symbol from the sprite at the top of index.html
+const icon = (n) => '<svg class="i" aria-hidden="true"><use href="#i-'+n+'"/></svg>';
 const api = {};          // populated on connect
 let ws = null, token = '', needPassword = false, authed = false;
 let lastFFT = null;      // {bins,center,rate,dbmin,vals}
@@ -13,8 +15,8 @@ function wsURL(){ const p = location.protocol === 'https:' ? 'wss' : 'ws'; retur
 function connect(){
   ws = new WebSocket(wsURL());
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { setConn('connecting', 'off'); resync(); };
-  ws.onclose = () => { setConn('offline','off'); authed=false; setTimeout(connect, 1500); };
+  ws.onopen = () => { setConn('Connecting', 'warn'); resync(); };
+  ws.onclose = () => { setConn('Offline','off'); authed=false; setTimeout(connect, 1500); };
   ws.onerror = () => {};
   ws.onmessage = onMessage;
 }
@@ -38,15 +40,15 @@ function onMessage(ev){
 function handleJSON(m){
   if (m.type === 'hello'){
     token = m.token || ''; needPassword = !!m.password;
-    if (needPassword && !authed){ $('login').classList.remove('hidden'); }
-    else { authed = true; $('login').classList.add('hidden'); setConn('connected','live'); resync(); }
+    if (needPassword && !authed){ loginShow(true); }
+    else { authed = true; loginShow(false); setConn('Connected','live'); resync(); }
     if (m.rtl === false) $('tunefreq').placeholder = 'RIGCTL tune (SDR++ etc)';
   }
   else if (m.type === 'auth'){
-    if (m.ok){ authed = true; $('login').classList.add('hidden'); $('pw-err').textContent=''; setConn('connected','live'); resync(); }
-    else { $('pw-err').textContent = 'Wrong password'; }
+    if (m.ok){ authed = true; loginShow(false); $('pw-err').textContent=''; setConn('Connected','live'); resync(); }
+    else { $('pw-err').textContent = 'Wrong password. Check it and connect again.'; $('pw').select(); }
   }
-  else if (m.type === 'status'){ authed = true; setConn('connected','live'); renderStatus(m); }
+  else if (m.type === 'status'){ authed = true; setConn('Connected','live'); renderStatus(m); }
   else if (m.type === 'activity'){ handleActivity(m); }
   else if (m.type === 'system'){ renderSystem(m); }
   else if (m.type === 'files'){ renderFiles(m); }
@@ -57,29 +59,60 @@ function handleJSON(m){
 }
 
 function setConn(txt, cls){ const b=$('st-conn'); b.textContent=txt; b.className='badge '+cls; }
+// the password prompt (and the map) keep keyboard focus out of the page behind them
+function loginShow(on){ $('login').classList.toggle('hidden', !on); pageInert(on || MAP.open); if (on) $('pw').focus(); }
+function pageInert(on){ $('top').inert = on; $('main').inert = on; }
 
 //---------------------------------------------------------------- spectrum
 const spec = $('spec'), wf = $('wf');
 const sctx = spec.getContext('2d'), wctx = wf.getContext('2d');
-let wfImg = null;
+let wfImg = null, dpr = 1;
 
+// the trace is drawn at the screen's pixel density; the waterfall keeps one row per CSS pixel,
+// and its history survives a resize (rows keep their height, the span is stretched to the new width)
 function sizeCanvas(){
-  for (const c of [spec, wf]){
-    const w = c.clientWidth|0, h = c.clientHeight|0;
-    if (c.width !== w || c.height !== h){ c.width = w; c.height = h; }
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const sw = Math.round(spec.clientWidth*dpr), sh = Math.round(spec.clientHeight*dpr);
+  if (sw && sh && (spec.width !== sw || spec.height !== sh)){ spec.width = sw; spec.height = sh; }
+  // no layout size (hidden for a moment): keep the canvas and its history as they are
+  const w = wf.clientWidth|0, h = wf.clientHeight|0;
+  if (w && h && (wf.width !== w || wf.height !== h)){
+    let old = null;
+    if (wf.width && wf.height){ old = document.createElement('canvas'); old.width = wf.width; old.height = wf.height; old.getContext('2d').drawImage(wf, 0, 0); }
+    wf.width = w; wf.height = h;
+    if (old && w && h) wctx.drawImage(old, 0, 0, old.width, old.height, 0, 0, w, old.height);
   }
   wfImg = wf.width > 0 ? wctx.createImageData(wf.width, 1) : null; // zero while the page has no layout width
 }
 window.addEventListener('resize', sizeCanvas);
 
+// waterfall palette as a 256-entry table: display glass, a dark indigo where the noise sits
+// (about 0.3 with the default range), then plum, ember, amber and white hot for signals
+const WF_LUT = (function(){
+  const stops = [[0,[8,8,10]],[0.22,[12,12,18]],[0.34,[30,26,52]],[0.46,[92,34,98]],[0.6,[196,62,62]],[0.76,[252,152,44]],[1,[255,240,190]]];
+  const t = new Uint8ClampedArray(256*3);
+  for (let k=0, j=1; k<256; k++){
+    const n = k/255; while (j < stops.length-1 && n > stops[j][0]) j++;
+    const [p0, a] = stops[j-1], [p1, b] = stops[j], f = (n-p0)/(p1-p0);
+    for (let c=0; c<3; c++) t[k*3+c] = a[c]+(b[c]-a[c])*f;
+  }
+  return t;
+})();
 function dbColor(n){ // n in 0..1
-  n = Math.max(0, Math.min(1, n));
-  // blue -> cyan -> green -> yellow -> red
-  const stops = [[8,12,28],[20,60,120],[0,160,150],[90,210,70],[240,220,60],[255,80,40]];
-  const x = n*(stops.length-1); const i = Math.floor(x), f = x-i;
-  const a = stops[i], b = stops[Math.min(i+1,stops.length-1)];
-  return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+  const k = Math.max(0, Math.min(255, Math.round(n*255)))*3;
+  return [WF_LUT[k], WF_LUT[k+1], WF_LUT[k+2]];
 }
+
+// FFT bins down to n pixels, keeping the strongest bin under each pixel so narrow carriers don't drop out
+function binsTo(vals, bins, n, out){
+  for (let x=0; x<n; x++){
+    let i = (x*bins/n)|0; const e = Math.min(bins, Math.max(i+1, ((x+1)*bins/n)|0));
+    let v = vals[i]; for (i++; i<e; i++) if (vals[i] > v) v = vals[i];
+    out[x] = v;
+  }
+  return out;
+}
+let rowS = new Float32Array(0), rowW = new Float32Array(0);
 
 function handleFFT(dv, buf){
   const bins = dv.getUint16(2, true);
@@ -90,84 +123,85 @@ function handleFFT(dv, buf){
   const vals = new Float32Array(bins);
   let mn = 999;
   for (let i=0;i<bins;i++){ const d = dbmin + u8[i]*0.5; vals[i]=d; if (d<mn) mn=d; }
-  noiseFloor = noiseFloor*0.9 + mn*0.1;
+  noiseFloor = lastFFT ? noiseFloor*0.9 + mn*0.1 : mn; // the first frame sets it, so the waterfall doesn't start too bright
   lastFFT = {bins, center, rate, dbmin, vals};
   drawSpectrum();
-  $('specmeta').textContent = (center/1e6).toFixed(4)+' MHz · '+(rate/1e6).toFixed(2)+' Msps · '+bins;
+  setHTML($('specmeta'), '<b>'+(center/1e6).toFixed(4)+' MHz</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
 }
 
 function drawSpectrum(){
   if (!lastFFT || !spec.width || !wfImg || wfImg.width !== wf.width) return;
   const {bins, center, rate, vals} = lastFFT;
-  const W = spec.width, H = spec.height;
+  const N = spec.width, W = N/dpr, H = spec.height/dpr; // N device pixels, W x H CSS pixels
   const range = +$('dbrange').value;
   const floor = noiseFloor - 3, top = floor + range;
+  sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   sctx.clearRect(0,0,W,H);
   // grid
-  sctx.strokeStyle = 'rgba(255,255,255,0.05)'; sctx.lineWidth=1;
-  for (let g=1;g<6;g++){ const x=W*g/6; sctx.beginPath(); sctx.moveTo(x,0); sctx.lineTo(x,H); sctx.stroke(); }
-  // center line
-  sctx.strokeStyle = 'rgba(90,169,255,0.35)'; sctx.beginPath(); sctx.moveTo(W/2,0); sctx.lineTo(W/2,H); sctx.stroke();
-  // fill + line
+  sctx.strokeStyle = 'rgba(255,255,255,0.045)'; sctx.lineWidth=1;
+  for (let g=1;g<6;g++){ const x=Math.round(W*g/6)+0.5; sctx.beginPath(); sctx.moveTo(x,0); sctx.lineTo(x,H); sctx.stroke(); }
+  // tuned frequency
+  sctx.strokeStyle = 'rgba(255,176,46,0.4)'; sctx.beginPath(); sctx.moveTo(Math.round(W/2)+0.5,0); sctx.lineTo(Math.round(W/2)+0.5,H); sctx.stroke();
+  // trace, one point per device pixel
+  if (rowS.length !== N) rowS = new Float32Array(N);
+  binsTo(vals, bins, N, rowS);
   sctx.beginPath();
-  for (let x=0;x<W;x++){
-    const i = Math.min(bins-1, (x/W*bins)|0);
-    const n = (vals[i]-floor)/(top-floor);
+  for (let k=0;k<N;k++){
+    const n = (rowS[k]-floor)/(top-floor);
     const y = H - Math.max(0,Math.min(1,n))*H;
-    if (x===0) sctx.moveTo(x,y); else sctx.lineTo(x,y);
+    if (k===0) sctx.moveTo(0,y); else sctx.lineTo(k/dpr,y);
   }
   sctx.lineTo(W,H); sctx.lineTo(0,H); sctx.closePath();
-  sctx.fillStyle = 'rgba(53,208,165,0.12)'; sctx.fill();
+  sctx.fillStyle = 'rgba(255,176,46,0.06)'; sctx.fill();
   sctx.beginPath();
-  for (let x=0;x<W;x++){
-    const i = Math.min(bins-1, (x/W*bins)|0);
-    const n = (vals[i]-floor)/(top-floor);
+  for (let k=0;k<N;k++){
+    const n = (rowS[k]-floor)/(top-floor);
     const y = H - Math.max(0,Math.min(1,n))*H;
-    if (x===0) sctx.moveTo(x,y); else sctx.lineTo(x,y);
+    if (k===0) sctx.moveTo(0,y); else sctx.lineTo(k/dpr,y);
   }
-  sctx.strokeStyle = '#35d0a5'; sctx.lineWidth=1.2; sctx.stroke();
+  sctx.strokeStyle = '#ffb02e'; sctx.lineWidth=1.25; sctx.stroke();
   drawMarks(center, rate, W, H);
   // waterfall row
   const Wf = wf.width;
   const img = wfImg;
+  if (rowW.length !== Wf) rowW = new Float32Array(Wf);
+  binsTo(vals, bins, Wf, rowW);
   for (let x=0;x<Wf;x++){
-    const i = Math.min(bins-1, (x/Wf*bins)|0);
-    const n = (vals[i]-floor)/(top-floor);
-    const c = dbColor(n);
+    const c = dbColor((rowW[x]-floor)/(top-floor));
     const o = x*4; img.data[o]=c[0]; img.data[o+1]=c[1]; img.data[o+2]=c[2]; img.data[o+3]=255;
   }
   wctx.drawImage(wf, 0, 0, Wf, wf.height-1, 0, 1, Wf, wf.height-1);
   wctx.putImageData(img, 0, 0);
 }
 
-// bookmark markers inside the visible span; labels step down a row when they would overlap
+// bookmark markers inside the visible span; labels step down a row when they would overlap (CSS pixels)
 let marks = [];
 function drawMarks(center, rate, W, H){
   marks = [];
   if (!bms.length || !rate) return;
   const lo = center - rate/2;
   const vis = bms.filter(b => b.freq >= lo && b.freq <= lo + rate).sort((a,b) => a.freq - b.freq);
-  sctx.font = '10px ui-monospace,Menlo,Consolas,monospace'; sctx.textBaseline = 'top';
+  sctx.font = '500 11.5px "Barlow Semi Condensed",system-ui,sans-serif'; sctx.textBaseline = 'middle';
   const rowEnd = [-1e9, -1e9, -1e9, -1e9];
   for (const b of vis){
     const x = Math.round((b.freq - lo) / rate * W) + 0.5;
-    sctx.strokeStyle = 'rgba(255,207,90,0.5)'; sctx.setLineDash([3,3]);
+    sctx.strokeStyle = 'rgba(108,184,255,0.55)'; sctx.setLineDash([3,3]);
     sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, H); sctx.stroke(); sctx.setLineDash([]);
-    const tw = Math.min(140, sctx.measureText(b.name).width + 6);
+    const tw = Math.min(150, sctx.measureText(b.name).width + 8);
     const lx = Math.max(0, Math.min(W - tw, x + 2));
     let row = rowEnd.findIndex(e => lx > e + 2);
     if (row < 0) row = rowEnd.indexOf(Math.min(...rowEnd)); // all rows taken: the one that frees up first
     rowEnd[row] = lx + tw;
-    const ly = 4 + row*13;
-    sctx.fillStyle = 'rgba(5,8,12,0.78)'; sctx.fillRect(lx, ly, tw, 12);
-    sctx.fillStyle = '#ffcf5a'; sctx.fillText(b.name, lx + 3, ly + 1, tw - 6);
+    const ly = 4 + row*15;
+    sctx.fillStyle = 'rgba(15,16,15,0.84)'; sctx.fillRect(lx, ly, tw, 14);
+    sctx.fillStyle = '#8cc8ff'; sctx.fillText(b.name, lx + 4, ly + 7.5, tw - 8);
     marks.push({x, lx, ly, tw, b});
   }
 }
 function markAt(ev){
   const r = spec.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
   for (const m of marks){
-    if (ev.target === spec && x >= m.lx && x <= m.lx + m.tw && y >= m.ly && y <= m.ly + 12) return m;
+    if (ev.target === spec && x >= m.lx && x <= m.lx + m.tw && y >= m.ly && y <= m.ly + 14) return m;
   }
   for (const m of marks) if (Math.abs(x - m.x) <= 4) return m;
   return null;
@@ -186,7 +220,7 @@ for (const el of [spec, wf]){
     const r=$('specbox').getBoundingClientRect(); cur.style.display='block';
     cur.style.left=(ev.clientX-r.left)+'px';
     const m=markAt(ev);
-    $('specinfo').textContent = m ? '★ '+m.b.name+' · '+fmtMHz(m.b.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz';
+    $('specinfo').textContent = m ? m.b.name+'  '+fmtMHz(m.b.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz';
   });
   el.addEventListener('mouseleave', ()=>{ $('cursor').style.display='none'; $('specinfo').textContent=''; });
 }
@@ -197,10 +231,10 @@ let actx=null, gain=null, playTime=0, audioOn=false;
 function audioStart(){
   if (!actx){ actx=new (window.AudioContext||window.webkitAudioContext)(); gain=actx.createGain(); gain.connect(actx.destination); gain.gain.value=+$('vol').value/100; }
   actx.resume(); audioOn=true; playTime=0;
-  $('btn-audio').textContent='🔊 Audio on'; $('btn-audio').classList.add('p');
+  $('btn-audio').innerHTML=icon('spk')+'Audio on'; reflect('btn-audio', true);
   subscribe();
 }
-function audioStop(){ audioOn=false; $('btn-audio').textContent='🔇 Audio off'; $('btn-audio').classList.remove('p'); subscribe(); }
+function audioStop(){ audioOn=false; $('btn-audio').innerHTML=icon('spk-off')+'Audio off'; reflect('btn-audio', false); subscribe(); }
 $('btn-audio').onclick = ()=> audioOn ? audioStop() : audioStart();
 $('vol').oninput = ()=>{ if (gain) gain.gain.value = +$('vol').value/100; };
 
@@ -232,22 +266,23 @@ function escH(s){ return esc(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;
 function renderStatus(m){
   const d=m.decode||{}, inp=m.input||{}, tr=m.trunk||{}, fl=m.flags||{}, site=m.site||{}, au=m.auto||{};
   const ana = !d.carrier && d.analog;
-  $('st-carrier').textContent = d.carrier ? 'SYNC' : (ana ? 'ANALOG' : 'no sync');
+  setTxt($('st-carrier'), d.carrier ? 'Sync' : (ana ? 'Analog' : 'No sync'));
   $('st-carrier').className = 'badge '+(d.carrier?'live':(ana?'warn':''));
-  $('st-mode').textContent = esc(d.name);
-  $('d-freq').textContent = (inp.freq/1e6).toFixed(6);
-  $('d-sys').textContent = ana ? 'Analog FM' : esc(d.sys);
+  setTxt($('st-mode'), esc(d.name) || '—');
+  // the readout's unlit segments are "8888.888888"; no frequency (non-RTL input) leaves them all dark
+  setTxt($('d-freq'), inp.freq > 0 ? (inp.freq/1e6).toFixed(6) : '');
+  $('d-sys').textContent = ana ? 'Analog FM' : (esc(d.sys) || '—');
   $('d-ftype').textContent = esc(d.ftype).trim()||'—';
-  $('d-mod').textContent = esc(d.mod)+' · '+esc(d.rate)+' sps';
+  $('d-mod').textContent = esc(d.mod)+', '+esc(d.rate)+' sps';
   $('d-level').style.width = (d.level||0)+'%';
   const sq=inp.squelch||1, rms=inp.rms||0;
   $('d-rms').style.width = Math.min(100, rms/ (sq*2||200) *100)+'%';
-  $('d-rmsv').textContent = rms+'/'+sq;
+  $('d-rmsv').textContent = rms+' / '+sq;
 
   // auto-decode progress (the click hint shows when it is off)
-  const adText = {off:'Click the spectrum to tune.', paused:'auto-decode paused (trunking / scanner)', sync:'locked on '+esc(d.name),
-    analog:'analog FM (AUTO still watching)', idle:'waiting for a signal · '+esc(d.name),
-    probe:'trying '+esc(d.name)+' · '+Math.min(au.tried||0, au.total||0)+'/'+(au.total||0)};
+  const adText = {off:'Click the spectrum to tune.', paused:'Auto-decode paused while trunking or scanning', sync:'Locked on '+esc(d.name),
+    analog:'Analog FM, AUTO still watching', idle:'Waiting for a signal ('+esc(d.name)+')',
+    probe:'Trying '+esc(d.name)+', '+Math.min(au.tried||0, au.total||0)+' of '+(au.total||0)};
   $('ad-stat').textContent = adText[au.state] || adText.off;
   renderBscan(m.bscan, d);
 
@@ -287,15 +322,15 @@ function renderStatus(m){
   reflect('tg-wav', fl.rec_wav); reflect('tg-wav2', fl.rec_wav);
   const kh=m.key_hunt||{}; const el=$('autokey-stat');
   if (el){
-    if (kh.locked) el.innerHTML='<span style="color:var(--good)">✓ found key '+kh.found_key+'</span>';
-    else if (kh.active) el.textContent='searching… '+(kh.checked||0)+' encrypted frames checked, waiting for a pause in speech';
-    else el.textContent='';
+    if (kh.locked) setHTML(el, '<span class="found">'+icon('check')+' Found key '+kh.found_key+'</span>');
+    else if (kh.active) setHTML(el, 'Searching: '+(kh.checked||0)+' encrypted frames checked, waiting for a pause in speech');
+    else setHTML(el, '');
   }
   // only when the running value changes, so a pick waiting for Set isn't overwritten
   if (inp.bw && inp.bw !== shownBw){ shownBw = inp.bw; $('rtlbw').value = String(inp.bw); }
   if (inp.rate !== undefined){
     if (document.activeElement !== $('rtlrate')) $('rtlrate').value = String(inp.rate_target||0);
-    $('rtlratev').textContent = 'runs at '+(inp.rate/1e6).toFixed(3);
+    $('rtlratev').textContent = 'Running at '+(inp.rate/1e6).toFixed(3)+' MSPS';
   }
   // hardware AGC greys out the manual LNA gain; the slider then shows the last manual value
   const agc = !!inp.agc;
@@ -314,10 +349,12 @@ function hex(n){ return (n>>>0).toString(16).toUpperCase(); }
 
 //---------------------------------------------------------------- slot boxes
 // built once; every line is always there, empty or not, so a call starting or ending moves nothing
+// target and source are 8-digit segment fields: unlit segments when there is no call
 function slotInit(){
   for (const i of [1,2]) $('slot'+i).innerHTML=
-    '<div class="hd"><span class="nm">SLOT '+i+'</span><span class="tm"></span><span class="bu"></span></div>'+
-    '<div class="big"><span class="lb">TGT</span> <b class="tg">—</b> &nbsp;<span class="lb">SRC</span> <b class="sr">—</b></div>'+
+    '<div class="hd"><span class="nm">Slot '+i+'</span><span class="tm"></span><span class="bu"></span></div>'+
+    '<div class="big"><span class="fld"><span class="lb">Target</span><b class="tg seg" data-ghost="88888888"></b></span>'+
+    '<span class="fld"><span class="lb">Source</span><b class="sr seg" data-ghost="88888888"></b></span></div>'+
     '<div class="ln tags"></div><div class="ln l1"></div><div class="ln l2"></div><div class="ln l3"></div>';
 }
 function setTxt(el, t, title){ if (el.textContent !== t) el.textContent = t; if (title !== undefined && el.title !== title) el.title = title; }
@@ -328,30 +365,35 @@ function slotSet(i, s, d, used){
   el.classList.toggle('off', !used);
   if (!used){
     el.classList.remove('active');
-    setTxt(q('nm'), 'SLOT '+i); setTxt(q('tm'), ''); setTxt(q('bu'), ''); setTxt(q('tg'), '—'); setTxt(q('sr'), '—');
-    setHTML(q('tags'), s ? '<span class="hint">no second timeslot on this channel</span>' : '');
-    for (const c of ['l1','l2','l3']) setTxt(q(c), '', '');
+    setTxt(q('nm'), 'Slot '+i); setTxt(q('tm'), ''); setTxt(q('bu'), ''); setTxt(q('tg'), ''); setTxt(q('sr'), '');
+    setHTML(q('tags'), s ? '<span class="hint">No second timeslot on this channel</span>' : '');
+    for (const c of ['l1','l3']) setTxt(q(c), '', '');
+    setHTML(q('l2'), ''); // through setHTML, or the same position coming back later would not be drawn
     return;
   }
   const act = !!(s.tg || s.src), lc = d.carrier && act ? liveCalls.get(d.stereo ? i : 0) : null;
   el.classList.toggle('active', !!(d.carrier && act));
-  setTxt(q('nm'), 'SLOT '+i+(d.stereo ? '' : ' / FDMA'));
+  setTxt(q('nm'), 'Slot '+i+(d.stereo ? '' : ' (FDMA)'));
   setTxt(q('tm'), lc ? fmtClock(Date.now()/1000-lc.t) : '');
-  setTxt(q('bu'), (s.burst||'')+' · err '+esc(s.err)+esc(s.err2)+(s.on ? '' : ' · OFF'));
-  setTxt(q('tg'), s.tg ? String(s.tg) : '—'); setTxt(q('sr'), s.src ? String(s.src) : '—');
+  setTxt(q('bu'), (s.burst||'')+' err '+esc(s.err)+esc(s.err2)+(s.on ? '' : ' off'));
+  setTxt(q('tg'), s.tg ? String(s.tg) : ''); setTxt(q('sr'), s.src ? String(s.src) : '');
   const algId = s.alg && s.alg!==0x80; // ALG / key id, when the protocol sends them
   //the decoder keeps the call type after the call; only show it while the slot has ids
-  setHTML(q('tags'), !act ? '' : (s.gi===0?'<span class="tag grp">GROUP</span> ':(s.gi===1?'<span class="tag prv">PRIVATE</span> ':''))+
-    (s.enc?'<span class="tag enc">ENC '+escH(s.enc)+(algId?' · alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':''));
+  setHTML(q('tags'), !act ? '' : (s.gi===0?'<span class="tag grp">Group</span>':(s.gi===1?'<span class="tag prv">Private</span>':''))+
+    (s.enc?'<span class="tag enc">'+icon('lock')+escH(s.enc)+(algId?', alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':''));
   const l1=[(s.alias||'').trim(), (s.call||'').trim()].filter(x=>x).join(' · ');
   setTxt(q('l1'), l1, l1);
   const gps=(s.gps||'').trim();
-  setHTML(q('l2'), !gps ? '' : (lc && lc.lat!=null ? '<a data-lat="'+lc.lat+'" data-lon="'+lc.lon+'" title="Show on the map">📍 '+escH(gps)+'</a>' : '📍 '+escH(gps)));
+  setHTML(q('l2'), !gps ? '' : (lc && lc.lat!=null ? '<button class="gps" data-lat="'+lc.lat+'" data-lon="'+lc.lon+'" title="Show on the map">'+icon('pin')+'<span class="ell">'+escH(gps)+'</span></button>' : icon('pin')+' '+escH(gps)));
   const data=(s.data||'').trim();
   setTxt(q('l3'), data ? 'Last data: '+data : '', data);
 }
-$('slots').addEventListener('click', e=>{ const a=e.target.closest('a[data-lat]'); if (a) mapOpen({lat:+a.dataset.lat, lon:+a.dataset.lon}); });
-function reflect(id, on){ const b=$(id); if(!b) return; b.classList.toggle('on', !!on); }
+$('slots').addEventListener('click', e=>{ const a=e.target.closest('[data-lat]'); if (a) mapOpen({lat:+a.dataset.lat, lon:+a.dataset.lon}); });
+// toggle keys light their LED with the "on" class; aria-pressed tells assistive tech the same
+function reflect(id, on){
+  const b=$(id); if(!b) return; b.classList.toggle('on', !!on);
+  const v=String(!!on); if (b.tagName==='BUTTON' && b.getAttribute('aria-pressed')!==v) b.setAttribute('aria-pressed', v);
+}
 
 function renderEvents(evs){
   const el=$('events'); el.innerHTML='';
@@ -416,13 +458,13 @@ function idHTML(num, str, name, prefix){
 function actRow(it){
   const el=document.createElement('div');
   el.className='act k-'+it.k+(it.crc===0?' err':'')+(it.live?' live':'')+(actOpen.has(it.id)?' open':'');
-  el.dataset.id=it.id;
+  el.dataset.id=it.id; el.tabIndex=0;
   const who=idHTML(it.src, it.srcs, it.sn), to=idHTML(it.dst, it.dsts, it.dn, it.g===0 ? 'TG ' : '');
   let meta='';
-  if (it.enc) meta+='<span class="tag enc" title="'+escH(it.enc)+'">🔒 '+escH(it.enc)+'</span>';
-  if (it.lat!=null) meta+='<span class="tag lnk" data-lat="'+it.lat+'" data-lon="'+it.lon+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+': show on the map">📍</span>';
+  if (it.enc) meta+='<span class="tag enc" title="'+escH(it.enc)+'">'+icon('lock')+escH(it.enc)+'</span>';
+  if (it.lat!=null) meta+='<button class="tag lnk" data-lat="'+it.lat+'" data-lon="'+it.lon+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
   if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times (resent)">×'+it.rep+'</span>';
-  if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'" title="'+escH(it.ack)+'">'+(it.ack==='delivered'?'✓':'✗')+'</span>';
+  if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'" title="'+escH(it.ack)+'">'+icon(it.ack==='delivered'?'check':'x')+'</span>';
   if (it.k==='call') meta+='<span class="dur" data-t="'+it.t+'">'+fmtClock(it.live ? Date.now()/1000-it.t : it.dur)+'</span>';
   el.innerHTML='<div class="l1"><span class="t">'+hms(it.t)+'</span><span class="ty">'+escH(it.ty||it.k)+'</span>'+
     (it.s?'<span class="sl">TS'+it.s+'</span>':'')+'<span class="who">'+who+(to?' → '+to:'')+'</span><span class="meta">'+meta+'</span></div>'+
@@ -486,12 +528,18 @@ $('acts').addEventListener('click', e=>{
   const row=e.target.closest('.act'); if (!row) return;
   const id=+row.dataset.id, it=acts.get(id); if (!it) return;
   if (actOpen.has(id)) actOpen.delete(id); else actOpen.add(id);
+  const had=document.activeElement===row;
   actPut(it);
+  if (had && actEls.get(id)) actEls.get(id).focus(); // the row was rebuilt
+});
+// Enter or Space on a focused row opens / closes its details
+$('acts').addEventListener('keydown', e=>{
+  if ((e.key==='Enter' || e.key===' ') && e.target.classList.contains('act')){ e.preventDefault(); e.target.click(); }
 });
 $('act-kinds').addEventListener('click', e=>{
   const c=e.target.closest('.chip'); if (!c) return;
   const was=actKind; actKind=c.dataset.k;
-  for (const x of $('act-kinds').children) x.classList.toggle('on', x===c);
+  for (const x of $('act-kinds').children){ x.classList.toggle('on', x===c); x.setAttribute('aria-pressed', x===c); }
   const log=actKind==='log';
   $('acts').classList.toggle('hidden', log); $('events').classList.toggle('hidden', !log);
   if (log !== (was==='log')) subscribe();
@@ -536,24 +584,28 @@ function drawRadios(){
     const air=onAir.has(r.id), tx=r.flash>now;
     h+='<tr'+(air?' class="talk"':(tx?' class="tx"':''))+'>'+
       '<td title="'+escH(r.id+(r.name?' '+r.name:'')+(r.alias?' · '+r.alias:''))+'"><b>'+escH(r.id)+'</b>'+(r.name?' <i>'+escH(r.name)+'</i>':'')+(r.alias?' <i>'+escH(r.alias)+'</i>':'')+'</td>'+
-      '<td>'+(air?'<span style="color:var(--good)">on air</span>':ago(now-r.last))+'</td>'+
+      '<td>'+(air?'<span class="air">On air</span>':ago(now-r.last))+'</td>'+
       '<td title="'+escH(r.sum||'')+'"><span class="tag">'+escH(r.ty||'')+'</span> '+escH(r.sum||'')+'</td>'+
       '<td class="opt">'+(r.tg||'')+'</td>'+
-      '<td>'+(r.lat!=null?'<a data-id="'+escH(r.id)+'" title="'+r.lat.toFixed(5)+', '+r.lon.toFixed(5)+', '+ago(now-r.pt)+': show on the map">📍<span class="coords"> '+r.lat.toFixed(4)+', '+r.lon.toFixed(4)+'</span></a>':'')+'</td></tr>';
+      '<td>'+(r.lat!=null?'<button class="pos" data-id="'+escH(r.id)+'" title="'+r.lat.toFixed(5)+', '+r.lon.toFixed(5)+', '+ago(now-r.pt)+': show on the map" aria-label="Show '+escH(r.id)+' on the map">'+icon('pin')+'<span class="coords">'+r.lat.toFixed(4)+', '+r.lon.toFixed(4)+'</span></button>':'')+'</td></tr>';
   }
   if (!list.length) h='<tr><td colspan="5" class="empty">Radios show up here as they talk or send data.</td></tr>';
+  // rebuilt every few seconds: keep keyboard focus on the same radio's position button
+  const f=document.activeElement, fid=f && f.closest && f.closest('#rad-body') ? f.dataset.id : null;
   $('rad-body').innerHTML=h;
+  if (fid){ const b=[...$('rad-body').querySelectorAll('[data-id]')].find(x=>x.dataset.id===fid); if (b) b.focus(); }
   if (MAP.open) mapDraw();
 }
 $('rad-body').addEventListener('click', e=>{
-  const a=e.target.closest('a[data-id]'); if (!a) return;
+  const a=e.target.closest('[data-id]'); if (!a) return;
   const r=radios.get(a.dataset.id); if (r && r.lat!=null) mapOpen({lat:r.lat, lon:r.lon, id:r.id});
 });
 
 //---------------------------------------------------------------- map (modal)
 // OpenStreetMap tiles when the browser is online; offline the dots still sit right on a dark
 // background with a scale bar. Radios on air pulse red and come into view, data makes a radio flash.
-const MAP = {open:false, z:13, lat:0, lon:0, tiles:new Map(), fitted:false, focus:null, sel:null, follow:true, air:new Set(), drag:null, back:null};
+// z can be fractional (pinch, wheel): tiles come from the nearest whole zoom level, scaled
+const MAP = {open:false, z:13, lat:0, lon:0, tiles:new Map(), fitted:false, focus:null, sel:null, follow:true, air:new Set(), drag:null, pinch:null, back:null, raf:0};
 const TS = 256;
 function mpx(lon, z){ return (lon+180)/360*TS*2**z; }
 function mpy(lat, z){ const s=Math.sin(Math.max(-85.05, Math.min(85.05, lat))*Math.PI/180); return (0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*TS*2**z; }
@@ -563,7 +615,7 @@ function mapPts(){ return [...radios.values()].filter(r=>r.lat!=null); }
 function airLabel(id){ const c=onAir.get(id); return !c ? '' : (c.dsts ? c.dsts : (c.dst>0 ? (c.g===1 ? 'to '+c.dst : 'TG '+c.dst) : 'on air')); }
 
 function mapOpen(focus){
-  if (!MAP.open){ MAP.back=document.activeElement; MAP.open=true; $('mapdlg').classList.remove('hidden'); }
+  if (!MAP.open){ MAP.back=document.activeElement; MAP.open=true; $('mapdlg').classList.remove('hidden'); pageInert(true); }
   MAP.focus = focus && focus.lat!=null ? {lat:focus.lat, lon:focus.lon} : null;
   if (focus && focus.id) MAP.sel=focus.id;
   if (MAP.focus){ MAP.lat=focus.lat; MAP.lon=focus.lon; MAP.z=Math.max(MAP.z, 14); MAP.fitted=true; }
@@ -573,6 +625,7 @@ function mapOpen(focus){
 }
 function mapClose(){
   MAP.open=false; MAP.focus=null; $('mapdlg').classList.add('hidden');
+  pageInert(!$('login').classList.contains('hidden'));
   if (MAP.back && MAP.back.focus) MAP.back.focus();
 }
 function mapFit(){
@@ -598,18 +651,21 @@ function mapFollow(w, h){
 function mapDraw(){
   if (!MAP.open) return;
   const v=$('mapview'), w=v.clientWidth, h=v.clientHeight; if (!w || !h) return;
-  if (!MAP.drag) mapFollow(w, h);
-  const z=MAP.z, n=2**z, x0=mpx(MAP.lon,z)-w/2, y0=mpy(MAP.lat,z)-h/2, keep=new Set();
-  for (let tx=Math.floor(x0/TS); tx*TS<x0+w; tx++) for (let ty=Math.max(0, Math.floor(y0/TS)); ty*TS<y0+h && ty<n; ty++){
-    const key=z+'/'+tx+'/'+ty; keep.add(key);
+  if (!MAP.drag && !MAP.pinch) mapFollow(w, h);
+  const z=MAP.z, tz=Math.round(z), n=2**tz, ts=TS*2**(z-tz), x0=mpx(MAP.lon,z)-w/2, y0=mpy(MAP.lat,z)-h/2, keep=new Set();
+  for (let tx=Math.floor(x0/ts); tx*ts<x0+w; tx++) for (let ty=Math.max(0, Math.floor(y0/ts)); ty*ts<y0+h && ty<n; ty++){
+    const key=tz+'/'+tx+'/'+ty; keep.add(key);
     let img=MAP.tiles.get(key);
     if (!img){
       img=document.createElement('img'); img.className='tile'; img.alt=''; img.draggable=false;
       img.onerror=()=>img.classList.add('miss');
-      img.src='https://tile.openstreetmap.org/'+z+'/'+(((tx%n)+n)%n)+'/'+ty+'.png';
+      img.src='https://tile.openstreetmap.org/'+tz+'/'+(((tx%n)+n)%n)+'/'+ty+'.png';
       $('maptiles').appendChild(img); MAP.tiles.set(key, img);
     }
-    img.style.transform='translate('+Math.round(tx*TS-x0)+'px,'+Math.round(ty*TS-y0)+'px)';
+    // edges rounded on their own so scaled tiles meet without seams
+    const l=Math.round(tx*ts-x0), t=Math.round(ty*ts-y0);
+    img.style.transform='translate('+l+'px,'+t+'px)';
+    img.style.width=(Math.round((tx+1)*ts-x0)-l)+'px'; img.style.height=(Math.round((ty+1)*ts-y0)-t)+'px';
   }
   for (const [k, img] of MAP.tiles) if (!keep.has(k)){ img.remove(); MAP.tiles.delete(k); }
   const now=Date.now()/1000, pts=[];
@@ -637,28 +693,31 @@ function mapDraw(){
   $('mapmarks').innerHTML=mk;
   $('mapempty').classList.toggle('hidden', mapPts().length>0 || !!MAP.focus);
   // scale bar: a round distance close to a sixth of the width
-  const mpp=156543.03392*Math.cos(MAP.lat*Math.PI/180)/n; //metres per pixel
+  const mpp=156543.03392*Math.cos(MAP.lat*Math.PI/180)/2**z; //metres per pixel
   let d=5; for (const sd of [10,20,50,100,200,500,1000,2000,5000,10000,20000,50000,100000,200000,500000,1000000]) if (sd/mpp < w/6) d=sd;
   $('mapscale').style.width=Math.round(d/mpp)+'px';
   $('mapscale').textContent=d>=1000 ? d/1000+' km' : d+' m';
-  $('map-osm').href='https://www.openstreetmap.org/#map='+z+'/'+MAP.lat.toFixed(5)+'/'+MAP.lon.toFixed(5);
+  $('map-osm').href='https://www.openstreetmap.org/#map='+tz+'/'+MAP.lat.toFixed(5)+'/'+MAP.lon.toFixed(5);
   mapSide(now);
 }
 function mapSide(now){
   const air=[...onAir.entries()].sort((a,b)=>a[1].t-b[1].t);
-  setTxt($('map-onair'), air.length ? air.length+' on air' : 'nobody on air');
+  setTxt($('map-onair'), air.length ? air.length+' on air' : 'Nobody on air');
   $('map-onair').className='badge'+(air.length?' live':'');
   let h='<h4>On air</h4>';
   if (!air.length) h+='<div class="hint">Nobody is transmitting.</div>';
   for (const [id, c] of air){
     const r=radios.get(id), pos=r && r.lat!=null;
-    h+='<div class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position from this radio yet')+'">● '+escH(id)+' · '+escH(airLabel(id))+' · '+fmtClock(now-c.t)+(pos?'':' · no position')+'</div>';
+    h+='<button class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position from this radio yet')+'"><span>'+escH(id)+'</span><span class="x">'+escH(airLabel(id))+', '+fmtClock(now-c.t)+(pos?'':', no position')+'</span></button>';
   }
   h+='<h4>Recently heard</h4>';
   const rec=mapPts().sort((a,b)=>b.last-a.last).slice(0,40);
   if (!rec.length) h+='<div class="hint">No positions yet.</div>';
-  for (const r of rec) h+='<div class="it'+(MAP.sel===r.id?' sel':'')+'" data-id="'+escH(r.id)+'">'+escH(r.id)+(r.name?' '+escH(r.name):'')+' · '+escH(r.ty||'')+' · '+ago(now-r.last)+'</div>';
+  for (const r of rec) h+='<button class="it'+(MAP.sel===r.id?' sel':'')+'" data-id="'+escH(r.id)+'"><span>'+escH(r.id)+(r.name?' '+escH(r.name):'')+'</span><span class="x">'+escH(r.ty||'')+', '+ago(now-r.last)+'</span></button>';
+  // rebuilt every second while someone talks: keep keyboard focus on the same radio
+  const f=document.activeElement, fid=f && f.classList.contains('it') ? f.dataset.id : null;
   setHTML($('mapside'), h);
+  if (fid && document.activeElement!==f){ const b=[...$('mapside').querySelectorAll('.it')].find(x=>x.dataset.id===fid); if (b) b.focus(); }
 }
 function mapZoom(dz, cx, cy){
   const v=$('mapview'), w=v.clientWidth, h=v.clientHeight, z=MAP.z, nz=Math.max(2, Math.min(19, z+dz));
@@ -667,8 +726,10 @@ function mapZoom(dz, cx, cy){
   //the point under the cursor stays where it is
   const lon=mlon(mpx(MAP.lon,z)-w/2+cx, z), lat=mlat(mpy(MAP.lat,z)-h/2+cy, z);
   MAP.z=nz; MAP.lon=mlon(mpx(lon,nz)-cx+w/2, nz); MAP.lat=mlat(mpy(lat,nz)-cy+h/2, nz);
-  mapDraw();
+  mapDrawSoon();
 }
+// pointer and wheel events can come faster than frames
+function mapDrawSoon(){ if (!MAP.raf) MAP.raf=requestAnimationFrame(()=>{ MAP.raf=0; mapDraw(); }); }
 $('btn-map').onclick=()=>mapOpen();
 $('rad-map').onclick=()=>mapOpen();
 $('map-close').onclick=mapClose;
@@ -676,22 +737,60 @@ $('mapdlg').addEventListener('click', e=>{ if (e.target===$('mapdlg')) mapClose(
 document.addEventListener('keydown', e=>{ if (e.key==='Escape' && MAP.open) mapClose(); });
 $('map-fit').onclick=()=>{ MAP.focus=null; mapFit(); mapDraw(); };
 $('map-follow').onclick=()=>{ MAP.follow=!MAP.follow; reflect('map-follow', MAP.follow); };
-$('map-zin').onclick=()=>mapZoom(1);
-$('map-zout').onclick=()=>mapZoom(-1);
-$('mapview').addEventListener('wheel', e=>{ e.preventDefault(); const r=$('mapview').getBoundingClientRect(); mapZoom(e.deltaY<0?1:-1, e.clientX-r.left, e.clientY-r.top); }, {passive:false});
+// the buttons step to the next whole zoom level, where tiles are sharpest
+$('map-zin').onclick=()=>mapZoom(Math.floor(MAP.z+1e-6)+1-MAP.z);
+$('map-zout').onclick=()=>mapZoom(Math.ceil(MAP.z-1e-6)-1-MAP.z);
+// a mouse wheel notch is one zoom level; trackpads send many small deltas, which zoom smoothly
+$('mapview').addEventListener('wheel', e=>{
+  e.preventDefault(); const r=$('mapview').getBoundingClientRect();
+  const px=e.deltaMode===1 ? e.deltaY*33 : (e.deltaMode===2 ? e.deltaY*400 : e.deltaY);
+  mapZoom(Math.max(-1, Math.min(1, -px/100)), e.clientX-r.left, e.clientY-r.top);
+}, {passive:false});
+// one pointer drags the map (or taps a radio); two pinch: zoom about the point between the
+// fingers, which also pans with them
+const mapPtrs = new Map();
+function mapPinchFrom(){
+  const [a, b]=[...mapPtrs.values()], r=$('mapview').getBoundingClientRect();
+  return {d:Math.max(1, Math.hypot(a.x-b.x, a.y-b.y)), cx:(a.x+b.x)/2-r.left, cy:(a.y+b.y)/2-r.top, w:r.width, h:r.height};
+}
 $('mapview').addEventListener('pointerdown', e=>{
-  const m=e.target.closest('.mk');
-  MAP.drag={x:e.clientX, y:e.clientY, px:mpx(MAP.lon,MAP.z), py:mpy(MAP.lat,MAP.z), moved:false, id:m && m.dataset.id};
+  mapPtrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
   $('mapview').setPointerCapture(e.pointerId); $('mapview').classList.add('drag');
+  if (mapPtrs.size===2){
+    const p=mapPinchFrom();
+    MAP.pinch={d:p.d, z:MAP.z, lon:mlon(mpx(MAP.lon,MAP.z)-p.w/2+p.cx, MAP.z), lat:mlat(mpy(MAP.lat,MAP.z)-p.h/2+p.cy, MAP.z)};
+    MAP.drag=null; // a pinch is not a tap on a radio
+  }
+  else if (mapPtrs.size===1){
+    const m=e.target.closest('.mk');
+    MAP.drag={x:e.clientX, y:e.clientY, px:mpx(MAP.lon,MAP.z), py:mpy(MAP.lat,MAP.z), moved:false, id:m && m.dataset.id};
+  }
 });
 $('mapview').addEventListener('pointermove', e=>{
+  if (!mapPtrs.has(e.pointerId)) return;
+  mapPtrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (MAP.pinch && mapPtrs.size>=2){
+    const p=mapPinchFrom(), P=MAP.pinch, nz=Math.max(2, Math.min(19, P.z+Math.log2(p.d/P.d)));
+    MAP.z=nz; MAP.lon=mlon(mpx(P.lon,nz)-p.cx+p.w/2, nz); MAP.lat=mlat(mpy(P.lat,nz)-p.cy+p.h/2, nz);
+    mapDrawSoon(); return;
+  }
   const d=MAP.drag; if (!d) return;
   const dx=e.clientX-d.x, dy=e.clientY-d.y;
   if (!d.moved && Math.hypot(dx, dy) < 4) return;
-  d.moved=true; MAP.lon=mlon(d.px-dx, MAP.z); MAP.lat=mlat(d.py-dy, MAP.z); mapDraw();
+  d.moved=true; MAP.lon=mlon(d.px-dx, MAP.z); MAP.lat=mlat(d.py-dy, MAP.z); mapDrawSoon();
 });
-function mapUp(){
-  const d=MAP.drag; if (!d) return;
+function mapUp(e){
+  if (!mapPtrs.delete(e.pointerId)) return;
+  if (MAP.pinch){
+    if (mapPtrs.size>=2) return;
+    MAP.pinch=null;
+    // the finger still down carries on dragging from where it is
+    const p=[...mapPtrs.values()][0];
+    MAP.drag = p ? {x:p.x, y:p.y, px:mpx(MAP.lon,MAP.z), py:mpy(MAP.lat,MAP.z), moved:true} : null;
+    if (!p) $('mapview').classList.remove('drag');
+    return;
+  }
+  const d=MAP.drag; if (!d || mapPtrs.size) return;
   MAP.drag=null; $('mapview').classList.remove('drag');
   if (!d.moved && d.id){ MAP.sel = MAP.sel===d.id ? null : d.id; mapDraw(); }
 }
@@ -758,7 +857,7 @@ function fmtMHz(hz){ return (hz/1e6).toFixed(5).replace(/0{1,2}$/, ''); }
 // nearest bookmark within 2.5 kHz (less than half the narrowest channel step)
 function bmAt(f){ let best=null, bd=2501; for (const b of bms){ const d=Math.abs(b.freq-f); if (d<bd){ bd=d; best=b; } } return best; }
 function bmTune(b){ send({cmd:'bm_tune', id:b.id}); $('tunefreq').value=(b.freq/1e6).toFixed(6); }
-function bmMsg(t, bad){ const e=$('bm-msg'); e.textContent=t||''; e.style.color=bad?'var(--bad)':''; clearTimeout(bmMsgTimer); if (t && !bad) bmMsgTimer=setTimeout(()=>{ e.textContent=''; }, 4000); }
+function bmMsg(t, bad){ const e=$('bm-msg'); e.textContent=t||''; e.style.color=bad?'var(--fail)':''; clearTimeout(bmMsgTimer); if (t && !bad) bmMsgTimer=setTimeout(()=>{ e.textContent=''; }, 4000); }
 
 function bmFiltered(){
   const q=$('bm-q').value.trim().toLowerCase(), g=$('bm-grp').value;
@@ -780,7 +879,7 @@ function renderBookmarks(){
   const list=bmFiltered(), el=$('bm-list'); el.innerHTML='';
   if (!list.length){
     const h=document.createElement('div'); h.className='hint';
-    h.textContent = bms.length ? 'No bookmark matches.' : 'No bookmarks yet. Tune a channel and press ☆ or + Add.';
+    h.textContent = bms.length ? 'No bookmark matches.' : 'No bookmarks yet. Tune a channel and press the star or Add.';
     el.appendChild(h);
   }
   let lastGroup = null;
@@ -791,16 +890,18 @@ function renderBookmarks(){
       el.appendChild(gh); lastGroup=b.group;
     }
     const row=document.createElement('div'); row.className='bm'; row.dataset.id=b.id; row.title='Tune '+b.name+' ('+fmtMHz(b.freq)+' MHz)';
+    row.tabIndex=0;
     const n=document.createElement('span'); n.className='bm-n'; n.textContent=b.name;
     const f=document.createElement('span'); f.className='bm-f'; f.textContent=fmtMHz(b.freq);
     row.append(n, f);
     if (b.mode){ const t=document.createElement('span'); t.className='tag'; t.textContent=MODE_LABEL[b.mode]||b.mode; row.append(t); }
-    const e=document.createElement('button'); e.textContent='✎'; e.title='Edit';
+    const e=document.createElement('button'); e.innerHTML=icon('edit'); e.title='Edit'; e.setAttribute('aria-label', 'Edit '+b.name);
     e.onclick=(ev)=>{ ev.stopPropagation(); bmFormOpen(b); };
-    const x=document.createElement('button'); x.textContent='✕'; x.title='Delete';
+    const x=document.createElement('button'); x.innerHTML=icon('x'); x.title='Delete'; x.setAttribute('aria-label', 'Delete '+b.name);
     x.onclick=(ev)=>{ ev.stopPropagation(); if (confirm('Delete bookmark "'+b.name+'"?')) send({cmd:'bm_delete', id:b.id}); };
     row.append(e, x);
     row.onclick=()=>bmTune(b);
+    row.onkeydown=(ev)=>{ if (ev.target===row && (ev.key==='Enter' || ev.key===' ')){ ev.preventDefault(); bmTune(b); } };
     el.appendChild(row);
   }
   bmCurId = -1; bmMarkCurrent();
@@ -812,9 +913,10 @@ function bmMarkCurrent(){
   if (id === bmCurId) return;
   bmCurId = id;
   for (const r of $('bm-list').children) r.classList.toggle('on', +r.dataset.id === id);
-  $('d-bm').textContent = cur ? '★ '+cur.name : '';
-  $('btn-bm').textContent = cur ? '★' : '☆';
+  $('d-bm').innerHTML = cur ? icon('star-on')+' '+escH(cur.name) : '';
+  $('btn-bm').innerHTML = icon(cur ? 'star-on' : 'star');
   $('btn-bm').title = cur ? 'Edit bookmark "'+cur.name+'"' : 'Bookmark this frequency';
+  $('btn-bm').setAttribute('aria-label', $('btn-bm').title);
 }
 
 function bmFormOpen(b){
@@ -918,7 +1020,7 @@ $('bs-preset').onchange=()=>{ bsCustom(); bsSave(); };
 for (const id of ['bs-lo','bs-hi']) $(id).onchange=bsSave;
 $('bs-start').onclick=()=>{
   const r=bsRanges();
-  if (!r){ $('bs-stat').textContent='Enter the range to sweep, from and to in MHz.'; $('bs-stat').style.color='var(--bad)'; return; }
+  if (!r){ $('bs-stat').textContent='Enter the range to sweep, from and to in MHz.'; $('bs-stat').style.color='var(--fail)'; return; }
   send(Object.assign({cmd:'bscan_start', ranges:r}, bsOpts())); bsSave();
 };
 $('bs-cont').onclick=()=>send({cmd:'bscan_continue'});
@@ -931,15 +1033,15 @@ $('bs-excl-cont').onclick=()=>{
   send(Object.assign({cmd:'bscan_opts', resume:true, ranges:bsRanges()}, bsOpts())); bsSave();
 };
 $('bs-stop').onclick=()=>send({cmd:'bscan_stop'});
-for (const id of ['bs-skip','bs-keep']) $(id).onclick=()=>{ $(id).classList.toggle('on'); send(Object.assign({cmd:'bscan_opts'}, bsOpts())); bsSave(); };
+for (const id of ['bs-skip','bs-keep']) $(id).onclick=()=>{ reflect(id, !$(id).classList.contains('on')); send(Object.assign({cmd:'bscan_opts'}, bsOpts())); bsSave(); };
 for (const id of ['bs-thr','bs-excl']) $(id).onchange=()=>{ send(Object.assign({cmd:'bscan_opts'}, bsOpts())); bsSave(); };
 
 function renderBscan(bs, d){
   if (!bs) return;
   const on = bs.state !== 'off', mhz = f => fmtMHz(f)+' MHz';
-  $('bs-badge').textContent = {off:'off', sweep:'sweeping', probe:'probing', found:'locked', fixed:'found'}[bs.state] || bs.state;
+  setTxt($('bs-badge'), {off:'Off', sweep:'Sweeping', probe:'Probing', found:'Locked', fixed:'Found'}[bs.state] || bs.state);
   $('bs-badge').className = 'badge '+(bs.state==='found' || bs.state==='fixed' ? 'live' : (on ? 'warn' : ''));
-  $('st-bs').textContent = bs.state==='fixed' ? 'FOUND' : 'BAND SCAN';
+  setTxt($('st-bs'), bs.state==='fixed' ? 'Band scan found' : 'Band scan');
   $('st-bs').className = 'badge '+(bs.state==='fixed' ? 'live' : 'warn')+(on ? '' : ' vh');
   $('bs-start').disabled = on; $('bs-stop').disabled = !on; $('bs-cont').disabled = bs.state !== 'fixed';
   bsCur = bs.state === 'fixed' ? bs.last_freq : (bs.state === 'probe' || bs.state === 'found' ? bs.freq : 0);
@@ -949,11 +1051,11 @@ function renderBscan(bs, d){
     reflect('bs-skip', bs.skip_known); reflect('bs-keep', bs.keep_going);
     if (document.activeElement !== $('bs-thr')) $('bs-thr').value = bs.threshold;
   }
-  const tail = ' · pass '+bs.pass+', window '+bs.win+'/'+bs.wins+(bs.found ? ', '+bs.found+' found' : '')+(bs.skipping ? ', '+bs.skipping+' non-digital skipped' : '')+(bs.excluded ? ', '+bs.excluded+' excluded' : '');
+  const tail = '. Pass '+bs.pass+', window '+bs.win+' of '+bs.wins+(bs.found ? ', '+bs.found+' found' : '')+(bs.skipping ? ', '+bs.skipping+' non-digital skipped' : '')+(bs.excluded ? ', '+bs.excluded+' excluded' : '')+'.';
   let t, short = '';
   if (bs.state === 'sweep'){ t = 'Sweeping '+mhz(bs.freq)+tail; short = 'Band scan: sweeping '+mhz(bs.freq); }
   else if (bs.state === 'probe'){
-    t = 'Signal at '+mhz(bs.freq)+': trying '+esc(d.name)+' ('+bs.cand+'/'+bs.ncand+')'+(bs.left ? ', '+bs.left+' more in this window' : '')+tail;
+    t = 'Signal at '+mhz(bs.freq)+': trying '+esc(d.name)+' ('+bs.cand+' of '+bs.ncand+')'+(bs.left ? ', '+bs.left+' more in this window' : '')+tail;
     short = 'Band scan: trying '+esc(d.name)+' on '+mhz(bs.freq);
   }
   else if (bs.state === 'found'){ t = 'Decoding '+(bs.desc || esc(d.name))+' on '+mhz(bs.freq)+', collecting ids for the bookmark…'; short = 'Band scan: locked on '+mhz(bs.freq); }
@@ -962,14 +1064,14 @@ function renderBscan(bs, d){
   else t = 'Sweeps the bands with the RTL-SDR, tries every signal it sees with the digital decoders, and stops on the first one that decodes, saving it as a bookmark.'
     + (bs.found ? ' Last find: '+bs.last_name+' on '+mhz(bs.last_freq)+'.' : '');
   $('bs-stat').textContent = t;
-  $('bs-stat').style.color = !on && bs.msg ? 'var(--bad)' : '';
+  $('bs-stat').style.color = !on && bs.msg ? 'var(--fail)' : '';
   if (short) $('ad-stat').textContent = short;
 }
 
 //---------------------------------------------------------------- files
 function renderFiles(m){
   const el=$('filelist'); el.innerHTML='';
-  if (!m.files || !m.files.length){ el.innerHTML='<div class="hint">No files.</div>'; return; }
+  if (!m.files || !m.files.length){ el.innerHTML='<div class="hint">No recordings yet. Turn on Per-call WAV to record each call.</div>'; return; }
   m.files.sort((a,b)=>b.mtime-a.mtime);
   m.files.forEach(f=>{
     const a=document.createElement('a');
@@ -981,7 +1083,7 @@ function renderFiles(m){
 }
 
 //---------------------------------------------------------------- controls
-function bindToggle(id, cmd, key){ $(id).onclick=()=>{ const on=!$(id).classList.contains('on'); const o={cmd}; o[key]=on; send(o); $(id).classList.toggle('on',on); }; }
+function bindToggle(id, cmd, key){ $(id).onclick=()=>{ const on=!$(id).classList.contains('on'); const o={cmd}; o[key]=on; send(o); reflect(id, on); }; }
 
 $('btn-tune').onclick=()=>{ const f=parseFreq($('tunefreq').value); if(f) tuneTo(f); };
 $('tunefreq').addEventListener('keydown',e=>{ if(e.key==='Enter'){ const f=parseFreq($('tunefreq').value); if(f) tuneTo(f);} });
@@ -994,9 +1096,9 @@ function parseFreq(s){ s=(s||'').trim().toLowerCase().replace(/\s+/g,'').replace
 
 $('mode').onchange=()=>send({cmd:'mode', mode:$('mode').value});
 $('modu').onchange=()=>send({cmd:'modulation', mod:$('modu').value});
-$('tg-inv').onclick=()=>{ const on=!$('tg-inv').classList.contains('on'); send({cmd:'inversion', inverted:on}); $('tg-inv').classList.toggle('on',on); };
-$('tg-s1').onclick=()=>{ const on=!$('tg-s1').classList.contains('on'); send({cmd:'slots', slot1:on}); $('tg-s1').classList.toggle('on',on); };
-$('tg-s2').onclick=()=>{ const on=!$('tg-s2').classList.contains('on'); send({cmd:'slots', slot2:on}); $('tg-s2').classList.toggle('on',on); };
+$('tg-inv').onclick=()=>{ const on=!$('tg-inv').classList.contains('on'); send({cmd:'inversion', inverted:on}); reflect('tg-inv', on); };
+$('tg-s1').onclick=()=>{ const on=!$('tg-s1').classList.contains('on'); send({cmd:'slots', slot1:on}); reflect('tg-s1', on); };
+$('tg-s2').onclick=()=>{ const on=!$('tg-s2').classList.contains('on'); send({cmd:'slots', slot2:on}); reflect('tg-s2', on); };
 $('gdig').oninput=()=>{ const v=+$('gdig').value; $('gdigv').textContent=v?v:'auto'; send({cmd:'gain', digital:v}); };
 $('gana').oninput=()=>{ const v=+$('gana').value; $('ganav').textContent=v; send({cmd:'gain', analog:v}); };
 bindToggle('tg-hpfd','filters','hpfd'); bindToggle('tg-hpf','filters','hpf');
@@ -1028,7 +1130,7 @@ $('tg-scan').onclick=()=>{ const on=!$('tg-scan').classList.contains('on'); send
 $('btn-cc').onclick=()=>send({cmd:'return_cc'});
 $('btn-cycle').onclick=()=>send({cmd:'cycle'});
 for (const [id,key] of [['tg-grp','group'],['tg-prv','private'],['tg-data','data'],['tg-enc','enc'],['tg-allow','allow_list']])
-  $(id).onclick=(function(id,key){ return ()=>{ const on=!$(id).classList.contains('on'); const o={cmd:'trunk_opts'}; o[key]=on; send(o); $(id).classList.toggle('on',on); }; })(id,key);
+  $(id).onclick=(function(id,key){ return ()=>{ const on=!$(id).classList.contains('on'); const o={cmd:'trunk_opts'}; o[key]=on; send(o); reflect(id, on); }; })(id,key);
 $('btn-hang').onclick=()=>send({cmd:'hangtime', seconds:+$('hang').value});
 $('btn-tgh').onclick=()=>send({cmd:'tg_hold', tg:+$('tghold').value});
 $('btn-chan').onclick=()=>send({cmd:'csv', kind:'channel', text:$('csv-chan').value});
@@ -1037,9 +1139,9 @@ $('btn-scanset').onclick=()=>{ const fs=$('scanlist').value.split(/\s+/).map(par
 $('btn-scanbm').onclick=()=>{ $('scanlist').value=bmFiltered().slice(0,26).map(b=>(b.freq/1e6).toFixed(6)+'M').join('\n'); };
 
 // auto
-$('tg-autotune').onclick=()=>{ const on=!$('tg-autotune').classList.contains('on'); send({cmd:'auto_tune', enable:on}); $('tg-autotune').classList.toggle('on',on); };
-$('tg-autodec').onclick=()=>{ const on=!$('tg-autodec').classList.contains('on'); send({cmd:'auto_decode', enable:on}); $('tg-autodec').classList.toggle('on',on); };
-$('tg-autoana').onclick=()=>{ const on=!$('tg-autoana').classList.contains('on'); send({cmd:'auto_analog', enable:on}); $('tg-autoana').classList.toggle('on',on); };
+$('tg-autotune').onclick=()=>{ const on=!$('tg-autotune').classList.contains('on'); send({cmd:'auto_tune', enable:on}); reflect('tg-autotune', on); };
+$('tg-autodec').onclick=()=>{ const on=!$('tg-autodec').classList.contains('on'); send({cmd:'auto_decode', enable:on}); reflect('tg-autodec', on); };
+$('tg-autoana').onclick=()=>{ const on=!$('tg-autoana').classList.contains('on'); send({cmd:'auto_analog', enable:on}); reflect('tg-autoana', on); };
 
 // keys
 const khints={bp:'Decimal key id (0-255)',scrambler:'Decimal (1-32767)',rc4:'Hex, e.g. 0102030405',des:'Hex 16 chars',aes:'Hex, space every 16 (128/256-bit)',hytera:'Hex 10/32/64 chars',tyt_bp:'Hex 4 chars',tyt_ap:'Hex 32/64 chars',tyt_ep:'Hex 32 chars',retevis:'Hex 32/64 chars',baofeng:'Hex 32/64 chars',anytone:'Hex 4 chars',kenwood:'Decimal (15-bit)',csi:'Hex 18 chars (72-bit)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 chars',straight:'len:hexbytes[:discard]',ras:'password (6-24 chars)'};
@@ -1047,8 +1149,8 @@ $('ktype').onchange=()=>{ $('khint').textContent=khints[$('ktype').value]||''; }
 $('ktype').onchange();
 $('btn-key').onclick=()=>send({cmd:'key', keytype:$('ktype').value, value:$('kval').value});
 $('btn-keyclear').onclick=()=>send({cmd:'key', keytype:'clear'});
-$('tg-autokey').onclick=()=>{ const on=!$('tg-autokey').classList.contains('on'); send({cmd:'auto_key', enable:on}); $('tg-autokey').classList.toggle('on',on); };
-$('tg-force').onclick=()=>{ const on=!$('tg-force').classList.contains('on'); send({cmd:'key', keytype: on?'force':'unforce'}); $('tg-force').classList.toggle('on',on); };
+$('tg-autokey').onclick=()=>{ const on=!$('tg-autokey').classList.contains('on'); send({cmd:'auto_key', enable:on}); reflect('tg-autokey', on); };
+$('tg-force').onclick=()=>{ const on=!$('tg-force').classList.contains('on'); send({cmd:'key', keytype: on?'force':'unforce'}); reflect('tg-force', on); };
 $('btn-keycsv').onclick=()=>send({cmd:'csv', kind:$('kcsvkind').value, text:$('csv-keys').value});
 
 // files
@@ -1061,21 +1163,19 @@ $('fftsize').onchange=pushSpec; $('fps').onchange=pushSpec; $('avg').onchange=pu
 // tabs
 $('tabs').addEventListener('click', e=>{ if(e.target.tagName!=='BUTTON') return;
   const t=e.target.dataset.t;
-  for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.t===t);
+  for (const b of $('tabs').children){ b.classList.toggle('on', b.dataset.t===t); b.setAttribute('aria-selected', b.dataset.t===t); }
   for (const p of document.querySelectorAll('.tabpane')) p.classList.toggle('on', p.dataset.t===t);
   if (t==='files') send({cmd:'list_files', area:'wav'});
 });
 
-// login
-$('pw-go').onclick=()=>send({cmd:'auth', password:$('pw').value});
-$('pw').addEventListener('keydown',e=>{ if(e.key==='Enter') $('pw-go').click(); });
+// login (a form, so Enter submits and password managers know the field)
+$('pw-form').onsubmit=(e)=>{ e.preventDefault(); send({cmd:'auth', password:$('pw').value}); };
 
 //---------------------------------------------------------------- folding cards
 // Bookmarks and Band scan fold down to their title bar; remembered per browser
 function foldSet(id, folded){
   const card=$(id), b=card.querySelector('button.fold'), name=card.querySelector('h2').firstChild.textContent.trim().toLowerCase();
-  card.classList.toggle('folded', folded);
-  b.textContent = folded ? '▸' : '▾';
+  card.classList.toggle('folded', folded); // the chevron turns with the class
   b.setAttribute('aria-expanded', String(!folded));
   b.title = (folded ? 'Show ' : 'Hide ')+name;
   try { const f=JSON.parse(localStorage.getItem('dsdfme.fold') || '{}'); f[id]=folded; localStorage.setItem('dsdfme.fold', JSON.stringify(f)); } catch(e){}
@@ -1083,6 +1183,7 @@ function foldSet(id, folded){
 for (const b of document.querySelectorAll('button.fold')) b.onclick=()=>foldSet(b.dataset.fold, !$(b.dataset.fold).classList.contains('folded'));
 (function(){ try { const f=JSON.parse(localStorage.getItem('dsdfme.fold') || '{}'); for (const id in f) if (f[id] && $(id)) foldSet(id, true); } catch(e){} })();
 
+for (const b of document.querySelectorAll('button.tgl')) b.setAttribute('aria-pressed', b.classList.contains('on'));
 slotInit();
 drawRadios();
 sizeCanvas();
