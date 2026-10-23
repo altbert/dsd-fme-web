@@ -240,6 +240,7 @@ canvas{display:block;width:100%}
 .act .who i,.rtab i{color:var(--silk-3);font-style:normal;font-weight:400}
 .act .meta{margin-left:auto;display:flex;gap:4px;align-items:center;flex:none;white-space:nowrap}
 .act .meta .enc{max-width:18ch;overflow:hidden;text-overflow:ellipsis}
+.act .meta .why{max-width:30ch;overflow:hidden;text-overflow:ellipsis;display:inline-block;color:var(--silk-3)}
 .act .meta .lnk{cursor:pointer;color:var(--link);border-color:rgba(108,184,255,.4);background:none;min-height:0;box-shadow:none;padding:0 5px;font:500 11.5px/16px var(--sans)}
 .act .meta .lnk:hover{background:rgba(108,184,255,.12)}
 .act .sum{padding-left:64px;margin-top:1px;height:20px;line-height:20px;color:var(--silk-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -271,6 +272,43 @@ canvas{display:block;width:100%}
 .rtab .pos:focus-visible{outline:2px solid var(--link);outline-offset:1px}
 .rtab .pin{display:none}
 .rtab th.c-id{width:19%} .rtab th.c-heard{width:11%} .rtab th.c-tg{width:16%} .rtab th.c-pos{width:24%}
+
+/* ---------- trunking ---------- */
+.trk-now{padding:10px 12px 12px;min-width:0}
+.trk-sys{font-size:12.5px;color:var(--silk-3);min-height:1.4em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk-what{margin-top:2px;font-size:19px;font-weight:600;line-height:1.3;color:var(--silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trk-what i{font-style:normal;font-weight:500;color:var(--silk-2)}
+.trk-now.on .trk-what{color:var(--live)}
+.trk-now.on .trk-what i{color:#a5ecc2}
+/* room for the longest usual status (3 lines here, 4 on a phone) so the card doesn't change height as
+   it goes watching / following / returning: the list below would move, and Safari doesn't compensate */
+.trk-sub{margin-top:2px;font-size:13.5px;color:var(--silk-2);min-height:4.2em}
+.trk-sub b{font-weight:600;color:var(--silk)}
+.trk-btns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.trk-btns:not(:has(button:not(.hidden))){display:none}
+.tgbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:14px 0 8px}
+.tgtitle{display:flex;align-items:center;gap:8px;margin-right:auto;font-size:14px;font-weight:600;color:var(--silk-2)}
+.tgwrap{height:280px;overflow-x:hidden;overflow-y:auto}
+.tgtab th.c-led{width:42px} .tgtab th.c-kind{width:10%} .tgtab th.c-heard{width:12%} .tgtab th.c-calls{width:8%} .tgtab th.c-hold{width:86px}
+.tgtab td:first-child,.tgtab th:first-child{padding:0 0 0 8px}
+.tgtab button.led{width:28px;min-width:28px;min-height:24px;padding:0;justify-content:center}
+.tgtab button.led[aria-disabled=true]{opacity:.4;cursor:default}
+.tgtab .num{all:unset;cursor:pointer;font-weight:600;color:var(--silk)}
+.tgtab .num:hover{color:var(--link);text-decoration:underline}
+.tgtab .num:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.tgtab .nm{all:unset;cursor:text;margin-left:6px;color:var(--silk-2);border-bottom:1px dotted transparent}
+.tgtab .nm:hover{border-bottom-color:var(--silk-3)}
+.tgtab .nm.add{color:#6f756e}
+.tgtab .nm:focus-visible{outline:2px solid var(--link);outline-offset:1px}
+.tgtab input.nmed{min-height:24px;height:24px;padding:1px 6px;margin-left:6px;width:calc(100% - 7ch);font-size:13.5px}
+.tgtab td.out{color:var(--silk-3)}
+.tgtab td.out .fol{color:var(--silk-2)}
+.tgtab tr.live td.out .fol{color:var(--live);font-weight:600}
+.tgtab tr.live td:first-child{box-shadow:inset 3px 0 0 var(--live)}
+.tgtab tr.held td{background:rgba(108,184,255,.07)}
+.tgtab tr.held td:first-child{box-shadow:inset 3px 0 0 var(--link)}
+.tgtab button.hold{min-height:24px;padding:0 8px;font-size:12.5px}
+.tgtab tr.held button.hold{color:var(--link);border-color:rgba(108,184,255,.5)}
 
 /* ---------- bookmarks ---------- */
 .bmlist{height:260px;overflow:auto;margin:8px 0 0}
@@ -392,8 +430,15 @@ canvas{display:block;width:100%}
   .act .who{order:9;flex-basis:100%;padding-left:64px}
   .rtab .opt,.rtab .coords{display:none} .rtab .pin{display:inline}
   .rtab th.c-id{width:26%} .rtab th.c-heard{width:21%} .rtab th.c-pos{width:12%}
+  .tgtab th.c-heard{width:20%} .tgtab th.c-hold{width:74px}
+  .trk-what{font-size:17px}
+  .trk-sub{min-height:5.6em}
   .row>label,.lbl{min-width:84px}
   .tabpane{padding:12px}
+}
+@media (max-width:480px){
+  .tgtab .opt2{display:none}
+  .tgtab th.c-led{width:36px} .tgtab th.c-hold{width:62px}
 }
 @media (max-width:360px){
   .brand span{display:none}
@@ -438,6 +483,7 @@ canvas{display:block;width:100%}
     <span id="st-conn" class="badge off">Offline</span>
     <span id="st-carrier" class="badge">No sync</span>
     <span id="st-mode" class="mode" title="Decoder">—</span>
+    <span id="st-trk" class="badge hidden">Trunking</span>
     <span id="st-bs" class="badge warn vh">Band scan</span>
   </div>
   <div class="bar-ctl">
@@ -518,6 +564,43 @@ canvas{display:block;width:100%}
           <div id="sysinfo"><div class="hint">System details show up here once a repeater or control channel identifies itself.</div></div>
           <div id="chanlist" class="chips"></div>
         </div>
+      </div>
+    </section>
+
+    <section class="card card-trk hidden" id="card-trk">
+      <h2>Trunking <span class="hr"><span id="trk-badge" class="badge">Off</span><button class="fold" data-fold="card-trk" aria-expanded="true" title="Hide trunking"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button></span></h2>
+      <div class="body">
+        <div class="trk-now glass" id="trk-now">
+          <div class="trk-sys" id="trk-sys"></div>
+          <div class="trk-what" id="trk-what" role="status"></div>
+          <div class="trk-sub" id="trk-sub"></div>
+          <div class="trk-btns">
+            <button class="p sm" id="trk-go"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Follow calls</button>
+            <button class="sm" id="trk-skip" title="Leave this call and let it go until it ends">Skip call</button>
+            <button class="sm" id="trk-back" title="Go back to the control channel now instead of waiting out the hang time">Back now</button>
+            <button class="sm" id="trk-hold" title="Follow only this talkgroup until you release it">Hold</button>
+            <button class="sm bad" id="trk-block" title="Don't follow this talkgroup again (until DSD-FME closes)">Block</button>
+            <button class="sm" id="trk-stop" title="Stop following calls; the receiver stays on the control channel">Stop</button>
+          </div>
+        </div>
+        <div class="row"><span class="lbl">Follow</span><div class="ctl">
+          <button class="tgl sm on" id="tk-grp" title="Talkgroup calls">Group calls</button>
+          <button class="tgl sm on" id="tk-prv" title="Calls between two radios, and phone calls">Private calls</button>
+          <button class="tgl sm" id="tk-data" title="Packet data channels (locations, messages): there is nothing to hear, and each one takes the receiver off the control channel for several seconds">Data</button>
+          <button class="tgl sm on" id="tk-enc" title="Go to encrypted calls too: you see who talks, the audio stays muted without a key">Encrypted</button>
+        </div></div>
+        <div class="row"><label for="tk-hang">Hang time</label><input id="tk-hang" type="number" step="0.5" min="0" max="30" value="1"><span class="unit">s on a channel after it goes quiet</span></div>
+        <div class="tgbar">
+          <span class="tgtitle">Talkgroups <span id="tg-count" class="count"></span></span>
+          <div class="segctl" id="tg-kinds" role="group" aria-label="Show">
+            <button class="chip on" data-k="" aria-pressed="true">All</button><button class="chip" data-k="grp" aria-pressed="false">Groups</button><button class="chip" data-k="rad" aria-pressed="false" title="Private calls, phone calls and data, by radio">Radios</button>
+          </div>
+          <button class="tgl sm" id="tk-allow" title="Follow only the talkgroups whose key is lit; new ones start unlit">Only lit</button>
+        </div>
+        <div class="tgwrap glass"><table class="rtab tgtab">
+          <thead><tr><th class="c-led"><span class="vh">Follow</span></th><th>Talkgroup or radio</th><th class="opt c-kind">Kind</th><th class="opt2 c-heard">Heard</th><th class="opt c-calls">Calls</th><th>Last call</th><th class="c-hold"><span class="vh">Hold</span></th></tr></thead>
+          <tbody id="tg-body"></tbody></table></div>
+        <div class="hint">A lit key: DSD-FME follows that talkgroup; click it to change. Click a number to see its calls and packets in Activity, a name to edit it. Names and choices last until DSD-FME closes.</div>
       </div>
     </section>
 
@@ -697,31 +780,20 @@ canvas{display:block;width:100%}
       </div>
 
       <div class="tabpane" data-t="trunk" role="tabpanel">
-        <div class="row">
-          <button class="tgl" id="tg-trunk">Trunking</button>
-          <button class="tgl" id="tg-scan">Scanner</button>
-          <button class="sm" id="btn-cc">Return CC</button>
-          <button class="sm" id="btn-cycle">Cycle</button>
-        </div>
-        <div class="row"><span class="lbl">Tune calls</span><div class="ctl">
-          <button class="tgl sm on" id="tg-grp">Group</button>
-          <button class="tgl sm on" id="tg-prv">Private</button>
-          <button class="tgl sm" id="tg-data">Data</button>
-          <button class="tgl sm on" id="tg-enc">Enc</button>
-        </div></div>
-        <div class="row"><span class="lbl"></span>
-          <button class="tgl sm" id="tg-allow">Allow-list only</button>
-        </div>
-        <div class="row"><label for="hang">Hang time</label><input id="hang" type="number" step="0.5" value="1"><span class="unit">s</span>
-          <button class="sm" id="btn-hang">Set</button></div>
-        <div class="row"><label for="tghold">TG hold</label><input id="tghold" type="number" value="0" style="width:100px"><button class="sm" id="btn-tgh">Hold</button></div>
-        <h3 class="sub"><label for="csv-chan">Channel map CSV</label></h3>
+        <div class="hint" style="margin-top:0">Trunking runs from the Trunking card, which shows up once a control channel is heard. These lists are for systems that need them.</div>
+        <h3 class="sub"><label for="csv-chan">Channel map</label></h3>
+        <div class="hint">For DMR Tier III, Capacity Plus, NXDN and EDACS systems that send channel numbers instead of frequencies; P25 sends its own channel plan. One <code>channel,frequency in Hz</code> per line after a header line.</div>
         <textarea id="csv-chan" placeholder="ChannelNumber(dec),frequency(Hz)&#10;1,851012500"></textarea>
         <div class="row"><button class="sm" id="btn-chan">Import channel map</button></div>
-        <h3 class="sub"><label for="csv-group">Group list CSV</label></h3>
+        <h3 class="sub"><label for="csv-group">Talkgroup list</label></h3>
+        <div class="hint">DSD-FME's group CSV, <code>number,mode,name,tag</code> after a header line: mode A follows, B blocks. Importing replaces the names and choices made in the Trunking card.</div>
         <textarea id="csv-group" placeholder="DEC,Mode,Name,Tag&#10;1449,A,Fire Dispatch,Fire"></textarea>
-        <div class="row"><button class="sm" id="btn-group">Import groups</button></div>
-        <h3 class="sub"><label for="scanlist">Scanner frequencies</label></h3>
+        <div class="row"><button class="sm" id="btn-group">Import groups</button>
+          <button class="sm" id="btn-group-cur" title="Fill the box with the talkgroup names and choices as they are now, to copy and keep">Current list</button></div>
+        <h3 class="sub"><label for="scanlist">Scan list (conventional)</label></h3>
+        <div class="hint">Steps through these frequencies and stops on each one that carries a signal. It is not trunking: the two don't run together.</div>
+        <div class="row"><button class="tgl sm" id="tg-scan">Scanner</button>
+          <button class="sm" id="btn-cycle" title="Go to the next frequency in the list">Next</button></div>
         <textarea id="scanlist" placeholder="one freq per line&#10;154.9875M&#10;155.145M"></textarea>
         <div class="row"><button class="sm" id="btn-scanset">Apply scan list</button>
           <button class="sm" id="btn-scanbm" title="Fill with the bookmarks shown in the list (search / group filter, first 26)">From bookmarks</button></div>

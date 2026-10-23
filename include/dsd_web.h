@@ -185,6 +185,12 @@ void web_act_retuned (void);                            //new frequency: forget 
 void web_enc_name (dsd_state * state, int slot, char * out, size_t n); //encryption on a slot's call, "" if clear
 const char * web_call_gps (int slot); //GPS sent during the slot's current call, "" if none
 int  web_offer_bp_key (int key); //a Basic Privacy key found in packet data; 1 if Auto-find took it (dsd_web.c)
+void web_trunk_json (jb * b);    //inside the status "trunk" object: the followed call, the last one, tallies, skips
+int  web_trunk_skip (dsd_opts * opts, dsd_state * state); //block the followed call until it ends (the caller returns to the CC)
+void web_tg_mode (long long id, const char * mode);       //"A" follow / "B" don't follow a talkgroup or radio
+void web_tg_name (long long id, const char * name);
+void web_groups_reset (void);                    //a group CSV import replaced state->group_array
+int  web_p25_cc_list (long long * out, int max); //the site's control channel, then its secondary ones
 
 //----------------------------------------------------------------------------
 // Main thread interface (dsd_web.c)
