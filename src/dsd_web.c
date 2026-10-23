@@ -907,6 +907,66 @@ static void bs_stop (dsd_opts * opts, dsd_state * state, const char * why)
   web_log ("Band scan stopped%s.", why);
 }
 
+//----------------------------------------------------------------------------
+// Trunking from the browser: one click on a control channel, stop, skip a call
+//----------------------------------------------------------------------------
+
+static void trunk_start (dsd_opts * opts, dsd_state * state)
+{
+  if (opts->audio_in_type != 3 && opts->use_rigctl != 1)
+  {
+    web_log ("Trunking needs a receiver DSD-FME can retune: the RTL-SDR input (-i rtl) or rigctl (-U).");
+    return;
+  }
+  bs_stop (opts, state, " (trunking enabled)");
+  long long cc[6];
+  int ncc = web_p25_cc_list (cc, 6);
+  int st = state->lastsynctype;
+  if (ncc > 0 || st == 0 || st == 1 || st == 35 || st == 36)
+  {
+    //Phase 2 voice needs the TDMA decoder; a Phase 1 system decodes cleaner with P25p1 alone
+    int tdma = st == 35 || st == 36;
+    for (int i = 0; i < 16; i++) if (state->p25_base_freq[i] && state->p25_chan_tdma[i]) tdma = 1;
+    const char * cur = mode_key (opts, state);
+    const char * want = tdma ? "tdma" : (!strcmp (cur, "tdma") ? "tdma" : "p25p1");
+    if (strcmp (cur, want))
+    {
+      apply_mode (opts, state, want);
+      web_log ("Decoder: %s (for trunking)", opts->output_name);
+    }
+    //where to look when the control channel goes: this site's control channel, then its secondary ones
+    if (ncc > 0)
+    {
+      memset (state->trunk_lcn_freq, 0, sizeof(state->trunk_lcn_freq));
+      for (int i = 0; i < ncc; i++) state->trunk_lcn_freq[i] = (long int)cc[i];
+      state->lcn_freq_count = ncc;
+      state->lcn_freq_roll = 0;
+      state->p25_cc_freq = (long int)cc[0]; //as this site announces it (a stale one would pull the hunt elsewhere)
+    }
+    //started on another channel of the site (a voice or data channel that announces the system)
+    if (state->p25_cc_freq && opts->audio_in_type == 3 && current_freq (opts) != state->p25_cc_freq)
+    {
+      do_tune (opts, state, state->p25_cc_freq);
+      web_log ("Tuned to the control channel, %.6f MHz", state->p25_cc_freq / 1e6);
+    }
+  }
+  opts->scanner_mode = 0;
+  opts->p25_trunk = 1;
+  state->last_cc_sync_time = time (NULL); //no control channel hunt before it had a chance
+  update_analog (opts, state); //no analog fallback while trunking
+  web_log ("Trunking on: following calls from the control channel.");
+}
+
+//back: return to the control channel first, so the receiver stays on the system
+static void trunk_stop (dsd_opts * opts, dsd_state * state, int back, const char * why)
+{
+  if (!opts->p25_trunk) return;
+  if (back && opts->p25_is_tuned && state->p25_cc_freq) return_to_cc (opts, state);
+  opts->p25_trunk = 0;
+  update_analog (opts, state);
+  web_log ("Trunking off%s.", why);
+}
+
 static double jv_val (jv * e)
 {
   if (!e) return 0;
@@ -1277,6 +1337,7 @@ static void load_csv (dsd_opts * opts, dsd_state * state, jv * cmd)
       snprintf (opts->group_in_file, sizeof(opts->group_in_file), "%s", path);
       state->group_tally = 0;
       csvGroupImport (opts, state);
+      web_groups_reset ();
       web_log ("Imported group list (%u groups).", state->group_tally);
     }
   }
@@ -1402,6 +1463,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (f > 0)
     {
       bs_stop (opts, state, " (tuned by hand)");
+      trunk_stop (opts, state, 0, " (tuned by hand)"); //it would hunt its way back to the control channel
       retune (opts, state, f);
     }
   }
@@ -1496,11 +1558,40 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   }
   else if (!strcmp (c, "trunk"))
   {
-    opts->p25_trunk = jv_bool (cmd, "enable", 0);
-    if (opts->p25_trunk) bs_stop (opts, state, " (trunking enabled)");
-    if (opts->p25_trunk) opts->scanner_mode = 0;
-    update_analog (opts, state); //no analog fallback while trunking
-    web_log ("Trunking %s", opts->p25_trunk ? "enabled" : "disabled");
+    if (!jv_bool (cmd, "enable", 0)) trunk_stop (opts, state, 1, "");
+    else
+    {
+      opts->p25_trunk = 1;
+      bs_stop (opts, state, " (trunking enabled)");
+      opts->scanner_mode = 0;
+      update_analog (opts, state); //no analog fallback while trunking
+      web_log ("Trunking enabled");
+    }
+  }
+  else if (!strcmp (c, "trunk_start"))
+  {
+    trunk_start (opts, state);
+  }
+  else if (!strcmp (c, "trunk_stop"))
+  {
+    trunk_stop (opts, state, 1, "");
+  }
+  else if (!strcmp (c, "trunk_skip"))
+  {
+    if (opts->p25_trunk && opts->p25_is_tuned)
+    {
+      int blocked = web_trunk_skip (opts, state);
+      if (state->p25_cc_freq) return_to_cc (opts, state);
+      web_log (blocked ? "Call skipped, back to the control channel." : "Back to the control channel.");
+    }
+  }
+  else if (!strcmp (c, "tg_mode"))
+  {
+    web_tg_mode (jv_int (cmd, "id", 0), jv_str (cmd, "mode", ""));
+  }
+  else if (!strcmp (c, "tg_name"))
+  {
+    web_tg_name (jv_int (cmd, "id", 0), jv_str (cmd, "name", ""));
   }
   else if (!strcmp (c, "scanner"))
   {
@@ -1697,6 +1788,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (bm_get ((int)jv_int (cmd, "id", 0), &bm))
     {
       bs_stop (opts, state, " (bookmark tuned)");
+      trunk_stop (opts, state, 0, " (bookmark tuned)");
       tune_bookmark (opts, state, &bm);
     }
   }
@@ -2078,6 +2170,16 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_int (b, "tg_hold", state->tg_hold);
   jb_int (b, "scan_count", state->lcn_freq_count);
   jb_int (b, "scan_roll", state->lcn_freq_roll);
+  jb_bool (b, "can", opts->audio_in_type == 3 || opts->use_rigctl == 1); //a receiver it can retune
+  //seconds since the last frame sync: past the hang time the decoder leaves a voice channel, or
+  //starts hunting for the control channel
+  long long quiet = (long long)(time (NULL) - state->last_cc_sync_time);
+  jb_int (b, "quiet", quiet < 0 ? 0 : (quiet > 99999 ? 99999 : quiet));
+  jb_arr (b, "hunt");
+  for (int i = 0; i < state->lcn_freq_count && i < 26; i++)
+    if (state->trunk_lcn_freq[i]) jb_int (b, NULL, state->trunk_lcn_freq[i]);
+  jb_arr_end (b);
+  web_trunk_json (b);
   jb_obj_end (b);
 
   //auto features + filters + keys

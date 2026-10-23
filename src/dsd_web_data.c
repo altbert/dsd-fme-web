@@ -25,6 +25,11 @@
 #define P25_NB_MAX 24
 #define RECENT_MAX 8    //packet items kept to fold in repeats and delivery reports
 #define REPEAT_WIN 20.0 //seconds in which an identical packet counts as a retry
+#define TRK_SKIP_MAX  8
+#define TRK_SKIP_HANG 8.0       //seconds without a grant before a call skipped by hand is let through again
+#define TG_NAMES_MAX  512
+#define GROUPS_SEND_MAX 5000    //group list entries sent to the browser
+#define GROUP_ARRAY_MAX 16778000 //entries dsd_main allocates for state->group_array
 
 //one activity item while it is built (calls and grants keep theirs until they end)
 typedef struct
@@ -46,6 +51,8 @@ typedef struct
   long long freq;          //channel frequency in Hz, 0 = not known
   int crc;                 //1 checked ok, 0 failed, -1 not checked
   int rep;                 //times the same packet was heard (confirmed delivery retries)
+  int trk;                 //trunked grant: 1 the decoder followed it, 0 it did not (why), -1 not trunking
+  char why[64];
   char key[48];            //identity of the message when a resend is not byte identical (not sent)
   char ack[96];            //delivery report from the receiving end
   jb f;                    //labelled fields, rendered JSON array members
@@ -85,6 +92,33 @@ typedef struct
   int svc;
   act_item a;
 } grant_track;
+
+//a call the decoder followed to its voice channel while trunking
+typedef struct
+{
+  int on;
+  int kind;          //as grant_track, -1 when no grant said (DMR / NXDN trunking, P25 link control)
+  long long id, src, freq;
+  int ch, svc;
+  double t, t_end;
+} trk_call;
+
+//a call skipped by hand: its number is blocked in the group list until its grants stop
+typedef struct
+{
+  int on;
+  long long id;
+  char mode0[4];     //the entry's mode before the skip, put back afterwards
+  int created;       //the skip added the entry (removed afterwards)
+  double seen;       //last grant for it
+} trk_skip;
+
+//a name typed in the browser
+typedef struct
+{
+  long long id;
+  char name[64];
+} tg_label;
 
 typedef struct
 {
@@ -153,6 +187,21 @@ static struct
   double sys_t;
   double dmr_seen, nxdn_seen; //last DMR / NXDN sync (the picture outlasts gaps between transmissions)
   int dmr_ms;                 //that DMR sync was direct mode
+
+  //trunking: the voice channel the decoder sat on at the last look (0: control channel), the call
+  //it follows there and the one before
+  long long tk_vc;
+  trk_call follow, last;
+  int n_followed, n_skipped;
+  trk_skip skip[TRK_SKIP_MAX];
+
+  //names from the browser. A group list entry only gets one when it exists already or the browser
+  //sets a mode: an entry made just for a name would change what the allow list follows
+  tg_label names[TG_NAMES_MAX];
+  int nnames;
+  uint32_t groups_hash; //the group list as last sent
+  int groups_dirty;
+  double groups_t;
 } A;
 
 //----------------------------------------------------------------------------
@@ -172,17 +221,37 @@ static const char * sync_name (int st)
   return "Digital";
 }
 
-//talkgroup / radio name from the group CSV import
-static const char * id_name (long long id)
+//the names a lockout gets when nobody named it (the ncurses lockout writes "LOCKOUT" too)
+static int name_placeholder (const char * s)
+{
+  return !s[0] || !strcmp (s, "LOCKOUT") || !strcmp (s, "SKIP");
+}
+
+//group list entry for a number, -1 if none
+static int grp_find (long long id)
 {
   dsd_state * state = A.state;
-  if (id <= 0 || !state || !state->group_array) return NULL;
-  int n = state->group_tally;
-  if (n > 16778000) n = 16778000; //entries dsd_main allocates
+  if (id <= 0 || !state || !state->group_array) return -1;
+  int n = (int)state->group_tally;
+  if (n > GROUP_ARRAY_MAX) n = GROUP_ARRAY_MAX;
   for (int i = 0; i < n; i++)
-    if ((long long)state->group_array[i].groupNumber == id && state->group_array[i].groupName[0])
-      return state->group_array[i].groupName;
+    if ((long long)state->group_array[i].groupNumber == id) return i;
+  return -1;
+}
+
+static const char * label_find (long long id)
+{
+  for (int i = 0; i < A.nnames; i++)
+    if (A.names[i].id == id) return A.names[i].name;
   return NULL;
+}
+
+//talkgroup / radio name: the group list (CSV import, aliases), then names from the browser
+static const char * id_name (long long id)
+{
+  int i = grp_find (id);
+  if (i >= 0 && !name_placeholder (A.state->group_array[i].groupName)) return A.state->group_array[i].groupName;
+  return label_find (id);
 }
 
 //printable text from 8-bit characters (non ASCII bytes pass through, jb_escape maps them to UTF-8)
@@ -280,6 +349,7 @@ static void act_new (act_item * a, const char * kind, const char * proto, int sl
   a->src = a->dst = -1;
   a->gi = -1;
   a->crc = -1;
+  a->trk = -1;
   a->t = a->t_end = wall_now ();
   jb_init (&a->f);
 }
@@ -376,6 +446,8 @@ static char * act_render (const act_item * a)
   if (a->freq > 0) jb_int (&b, "freq", a->freq);
   if (a->crc >= 0) jb_int (&b, "crc", a->crc);
   if (a->rep > 1) jb_int (&b, "rep", a->rep);
+  if (a->trk >= 0) jb_int (&b, "trk", a->trk);
+  if (a->why[0]) jb_str (&b, "why", a->why);
   if (a->ack[0]) jb_str (&b, "ack", a->ack);
   jb_key (&b, "f");
   jb_rawn (&b, "[", 1);
@@ -1678,6 +1750,57 @@ static int act_generic (const act_item * a)
          !strcmp (a->type, "Packet data") || !strcmp (a->type, "Short data") || !strcmp (a->type, "Encrypted data");
 }
 
+//publish a decoded packet: a retry of one heard a moment ago (same hash, or the same radios when
+//either copy failed its CRC) updates that item, and replaces it when this copy reads better
+static void pkt_publish (int slot, act_item * a, uint32_t h)
+{
+  h = fnv32 (h, (const uint8_t *)&a->src, sizeof(a->src));
+  h = fnv32 (h, (const uint8_t *)&a->dst, sizeof(a->dst));
+  double now = wall_now ();
+  recent_item * r = NULL;
+  for (int i = 0; i < RECENT_MAX; i++)
+  {
+    recent_item * x = &A.recent[i];
+    if (!x->on || x->slot != slot || now - x->a.t_end >= REPEAT_WIN) continue;
+    if (x->hash == h) r = x;
+    else if (!r && x->a.src == a->src && x->a.dst == a->dst && (x->a.crc == 0 || a->crc == 0)) r = x;
+  }
+  if (r)
+  {
+    if (act_score (a) > act_score (&r->a))
+    {
+      a->id = r->a.id;
+      a->t = r->a.t;
+      a->rep = r->a.rep + 1;
+      snprintf (a->ack, sizeof(a->ack), "%s", r->a.ack);
+      act_free (&r->a);
+      r->a = *a;
+      A.claim[slot] = 1;
+    }
+    else
+    {
+      act_free (a);
+      r->a.rep++;
+      A.claim[slot] = 2;
+    }
+    r->a.t_end = now;
+    act_publish (&r->a);
+    A.claimed[slot] = &r->a;
+    return;
+  }
+  r = &A.recent[A.recent_next];
+  A.recent_next = (A.recent_next + 1) % RECENT_MAX;
+  if (r->on) act_free (&r->a);
+  r->on = 1;
+  r->slot = slot;
+  r->hash = h;
+  r->a = *a;
+  act_publish (&r->a);
+  //the decoder logs this packet in a moment; keep its line with this item if it adds anything
+  A.claim[slot] = act_generic (&r->a) ? 1 : 2;
+  A.claimed[slot] = &r->a;
+}
+
 //before the assembler deciphers anything: keep the packet as received and check its CRC
 //(the assembler's own check does not cover Motorola proprietary packets correctly)
 void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok)
@@ -1793,51 +1916,206 @@ void web_dmr_pdu (dsd_opts * opts, dsd_state * state, int undecrypted)
   //a retry of a packet heard a moment ago updates that item (and replaces it when this copy reads
   //better); a copy that failed its CRC counts as an earlier try of the next one from the same radio
   uint32_t h = a->key[0] ? fnv32 (2166136261u, (const uint8_t *)a->key, (int)strlen (a->key)) : fnv32 (2166136261u, A.raw[slot] + start, end - start);
-  h = fnv32 (h, (const uint8_t *)&a->src, sizeof(a->src));
-  h = fnv32 (h, (const uint8_t *)&a->dst, sizeof(a->dst));
-  double now = wall_now ();
-  recent_item * r = NULL;
-  for (int i = 0; i < RECENT_MAX; i++)
+  pkt_publish (slot, a, h);
+}
+
+//----------------------------------------------------------------------------
+// P25 packet data (tap in p25p1_mdpu.c): answers to confirmed packets, SNDCP
+// context control, and user data, which is IP as on DMR
+//----------------------------------------------------------------------------
+
+static const char * p25_sap_name (int sap)
+{
+  switch (sap)
   {
-    recent_item * x = &A.recent[i];
-    if (!x->on || x->slot != slot || now - x->a.t_end >= REPEAT_WIN) continue;
-    if (x->hash == h) r = x;
-    else if (!r && x->a.src == a->src && x->a.dst == a->dst && (x->a.crc == 0 || a->crc == 0)) r = x;
+    case 0: return "user data"; case 1: return "encrypted user data"; case 2: return "circuit data";
+    case 3: return "circuit data control"; case 4: return "packet data"; case 5: return "address resolution";
+    case 6: return "SNDCP packet data control"; case 15: return "packet data scan preamble";
+    case 29: return "packet data encryption support"; case 31: return "extended address";
+    case 32: return "registration and authorization"; case 33: return "channel reassignment";
+    case 34: return "system configuration"; case 35: return "radio loopback"; case 36: return "radio statistics";
+    case 37: return "radio out of service"; case 38: return "radio paging"; case 39: return "radio configuration";
+    case 40: return "key management"; case 41: return "encrypted key management"; case 48: return "location service";
   }
-  if (r)
+  return "unknown SAP";
+}
+
+//position from an NMEA RMC or GGA sentence (ddmm.mmmm,N,dddmm.mmmm,W)
+static int nmea_pos (const char * s, double * lat, double * lon)
+{
+  for (const char * q = strchr (s, '$'); q; q = strchr (q + 1, '$'))
   {
-    if (act_score (a) > act_score (&r->a))
-    {
-      a->id = r->a.id;
-      a->t = r->a.t;
-      a->rep = r->a.rep + 1;
-      snprintf (a->ack, sizeof(a->ack), "%s", r->a.ack);
-      act_free (&r->a);
-      r->a = *a;
-      A.claim[slot] = 1;
-    }
-    else
-    {
-      act_free (a);
-      r->a.rep++;
-      A.claim[slot] = 2;
-    }
-    r->a.t_end = now;
-    act_publish (&r->a);
-    A.claimed[slot] = &r->a;
-    return;
+    int rmc = !strncmp (q + 3, "RMC,", 4), gga = !strncmp (q + 3, "GGA,", 4);
+    if (!rmc && !gga) continue;
+    //the fields after the time (and RMC's status)
+    const char * f = q + 7;
+    for (int skip = rmc ? 2 : 1; skip > 0 && f; skip--) { f = strchr (f, ','); if (f) f++; }
+    if (!f) continue;
+    char * e;
+    double la = strtod (f, &e);
+    if (e == f || *e != ',' || (e[1] != 'N' && e[1] != 'S')) continue;
+    int south = e[1] == 'S';
+    f = e + 3;
+    double lo = strtod (f, &e);
+    if (e == f || *e != ',' || (e[1] != 'E' && e[1] != 'W')) continue;
+    double y = (int)(la / 100) + fmod (la, 100) / 60, x = (int)(lo / 100) + fmod (lo, 100) / 60;
+    if (south) y = -y;
+    if (e[1] == 'W') x = -x;
+    if (fabs (y) > 90 || fabs (x) > 180 || (y == 0 && x == 0)) continue;
+    *lat = y; *lon = x;
+    return 1;
   }
-  r = &A.recent[A.recent_next];
-  A.recent_next = (A.recent_next + 1) % RECENT_MAX;
-  if (r->on) act_free (&r->a);
-  r->on = 1;
-  r->slot = slot;
-  r->hash = h;
-  r->a = *a;
-  act_publish (&r->a);
-  //the decoder logs this packet in a moment; keep its line with this item if it adds anything
-  A.claim[slot] = act_generic (&r->a) ? 1 : 2;
-  A.claimed[slot] = &r->a;
+  return 0;
+}
+
+//SNDCP context control (SAP 6, TIA-102.BAEB): the PDU type numbers mean different things each way
+static void dec_sndcp (act_item * a, const uint8_t * p, int len, int outbound)
+{
+  static const char * out_t[] = { "Context activated", "Context deactivated", "Deactivation request", "Context activation rejected",
+                                  "Unconfirmed data", "Confirmed data" };
+  static const char * in_t[] = { "Context activation request", "Context deactivated", "Deactivation request", NULL,
+                                 "Unconfirmed data", "Confirmed data" };
+  act_type (a, "SNDCP");
+  if (len < 1) { act_sum (a, "SNDCP control (empty)"); return; }
+  int type = p[0] >> 4;
+  const char * tn = type < 6 ? (outbound ? out_t[type] : in_t[type]) : NULL;
+  act_kv (a, "SNDCP", "%s (type %d), NSAPI %d", tn ? tn : "unknown", type, p[0] & 0xF);
+  //the accept carries the timers, the address type, then the address the radio gets
+  if (outbound && type == 0 && len >= 7)
+  {
+    act_kv (a, "Radio IP address", "%u.%u.%u.%u", p[3], p[4], p[5], p[6]);
+    act_sum (a, "Packet data session opened, radio address %u.%u.%u.%u", p[3], p[4], p[5], p[6]);
+  }
+  else if (outbound && type == 3 && len >= 2) act_sum (a, "Packet data session refused (reason %d)", p[1]);
+  else if (type == 1 || type == 2) act_sum (a, "Packet data session closed%s", type == 2 ? " (asked)" : "");
+  else act_sum (a, "%s", tn ? tn : "SNDCP control message");
+}
+
+//the system's (or a radio's) answer to a confirmed packet; a selective retry lists the blocks to resend
+static void p25_response (act_item * a, const uint8_t * pdu, int len)
+{
+  static const char * nack[] = { "illegal format", "CRC failure", "memory full", "out of sequence",
+                                 "undeliverable", "sequence error", "invalid user on the system" };
+  int cls = (pdu[1] >> 6) & 3, type = (pdu[1] >> 3) & 7, seq = pdu[1] & 7;
+  a->kind = "sig";
+  //outbound: the system answers a radio's packet; inbound: a radio answers one of the system's
+  int out = a->dst > 0;
+  long long who = out ? a->dst : a->src;
+  act_kv (a, "Response", "class %d, type %d, sequence %d", cls, type, seq);
+  if (cls == 0 && type == 1)
+  {
+    act_type (a, "ACK");
+    if (out) act_sum (a, "Delivered: packet %d of radio %lld arrived whole", seq, who);
+    else act_sum (a, "Delivered: radio %lld got the system's packet %d whole", who, seq);
+  }
+  else if (cls == 1)
+  {
+    act_type (a, "NACK");
+    act_sum (a, "Not delivered: %s (radio %lld, packet %d)", type < 7 ? nack[type] : "refused", who, seq);
+  }
+  else if (cls == 2)
+  {
+    act_type (a, "SACK");
+    //blocks after the header: a bit per data block, set when it arrived
+    int got = 0, bits = 0;
+    for (int i = 12; i < len - 4 && i < 20; i++) for (int b = 0; b < 8; b++) { bits++; got += (pdu[i] >> b) & 1; }
+    if (bits) act_kv (a, "Blocks received", "%d bits set of %d", got, bits);
+    act_sum (a, "Resend asked: packet %d of radio %lld arrived with blocks missing", seq, who);
+  }
+  else
+  {
+    act_type (a, "Response");
+    act_sum (a, "Response class %d, type %d (radio %lld)", cls, type, who);
+  }
+}
+
+//a whole packet, header block first, before the decoder logs it. len covers the header and the data
+//blocks (confirmed ones without their sequence numbers and CRC-9s); the last 4 octets are its CRC-32
+void web_p25_pdu (dsd_opts * opts, dsd_state * state, const uint8_t * pdu, int len, int confirmed, int crc_ok)
+{
+  UNUSED(opts); UNUSED(state);
+  if (!A.inited || len < 12) return;
+  int io = (pdu[0] >> 5) & 1, fmt = pdu[0] & 0x1F, sap = pdu[1] & 0x3F;
+  long long llid = be24 (pdu + 3);
+  int blks = pdu[6] & 0x7F, pad = pdu[7] & 0x1F, ns = (pdu[8] >> 4) & 7, offset = pdu[9] & 0x3F;
+  if (fmt != 3 && (sap == 61 || sap == 63)) return; //trunking blocks: the TSBK tap has the same messages
+
+  act_item na, * a = &na;
+  act_new (a, "data", "P25", 0);
+  //outbound (IO set) packets name the radio they go to, inbound ones the radio they come from
+  if (io) a->dst = llid; else a->src = llid;
+  a->gi = 1;
+  a->crc = crc_ok ? 1 : 0;
+  a->rep = 1;
+  int end = len - (blks ? 4 : 0) - pad;
+  if (end > len) end = len;
+  if (end < 12) end = 12;
+
+  if (fmt == 3) p25_response (a, pdu, len);
+  else if (!crc_ok)
+  {
+    act_type (a, "Data error");
+    act_sum (a, "%s packet failed its CRC check (not decoded)", p25_sap_name (sap));
+  }
+  else
+  {
+    act_kv (a, "Delivery", "%s, %s radio %lld, SAP %d (%s), sequence %d", confirmed ? "confirmed" : "unconfirmed",
+            io ? "to" : "from", llid, sap, p25_sap_name (sap), ns);
+    int ptr = 12, enc = 0;
+    if (sap == 31 && ptr + 12 <= end) //extended address: the other radio, and the SAP that follows
+    {
+      long long ea = be24 (pdu + ptr + 3);
+      if (ea > 0 && ea < 0xFFFFF0) { if (io) a->src = ea; else a->dst = ea; }
+      sap = pdu[ptr + 1] & 0x3F;
+      ptr += 12;
+    }
+    if (sap == 1 && ptr + 13 <= end) //encryption sync: MI, ALG, key id, then the SAP of the ciphered data
+    {
+      int alg = pdu[ptr + 9], kid = (int)be16 (pdu + ptr + 10);
+      sap = pdu[ptr + 12] & 0x3F;
+      ptr += 13;
+      if (alg != 0x80)
+      {
+        enc = 1;
+        snprintf (a->enc, sizeof(a->enc), "%s", alg_name (alg) ? alg_name (alg) : "encrypted");
+        act_type (a, "Encrypted data");
+        act_kv (a, "Encryption", "%s, ALG %02X, key id %04X", a->enc, alg, kid);
+        act_sum (a, "Encrypted %s (%s), no key here", p25_sap_name (sap), a->enc);
+      }
+    }
+    //the data header (SNDCP's, ahead of an IP datagram) is offset octets long
+    if (!enc && offset >= 2 && ptr + offset <= end && (sap == 0 || sap == 4))
+      act_kv (a, "SNDCP", "%s data, NSAPI %d", (pdu[ptr] >> 4) == 5 ? "confirmed" : "unconfirmed", pdu[ptr] & 0xF);
+    if (ptr + offset <= end) ptr += offset;
+    if (!enc)
+    {
+      if (sap == 0 || sap == 4) dec_ipv4 (a, pdu + ptr, end - ptr, 0);
+      else if (sap == 6) dec_sndcp (a, pdu + ptr, end - ptr, io);
+      else if (sap == 48) //location service: NMEA sentences
+      {
+        char t[400];
+        text8 (t, sizeof(t), pdu + ptr, end - ptr);
+        act_type (a, "Location");
+        act_kv (a, "NMEA", "%s", t);
+        double lat, lon;
+        if (nmea_pos (t, &lat, &lon))
+        {
+          act_pos (a, lat, lon);
+          act_sum (a, "Position %.5f, %.5f", lat, lon);
+        }
+        else act_sum (a, "%s", t);
+      }
+      else
+      {
+        act_type (a, "Data");
+        act_sum (a, "%s, %d bytes", p25_sap_name (sap), end - ptr);
+      }
+    }
+  }
+  if (!a->type[0]) act_type (a, "Data");
+  if (end > 12) act_hex (a, pdu + 12, end - 12);
+  else act_hex (a, pdu, 12);
+  pkt_publish (0, a, fnv32 (2166136261u, pdu, end));
 }
 
 //----------------------------------------------------------------------------
@@ -1914,6 +2192,123 @@ static void svc_text (char * out, size_t n, int svc)
             svc & 0x10 ? "packet" : "circuit", svc & 7);
 }
 
+//----------------------------------------------------------------------------
+// Trunking: the call the decoder follows, why it passes others by, calls skipped by hand
+//----------------------------------------------------------------------------
+
+//the voice channel the decoder is on while trunking, 0 on (or hunting for) the control channel
+static long long trk_vc (void)
+{
+  dsd_opts * opts = A.opts;
+  dsd_state * state = A.state;
+  if (!opts->p25_trunk || !opts->p25_is_tuned) return 0;
+  if (opts->audio_in_type == 3 && opts->rtlsdr_center_freq > 0) return (long long)opts->rtlsdr_center_freq;
+  return state->p25_vc_freq[0] ? state->p25_vc_freq[0] : state->p25_vc_freq[1];
+}
+
+static const trk_skip * skip_of (long long id)
+{
+  for (int k = 0; k < TRK_SKIP_MAX; k++)
+    if (A.skip[k].on && A.skip[k].id == id) return &A.skip[k];
+  return NULL;
+}
+
+//the group list mode the trunking code ends up with for a number (the allow list makes "B" the
+//default); a unit to unit call takes the first entry of either radio, as the decoder does
+static const char * trk_mode (long long id, long long id2, int * found)
+{
+  dsd_state * state = A.state;
+  int n = state->group_array ? (int)state->group_tally : 0;
+  if (n > GROUP_ARRAY_MAX) n = GROUP_ARRAY_MAX;
+  *found = 0;
+  for (int i = 0; i < n; i++)
+  {
+    long long g = (long long)state->group_array[i].groupNumber;
+    if (g == id || (id2 > 0 && g == id2)) { *found = 1; return state->group_array[i].groupMode; }
+  }
+  return A.opts->trunk_use_allow_list ? "B" : "";
+}
+
+//why the decoder passed a grant by, checked in the order of its trunking code (p25p2_vpdu.c,
+//p25p1_tsbk.c); NULL when nothing stood in the way
+static const char * trk_reason (int kind, long long id, long long src, int svc, long long freq, char * buf, size_t n)
+{
+  dsd_opts * opts = A.opts;
+  dsd_state * state = A.state;
+  if (kind == 0 && !opts->trunk_tune_group_calls) return "group calls are off";
+  if ((kind == 1 || kind == 3) && !opts->trunk_tune_private_calls) return "private calls are off";
+  if (kind == 2 && !opts->trunk_tune_data_calls) return "data calls are off";
+  if ((svc & 0x40) && !opts->trunk_tune_enc_calls) return "encrypted";
+  if (state->tg_hold && state->tg_hold != id)
+  {
+    snprintf (buf, n, "holding %u only", state->tg_hold);
+    return buf;
+  }
+  int found = 0;
+  const char * m = kind == 0 && state->tg_hold == id ? "A" : trk_mode (id, kind == 1 ? src : -1, &found);
+  if (!strcmp (m, "B")) return !found ? "not on the follow list" : (skip_of (id) ? "skipped by hand" : "blocked");
+  if (!strcmp (m, "DE")) return "encrypted, locked out";
+  if (!state->p25_cc_freq) return "control channel not known yet";
+  if (!freq) return "channel plan not heard yet";
+  if (A.tk_vc) return "busy on another call";
+  return NULL;
+}
+
+//the decoder moved to a call's channel
+static void trk_follow (int kind, long long id, long long src, int svc, long long freq, int ch)
+{
+  double now = wall_now ();
+  if (A.follow.on) { A.last = A.follow; A.last.t_end = now; }
+  A.follow = (trk_call){ 1, kind, id, src, freq, ch, svc, now, now };
+  A.tk_vc = freq;
+  A.n_followed++;
+}
+
+//the TSBK tap runs right behind the decoder's own handling of it: did this grant move the receiver?
+static void trk_outcome (grant_track * g)
+{
+  if (!A.opts->p25_trunk) return;
+  long long vc = trk_vc ();
+  //also for a grant already followed: the same radio's next grant can come while the item is still open
+  if (vc && vc != A.tk_vc && vc == g->a.freq)
+  {
+    if (g->a.trk == 0) A.n_skipped--; //passed by at first (busy, say), followed now
+    g->a.trk = 1;
+    g->a.why[0] = 0;
+    trk_follow (g->kind, g->id, g->a.src, g->svc, g->a.freq, g->ch);
+    return;
+  }
+  if (g->a.trk == 1) return; //a followed call stays followed
+  char buf[48];
+  const char * r = trk_reason (g->kind, g->id, g->a.src, g->svc, g->a.freq, buf, sizeof(buf));
+  if (g->a.trk < 0) A.n_skipped++;
+  g->a.trk = 0;
+  snprintf (g->a.why, sizeof(g->a.why), "%s", r ? r : "not followed");
+}
+
+//drop an entry the web added; the last entry takes its place
+static void grp_remove (int i)
+{
+  dsd_state * state = A.state;
+  int n = (int)state->group_tally;
+  if (i < 0 || i >= n) return;
+  if (i != n - 1) state->group_array[i] = state->group_array[n - 1];
+  memset (&state->group_array[n - 1], 0, sizeof(groupinfo));
+  state->group_tally--;
+}
+
+//let a skipped call through again: its entry gets the old mode back, or goes if the skip made it
+static void trk_unskip (trk_skip * s)
+{
+  dsd_state * state = A.state;
+  s->on = 0;
+  int i = grp_find (s->id);
+  if (i < 0) return;
+  if (s->created) grp_remove (i);
+  else snprintf (state->group_array[i].groupMode, sizeof(state->group_array[i].groupMode), "%s", s->mode0);
+  A.groups_dirty = 1;
+}
+
 static void grant_end (grant_track * g)
 {
   if (!g->on) return;
@@ -1938,6 +2333,8 @@ static void grant_label (grant_track * g)
   svc_text (sv, sizeof(sv), g->svc);
   act_kv (a, "Service options", "%s", sv);
   if (A.p25_wacn) act_kv (a, "System", "WACN %05llX, SYS %03X, RFSS %d, site %d", A.p25_wacn, A.p25_sysid, A.p25_rfss, A.p25_site);
+  if (a->trk == 1) act_kv (a, "Trunking", "followed to %s", ch);
+  else if (a->trk == 0) act_kv (a, "Trunking", "not followed: %s", a->why);
 }
 
 //a grant or grant update; the first one for a channel and id opens a trunked call item
@@ -1946,6 +2343,8 @@ static void p25_grant (int kind, int ch, long long id, long long src, int svc, i
   static const char * types[] = { "Group call grant", "Private call grant", "Data channel grant", "Phone call grant" };
   if (ch <= 0 || ch == 0xFFFF || id <= 0) return;
   double now = wall_now ();
+  for (int i = 0; i < TRK_SKIP_MAX; i++)
+    if (A.skip[i].on && A.skip[i].id == id) A.skip[i].seen = now; //the skipped call goes on
   grant_track * g = NULL, * spare = NULL;
   for (int i = 0; i < GRANT_MAX; i++)
   {
@@ -1975,6 +2374,7 @@ static void p25_grant (int kind, int ch, long long id, long long src, int svc, i
     g->a.freq = p25_freq (A.state, ch);
     act_type (&g->a, types[kind & 3]);
     if (g->svc & 0x40) snprintf (g->a.enc, sizeof(g->a.enc), "encrypted");
+    trk_outcome (g);
     grant_label (g);
     act_publish (&g->a);
     return;
@@ -1984,6 +2384,11 @@ static void p25_grant (int kind, int ch, long long id, long long src, int svc, i
   if (src > 0 && g->a.src != src) { g->a.src = src; changed = 1; }
   if (full && svc != g->svc) { g->svc = svc; changed = 1; snprintf (g->a.enc, sizeof(g->a.enc), "%s", svc & 0x40 ? "encrypted" : ""); }
   if (!g->a.freq && p25_freq (A.state, ch)) { g->a.freq = p25_freq (A.state, ch); changed = 1; }
+  int trk0 = g->a.trk;
+  char why0[sizeof(g->a.why)];
+  memcpy (why0, g->a.why, sizeof(why0));
+  trk_outcome (g);
+  if (g->a.trk != trk0 || strcmp (why0, g->a.why)) changed = 1;
   if (changed)
   {
     grant_label (g);
@@ -1994,8 +2399,46 @@ static void p25_grant (int kind, int ch, long long id, long long src, int svc, i
 static void grants_poll (void)
 {
   double now = wall_now ();
+  long long vc = trk_vc ();
   for (int i = 0; i < GRANT_MAX; i++)
-    if (A.grant[i].on && now - A.grant[i].a.t_end > GRANT_HANG) grant_end (&A.grant[i]);
+  {
+    grant_track * g = &A.grant[i];
+    if (!g->on) continue;
+    //the control channel goes unheard while the receiver sits on the call: it lasts as long as its channel carries it
+    if (vc && vc == g->a.freq && g->a.trk == 1 && A.follow.on && A.follow.id == g->id && A.state->carrier) g->a.t_end = now;
+    if (now - g->a.t_end > GRANT_HANG) grant_end (g);
+  }
+}
+
+//channel changes no grant explains, the call on the voice channel, skips running out
+static void trk_poll (dsd_state * state)
+{
+  double now = wall_now ();
+  long long vc = trk_vc ();
+  if (vc != A.tk_vc)
+  {
+    if (A.follow.on && A.follow.freq != vc) { A.last = A.follow; A.last.t_end = now; A.follow.on = 0; }
+    if (vc && !A.follow.on) trk_follow (-1, 0, 0, 0, vc, 0); //DMR / NXDN trunking, P25 link control
+    A.tk_vc = vc;
+  }
+  if (A.follow.on)
+  {
+    A.follow.t_end = now;
+    //who talks, and without a grant which talkgroup, as the voice channel says
+    int s = state->lasttg ? 0 : (state->lasttgR ? 1 : -1);
+    if (s >= 0)
+    {
+      long long tg = s ? state->lasttgR : state->lasttg, src = s ? state->lastsrcR : state->lastsrc;
+      if (A.follow.id <= 0)
+      {
+        A.follow.id = tg;
+        if (A.follow.kind < 0 && state->gi[s] >= 0) A.follow.kind = state->gi[s] ? 1 : 0;
+      }
+      if (tg == A.follow.id && src > 0) A.follow.src = src;
+    }
+  }
+  for (int i = 0; i < TRK_SKIP_MAX; i++)
+    if (A.skip[i].on && now - A.skip[i].seen > TRK_SKIP_HANG) trk_unskip (&A.skip[i]);
 }
 
 static void p25_sig (const char * type, long long src, long long dst, int gi, const char * fmt, ...) __attribute__((format(printf, 5, 6)));
@@ -2108,6 +2551,7 @@ static void p25_osp (dsd_state * state, int op, const uint8_t * b)
     case 0x05: p25_sig ("Call request", be24 (b + 5), be24 (b + 2), 1, "Private call request (answer awaited)"); break;
     case 0x08: case 0x09: p25_grant (3, (int)be16 (b + 1), be24 (b + 5), -1, b[0], 1); break;
     case 0x14: p25_grant (2, (int)be16 (b + 1), be24 (b + 5), -1, 0, 0); break;
+    case 0x15: p25_sig ("Data page", -1, be24 (b + 5), 1, "The system has packet data waiting for radio %u", be24 (b + 5)); break;
     case 0x18: p25_sig ("Status", be24 (b + 5), be24 (b + 2), 1, "Status update: user %d, unit %d", b[0], b[1]); break;
     case 0x1A: p25_sig ("Status query", be24 (b + 5), be24 (b + 2), 1, "Status query"); break;
     case 0x1C: p25_sig ("Message", be24 (b + 5), be24 (b + 2), 1, "Short message %u", be16 (b)); break;
@@ -2396,6 +2840,85 @@ static void sys_poll (dsd_opts * opts, dsd_state * state)
 }
 
 //----------------------------------------------------------------------------
+// Group list for the browser: mode and name per talkgroup / radio, sent when it changes
+//----------------------------------------------------------------------------
+
+//numbers and modes; names only change through the browser (which marks the list dirty) or with
+//entries the decoder appends (aliases, encryption lockouts), which the tally shows
+static uint32_t groups_digest (void)
+{
+  dsd_state * state = A.state;
+  int n = state->group_array ? (int)state->group_tally : 0;
+  if (n > GROUPS_SEND_MAX) n = GROUPS_SEND_MAX;
+  uint32_t h = (2166136261u ^ state->group_tally) * 16777619u;
+  for (int i = 0; i < n; i++)
+  {
+    const groupinfo * g = &state->group_array[i];
+    h = (h ^ (uint32_t)g->groupNumber) * 16777619u;
+    for (const char * m = g->groupMode; *m; m++) h = (h ^ (uint8_t)*m) * 16777619u;
+  }
+  return h;
+}
+
+//items are [number, mode, name]: a skip shows the entry as it was before (none when the skip made
+//it), names from the browser without an entry have mode ""
+static void groups_send (int client)
+{
+  dsd_state * state = A.state;
+  if (!A.inited) return;
+  jb b;
+  jb_init (&b);
+  jb_raw (&b, "{\"type\":\"groups\",\"items\":[");
+  int n = state->group_array ? (int)state->group_tally : 0;
+  if (n > GROUPS_SEND_MAX) n = GROUPS_SEND_MAX;
+  int first = 1;
+  for (int i = 0; i < n; i++)
+  {
+    const groupinfo * g = &state->group_array[i];
+    long long id = (long long)g->groupNumber;
+    const trk_skip * s = skip_of (id);
+    if (!id || (s && s->created)) continue;
+    const char * mode = s ? s->mode0 : g->groupMode;
+    const char * name = name_placeholder (g->groupName) ? label_find (id) : g->groupName;
+    if (!name) name = "";
+    jb_printf (&b, "%s[%lld,\"", first ? "" : ",", id);
+    jb_escape (&b, mode, strlen (mode));
+    jb_rawn (&b, "\",\"", 3);
+    jb_escape (&b, name, strlen (name));
+    jb_rawn (&b, "\"]", 2);
+    first = 0;
+  }
+  for (int j = 0; j < A.nnames; j++)
+  {
+    const trk_skip * s = skip_of (A.names[j].id);
+    if (grp_find (A.names[j].id) >= 0 && !(s && s->created)) continue;
+    jb_printf (&b, "%s[%lld,\"\",\"", first ? "" : ",", A.names[j].id);
+    jb_escape (&b, A.names[j].name, strlen (A.names[j].name));
+    jb_rawn (&b, "\"]", 2);
+    first = 0;
+  }
+  jb_printf (&b, "],\"total\":%u}", state->group_tally);
+  if (b.buf)
+  {
+    if (client >= 0) web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
+    else if (web_server_clients () > 0) web_broadcast (WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len, 0);
+  }
+  jb_free (&b);
+}
+
+static void groups_poll (void)
+{
+  double now = wall_now ();
+  if (!A.groups_dirty && now - A.groups_t < 1.0) return;
+  A.groups_t = now;
+  uint32_t h = groups_digest ();
+  if (h == A.groups_hash && !A.groups_dirty) return;
+  A.groups_hash = h;
+  A.groups_dirty = 0;
+  groups_send (-1);
+}
+
+//----------------------------------------------------------------------------
 // Entry points for dsd_web.c
 //----------------------------------------------------------------------------
 
@@ -2414,7 +2937,9 @@ void web_act_poll (dsd_opts * opts, dsd_state * state)
   for (int s = 0; s < 2; s++) { A.claim[s] = 0; A.claimed[s] = NULL; }
   calls_poll (opts, state);
   grants_poll ();
+  trk_poll (state);
   sys_poll (opts, state);
+  groups_poll ();
   act_flush ();
 }
 
@@ -2435,6 +2960,7 @@ void web_act_send (int client)
   if (b.buf) web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
   jb_free (&b);
   if (A.sys_json) web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, A.sys_json, strlen (A.sys_json));
+  groups_send (client);
 }
 
 void web_act_clear (void)
@@ -2458,4 +2984,178 @@ void web_act_retuned (void)
   A.dmr_seen = A.nxdn_seen = 0;
   A.p25_logged_wacn = 0; A.p25_logged_sys = A.p25_logged_rfss = A.p25_logged_site = A.p25_logged_cc = 0;
   for (int i = 0; i < GRANT_MAX; i++) grant_end (&A.grant[i]);
+  for (int i = 0; i < TRK_SKIP_MAX; i++) if (A.skip[i].on) trk_unskip (&A.skip[i]);
+}
+
+//----------------------------------------------------------------------------
+// Trunking entry points for dsd_web.c: status, skip, talkgroup modes and names
+//----------------------------------------------------------------------------
+
+//inside the status "trunk" object: the call followed now, the one before, tallies, skips
+void web_trunk_json (jb * b)
+{
+  if (!A.inited) return;
+  double now = wall_now ();
+  const trk_call * c[2] = { &A.follow, &A.last };
+  for (int k = 0; k < 2; k++)
+  {
+    if (!c[k]->on) continue;
+    jb_obj (b, k ? "last" : "follow");
+    jb_int (b, "k", c[k]->kind);
+    if (c[k]->id > 0) jb_int (b, "id", c[k]->id);
+    if (c[k]->src > 0) jb_int (b, "src", c[k]->src);
+    if (c[k]->svc & 0x40) jb_bool (b, "enc", 1);
+    if (c[k]->svc & 0x80) jb_bool (b, "em", 1);
+    if (c[k]->freq > 0) jb_int (b, "f", c[k]->freq);
+    if (c[k]->ch > 0) jb_hex (b, "ch", (unsigned)c[k]->ch, 4);
+    jb_dbl (b, "dur", (k ? c[k]->t_end : now) - c[k]->t, 1);
+    if (k) jb_dbl (b, "ago", now - c[k]->t_end, 0);
+    jb_obj_end (b);
+  }
+  jb_int (b, "nf", A.n_followed);
+  jb_int (b, "ns", A.n_skipped);
+  jb_arr (b, "skip");
+  for (int i = 0; i < TRK_SKIP_MAX; i++) if (A.skip[i].on) jb_int (b, NULL, A.skip[i].id);
+  jb_arr_end (b);
+}
+
+//skip the call being followed: its number is blocked until its grants stop (the caller then
+//returns to the control channel). 0 if there was nothing to block
+int web_trunk_skip (dsd_opts * opts, dsd_state * state)
+{
+  UNUSED(opts);
+  if (!A.inited || !state->group_array) return 0;
+  long long id = A.follow.on ? A.follow.id : 0;
+  if (id <= 0) id = state->lasttg ? state->lasttg : state->lasttgR;
+  if (id <= 0) return 0;
+  if (skip_of (id)) return 1;
+  trk_skip * s = &A.skip[0];
+  for (int i = 0; i < TRK_SKIP_MAX; i++)
+  {
+    if (!A.skip[i].on) { s = &A.skip[i]; break; }
+    if (A.skip[i].seen < s->seen) s = &A.skip[i];
+  }
+  if (s->on) trk_unskip (s);
+  memset (s, 0, sizeof(*s));
+  int i = grp_find (id);
+  if (i >= 0) snprintf (s->mode0, sizeof(s->mode0), "%s", state->group_array[i].groupMode);
+  else
+  {
+    if (state->group_tally >= GROUP_ARRAY_MAX) return 0;
+    i = (int)state->group_tally++;
+    memset (&state->group_array[i], 0, sizeof(groupinfo));
+    state->group_array[i].groupNumber = (unsigned long)id;
+    snprintf (state->group_array[i].groupName, sizeof(state->group_array[i].groupName), "%s", "SKIP");
+    s->created = 1;
+  }
+  snprintf (state->group_array[i].groupMode, sizeof(state->group_array[i].groupMode), "%s", "B");
+  s->id = id;
+  s->seen = wall_now ();
+  s->on = 1;
+  A.groups_dirty = 1;
+  return 1;
+}
+
+//a talkgroup or radio set to be followed ("A") or not ("B") from the browser
+void web_tg_mode (long long id, const char * mode)
+{
+  dsd_state * state = A.state;
+  if (!A.inited || id <= 0 || id > 0xFFFFFF || !state->group_array) return;
+  int block = !strcmp (mode, "B");
+  if (!block && strcmp (mode, "A")) return;
+  for (int k = 0; k < TRK_SKIP_MAX; k++)
+    if (A.skip[k].on && A.skip[k].id == id) A.skip[k].on = 0; //the choice outlasts the skip (its entry stays)
+  int i = grp_find (id);
+  if (i < 0)
+  {
+    if (state->group_tally >= GROUP_ARRAY_MAX) return;
+    i = (int)state->group_tally++;
+    memset (&state->group_array[i], 0, sizeof(groupinfo));
+    state->group_array[i].groupNumber = (unsigned long)id;
+  }
+  groupinfo * g = &state->group_array[i];
+  if (name_placeholder (g->groupName))
+  {
+    const char * n = label_find (id);
+    snprintf (g->groupName, sizeof(g->groupName), "%s", n ? n : (block ? "LOCKOUT" : ""));
+  }
+  snprintf (g->groupMode, sizeof(g->groupMode), "%s", block ? "B" : "A");
+  A.groups_dirty = 1;
+}
+
+//a name typed in the browser; an existing group list entry takes it too (the console prints it)
+void web_tg_name (long long id, const char * name)
+{
+  dsd_state * state = A.state;
+  if (!A.inited || id <= 0 || id > 0xFFFFFF) return;
+  char clean[64];
+  size_t k = 0;
+  const char * p = name;
+  for (; *p && k + 1 < sizeof(clean); p++)
+  {
+    unsigned char c = (unsigned char)*p;
+    if (c < 0x20 || c == 0x7F || c == ',') c = ' '; //commas would split the CSV export
+    if (c == ' ' && (k == 0 || clean[k-1] == ' ')) continue;
+    clean[k++] = (char)c;
+  }
+  if (*p) //cut short: drop a UTF-8 sequence the cut went through
+  {
+    size_t s = k;
+    while (s > 0 && ((unsigned char)clean[s-1] & 0xC0) == 0x80) s--;
+    if (s > 0)
+    {
+      unsigned char lead = (unsigned char)clean[s-1];
+      size_t need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+      if (k - (s - 1) < need) k = s - 1;
+    }
+  }
+  while (k > 0 && clean[k-1] == ' ') k--;
+  clean[k] = 0;
+  int j = 0;
+  while (j < A.nnames && A.names[j].id != id) j++;
+  if (!clean[0])
+  {
+    if (j < A.nnames) A.names[j] = A.names[--A.nnames];
+  }
+  else
+  {
+    if (j == A.nnames)
+    {
+      if (A.nnames == TG_NAMES_MAX) j = 0; //full: the oldest goes
+      else A.nnames++;
+    }
+    A.names[j].id = id;
+    snprintf (A.names[j].name, sizeof(A.names[j].name), "%s", clean);
+  }
+  int i = grp_find (id);
+  if (i >= 0)
+  {
+    groupinfo * g = &state->group_array[i];
+    snprintf (g->groupName, sizeof(g->groupName), "%s", clean[0] ? clean : (!strcmp (g->groupMode, "B") ? "LOCKOUT" : ""));
+  }
+  A.groups_dirty = 1;
+}
+
+//a group CSV import replaced the list: skips have no entry left to give back
+void web_groups_reset (void)
+{
+  if (!A.inited) return;
+  for (int i = 0; i < TRK_SKIP_MAX; i++) A.skip[i].on = 0;
+  A.groups_dirty = 1;
+}
+
+//the site's control channel, then its secondary ones (as far as the channel plan is known)
+int web_p25_cc_list (long long * out, int max)
+{
+  if (!A.inited || (!A.p25_wacn && !A.p25_rfss)) return 0;
+  int n = 0;
+  long long cc = A.p25_cc_ch ? p25_freq (A.state, A.p25_cc_ch) : 0;
+  if (!cc) cc = A.state->p25_cc_freq;
+  if (cc > 0 && n < max) out[n++] = cc;
+  for (int i = 0; i < A.nsccb && n < max; i++)
+  {
+    long long f = p25_freq (A.state, A.sccb[i]);
+    if (f > 0 && f != cc) out[n++] = f;
+  }
+  return n;
 }

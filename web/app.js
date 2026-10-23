@@ -51,6 +51,7 @@ function handleJSON(m){
   else if (m.type === 'status'){ authed = true; setConn('Connected','live'); renderStatus(m); }
   else if (m.type === 'activity'){ handleActivity(m); }
   else if (m.type === 'system'){ renderSystem(m); }
+  else if (m.type === 'groups'){ groupsSet(m); }
   else if (m.type === 'files'){ renderFiles(m); }
   else if (m.type === 'bookmarks'){ bms = m.items || []; $('bm-path').textContent = m.path || '—'; renderBookmarks(); }
   else if (m.type === 'bm_saved'){ bmFormClose(); bmMsg(m.warn ? 'Saved, but '+m.warn+'.' : 'Saved.', !!m.warn); }
@@ -174,28 +175,35 @@ function drawSpectrum(){
   wctx.putImageData(img, 0, 0);
 }
 
-// bookmark markers inside the visible span; labels step down a row when they would overlap (CSS pixels)
+// bookmark markers inside the visible span, and while trunking the control channel and the channels
+// of calls on air (green, brightest for the one followed); labels step down a row when they would
+// overlap (CSS pixels). Only bookmark marks tune when clicked
 let marks = [];
+const MARK_STYLE = {bm:['rgba(108,184,255,0.55)', '#8cc8ff', [3,3]], cc:['rgba(223,226,220,0.45)', '#dfe2dc', [2,4]],
+  air:['rgba(79,224,141,0.5)', '#7fe3a8', []], fol:['rgba(79,224,141,0.95)', '#4fe08d', []]};
 function drawMarks(center, rate, W, H){
   marks = [];
-  if (!bms.length || !rate) return;
-  const lo = center - rate/2;
-  const vis = bms.filter(b => b.freq >= lo && b.freq <= lo + rate).sort((a,b) => a.freq - b.freq);
+  if (!rate) return;
+  const lo = center - rate/2, inSpan = f => f >= lo && f <= lo + rate;
+  const vis = bms.filter(b => inSpan(b.freq)).map(b => ({freq:b.freq, name:b.name, k:'bm', b}))
+    .concat(trkMarks.filter(t => inSpan(t.freq))).sort((a,b) => a.freq - b.freq);
+  if (!vis.length) return;
   sctx.font = '500 11.5px "Barlow Semi Condensed",system-ui,sans-serif'; sctx.textBaseline = 'middle';
   const rowEnd = [-1e9, -1e9, -1e9, -1e9];
-  for (const b of vis){
-    const x = Math.round((b.freq - lo) / rate * W) + 0.5;
-    sctx.strokeStyle = 'rgba(108,184,255,0.55)'; sctx.setLineDash([3,3]);
-    sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, H); sctx.stroke(); sctx.setLineDash([]);
-    const tw = Math.min(150, sctx.measureText(b.name).width + 8);
+  for (const m of vis){
+    const [line, text, dash] = MARK_STYLE[m.k];
+    const x = Math.round((m.freq - lo) / rate * W) + 0.5;
+    sctx.strokeStyle = line; sctx.setLineDash(dash); sctx.lineWidth = m.k==='fol' ? 2 : 1;
+    sctx.beginPath(); sctx.moveTo(x, 0); sctx.lineTo(x, H); sctx.stroke(); sctx.setLineDash([]); sctx.lineWidth = 1;
+    const tw = Math.min(150, sctx.measureText(m.name).width + 8);
     const lx = Math.max(0, Math.min(W - tw, x + 2));
     let row = rowEnd.findIndex(e => lx > e + 2);
     if (row < 0) row = rowEnd.indexOf(Math.min(...rowEnd)); // all rows taken: the one that frees up first
     rowEnd[row] = lx + tw;
     const ly = 4 + row*15;
     sctx.fillStyle = 'rgba(15,16,15,0.84)'; sctx.fillRect(lx, ly, tw, 14);
-    sctx.fillStyle = '#8cc8ff'; sctx.fillText(b.name, lx + 4, ly + 7.5, tw - 8);
-    marks.push({x, lx, ly, tw, b});
+    sctx.fillStyle = text; sctx.fillText(m.name, lx + 4, ly + 7.5, tw - 8);
+    marks.push({x, lx, ly, tw, b:m.b, m});
   }
 }
 function markAt(ev){
@@ -214,13 +222,13 @@ function specToFreq(ev){
   return Math.round(lastFFT.center + (x-0.5)*lastFFT.rate);
 }
 for (const el of [spec, wf]){
-  el.addEventListener('click', (ev)=>{ const m=markAt(ev); if (m){ bmTune(m.b); return; } const f=specToFreq(ev); if (f) tuneTo(f); });
+  el.addEventListener('click', (ev)=>{ const m=markAt(ev); if (m){ if (m.b) bmTune(m.b); return; } const f=specToFreq(ev); if (f) tuneTo(f); });
   el.addEventListener('mousemove', (ev)=>{
     const f=specToFreq(ev); const cur=$('cursor'); if(!f){cur.style.display='none';return;}
     const r=$('specbox').getBoundingClientRect(); cur.style.display='block';
     cur.style.left=(ev.clientX-r.left)+'px';
     const m=markAt(ev);
-    $('specinfo').textContent = m ? m.b.name+'  '+fmtMHz(m.b.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz';
+    $('specinfo').textContent = m ? m.m.name+'  '+fmtMHz(m.m.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz';
   });
   el.addEventListener('mouseleave', ()=>{ $('cursor').style.display='none'; $('specinfo').textContent=''; });
 }
@@ -297,9 +305,7 @@ function renderStatus(m){
   // site info
   let kv='';
   const add=(k,v)=>{ if(v!==undefined&&v!==''&&v!==0&&v!=='0') kv+='<span class="k">'+k+'</span><span class="v">'+escH(v)+'</span>'; };
-  // trunking frequencies; the system identity is in the system picture below (#sysinfo)
-  if (tr.enabled && tr.cc_freq) add('CC freq',(tr.cc_freq/1e6).toFixed(6)+' MHz');
-  if (tr.enabled && tr.vc_freq) add('VC freq',(tr.vc_freq/1e6).toFixed(6)+' MHz');
+  // the system identity is in the system picture below (#sysinfo), trunking in its own card
   if (site.nxdn_cipher && d.sys==='NXDN') add('NXDN cipher', site.nxdn_cipher);
   $('siteinfo').innerHTML = kv;
 
@@ -311,9 +317,8 @@ function renderStatus(m){
   if (actKind === 'log') renderEvents(m.events||[]);
 
   // reflect toggles (only if not focused/editing)
-  reflect('tg-trunk', tr.enabled); reflect('tg-scan', tr.scanner);
-  reflect('tg-grp', tr.group); reflect('tg-prv', tr.private); reflect('tg-data', tr.data); reflect('tg-enc', tr.enc);
-  reflect('tg-allow', tr.allow_list);
+  renderTrunk(m);
+  reflect('tg-scan', tr.scanner);
   reflect('tg-autotune', fl.auto_tune); reflect('tg-autodec', fl.auto_decode); reflect('tg-autoana', fl.auto_analog);
   reflect('tg-hpfd', fl.hpfd); reflect('tg-hpf', fl.hpf); reflect('tg-lpf', fl.lpf); reflect('tg-pbf', fl.pbf);
   reflect('tg-payload', fl.payload); reflect('tg-monitor', fl.monitor); reflect('tg-inv', fl.inverted);
@@ -420,7 +425,9 @@ const ACT_KEEP = 800, ACT_SHOW = 500;
 function handleActivity(m){
   if (m.reset){ acts.clear(); radios.clear(); liveCalls.clear(); onAir.clear(); }
   for (const it of m.items){
-    const fresh = !acts.has(it.id);
+    const fresh = !acts.has(it.id), old = acts.get(it.id);
+    // voice calls heard while trunking belong in the talkgroup list (they are on the system's channels)
+    if (it.k==='call' && it.p!=='P25' && (trk.enabled || (old && old.trkd))) it.trkd = 1;
     acts.set(it.id, it); radioSeen(it, fresh);
     if (it.k !== 'call') continue;
     if (it.p !== 'P25'){ // voice on this channel (trunked grants seen on a P25 control channel are "P25")
@@ -434,6 +441,7 @@ function handleActivity(m){
   if (m.reset) renderActs(); else for (const it of m.items) actPut(it);
   $('act-count').textContent = acts.size;
   renderRadios();
+  renderTalkgroups();
 }
 
 function actMatch(it){
@@ -452,6 +460,7 @@ function ago(s){ s=Math.max(0, Math.round(s)); return s<60 ? s+' s ago' : (s<360
 function idHTML(num, str, name, prefix){
   if (str) return escH(str);
   if (num==null || num<0) return '';
+  name = tgName(num) || name; // a name typed in the talkgroup list shows at once
   return (prefix||'')+escH(num)+(name?' <i>'+escH(name)+'</i>':'');
 }
 
@@ -461,6 +470,9 @@ function actRow(it){
   el.dataset.id=it.id; el.tabIndex=0;
   const who=idHTML(it.src, it.srcs, it.sn), to=idHTML(it.dst, it.dsts, it.dn, it.g===0 ? 'TG ' : '');
   let meta='';
+  // a trunked grant: did the receiver go to the call?
+  if (it.trk===1) meta+='<span class="tag ok" title="DSD-FME followed this call to its channel">Followed</span>';
+  else if (it.trk===0) meta+='<span class="tag why" title="Not followed: '+escH(it.why||'')+'">Not followed: '+escH(it.why||'')+'</span>';
   if (it.enc) meta+='<span class="tag enc" title="'+escH(it.enc)+'">'+icon('lock')+escH(it.enc)+'</span>';
   if (it.lat!=null) meta+='<button class="tag lnk" data-lat="'+it.lat+'" data-lon="'+it.lon+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
   if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times (resent)">×'+it.rep+'</span>';
@@ -581,9 +593,9 @@ function drawRadios(){
   $('rad-count').textContent=list.length;
   let h='';
   for (const r of list.slice(0,300)){
-    const air=onAir.has(r.id), tx=r.flash>now;
+    const air=onAir.has(r.id), tx=r.flash>now, nm=tgName(+r.id) || r.name;
     h+='<tr'+(air?' class="talk"':(tx?' class="tx"':''))+'>'+
-      '<td title="'+escH(r.id+(r.name?' '+r.name:'')+(r.alias?' · '+r.alias:''))+'"><b>'+escH(r.id)+'</b>'+(r.name?' <i>'+escH(r.name)+'</i>':'')+(r.alias?' <i>'+escH(r.alias)+'</i>':'')+'</td>'+
+      '<td title="'+escH(r.id+(nm?' '+nm:'')+(r.alias?' · '+r.alias:''))+'"><b>'+escH(r.id)+'</b>'+(nm?' <i>'+escH(nm)+'</i>':'')+(r.alias?' <i>'+escH(r.alias)+'</i>':'')+'</td>'+
       '<td>'+(air?'<span class="air">On air</span>':ago(now-r.last))+'</td>'+
       '<td title="'+escH(r.sum||'')+'"><span class="tag">'+escH(r.ty||'')+'</span> '+escH(r.sum||'')+'</td>'+
       '<td class="opt">'+(r.tg||'')+'</td>'+
@@ -593,13 +605,308 @@ function drawRadios(){
   // rebuilt every few seconds: keep keyboard focus on the same radio's position button
   const f=document.activeElement, fid=f && f.closest && f.closest('#rad-body') ? f.dataset.id : null;
   $('rad-body').innerHTML=h;
-  if (fid){ const b=[...$('rad-body').querySelectorAll('[data-id]')].find(x=>x.dataset.id===fid); if (b) b.focus(); }
+  if (fid){ const b=[...$('rad-body').querySelectorAll('[data-id]')].find(x=>x.dataset.id===fid); if (b) b.focus({preventScroll:true}); }
   if (MAP.open) mapDraw();
 }
 $('rad-body').addEventListener('click', e=>{
   const a=e.target.closest('[data-id]'); if (!a) return;
   const r=radios.get(a.dataset.id); if (r && r.lat!=null) mapOpen({lat:r.lat, lon:r.lon, id:r.id});
 });
+
+//---------------------------------------------------------------- trunking
+// The card shows up once a control channel identifies itself (or while trunking): what the receiver
+// does right now, and every talkgroup the system granted calls to, with a key that says whether
+// DSD-FME follows it. The decoder's group list (modes A follow / B block) is what decides.
+let trk = {}, trkDec = {}, trkFreq = 0, trkState = 'off', sysPic = null, trkFlags = {}, trkSlot = {};
+let tgSummary = {voice:0, enc:0, data:0}; // calls heard on the system so far, from the talkgroup list
+const groups = new Map(); // number -> {m: mode, n: name}
+let tgKind = '', tgEdit = 0;  // list filter; number whose name is being edited
+
+function groupsSet(m){
+  groups.clear();
+  for (const [id, mode, name] of m.items||[]) groups.set(id, {m:mode, n:name});
+  renderTrunkNow(); drawTalkgroups(); renderActs(); renderRadios(); // names show everywhere
+}
+// as the server stores a name: no control characters or commas (the CSV export), single spaces
+function cleanName(s){ return s.replace(/[\x00-\x1f\x7f,]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60); }
+function tgName(id){ const g=groups.get(id); return g && g.n || ''; }
+// lit: followed as far as the group list and the allow list go (the call type keys and holds aside)
+function tgLit(id){ const g=groups.get(id); if (!g || !g.m) return !trk.allow_list; return g.m!=='B' && g.m!=='DE'; }
+function trunkable(s){
+  if (!s) return false;
+  const p=s.p25, d=s.dmr, n=s.nxdn;
+  return !!((p && (p.cc || p.cc_ch)) || (d && (d.syscode || d.rest > 0 || /cap|con|xpt/i.test(d.sub||''))) || (n && (n.sys || n.site)));
+}
+function sysLine(s){
+  if (s && s.p25){ const p=s.p25;
+    return ['P25', p.wacn && p.sys ? p.wacn+'-'+p.sys : (p.sys ? 'SYS '+p.sys : ''), p.rfss!=null ? 'RFSS '+p.rfss+' site '+(p.site!=null ? p.site : '?') : '',
+      p.cc ? 'control channel '+(p.cc/1e6).toFixed(5)+' MHz' : ''].filter(x=>x).join(' · '); }
+  if (s && s.dmr){ const d=s.dmr;
+    return ['DMR', [d.brand, d.sub].filter(x=>x).join(' ').trim(), d.syscode ? 'system '+d.syscode : '', d.rest > 0 ? 'rest channel '+d.rest : ''].filter(x=>x).join(' · '); }
+  if (s && s.nxdn){ const n=s.nxdn; return ['NXDN', n.sys ? 'system '+n.sys : '', n.site ? 'site '+n.site : ''].filter(x=>x).join(' · '); }
+  return '';
+}
+const KIND_WORD = {'-1':'call', 0:'group call', 1:'private call', 2:'data', 3:'phone call'};
+function idWithName(id){ const n=tgName(id); return escH(id)+(n ? ' <i>'+escH(n)+'</i>' : ''); }
+// a followed call as the card names it: "TG 2098 Police", "data for radio 732216"
+function callWho(c){
+  if (!(c.id > 0)) return 'a call';
+  const pre = c.k===2 ? 'data for radio ' : (c.k===1 ? 'call to radio ' : (c.k===3 ? 'phone call, radio ' : 'TG '));
+  return pre+idWithName(c.id);
+}
+
+// P25 packet traffic: answers to confirmed packets (signalling) and the packets themselves
+const PKT_SIG = new Set(['ACK','SACK','NACK','Response']);
+function isPkt(it){ return it.p==='P25' && (it.k==='data' || (it.k==='sig' && PKT_SIG.has(it.ty))); }
+const PKT_WORD = {ACK:'delivered', SACK:'resend asked', NACK:'not delivered', 'Encrypted data':'encrypted data', 'Data error':'damaged packet'};
+// one packet as the card lists it: "radio 140000: Triggered location start request"
+function pktLine(it){
+  const id = it.dst > 0 ? it.dst : it.src, what = PKT_WORD[it.ty] || (it.sum ? it.sum : it.ty);
+  return (id > 0 ? 'radio '+idWithName(id)+': ' : '')+escH(what.length > 48 ? what.slice(0, 46)+'…' : what);
+}
+function renderTrunk(m){
+  trk = m.trunk||{}; trkDec = m.decode||{}; trkFreq = (m.input||{}).freq||0; trkFlags = m.flags||{}; trkSlot = m.slot1||{};
+  const tr=trk;
+  // off a call, the receiver only leaves the control channel to hunt for it
+  const away = trkFreq > 0 && tr.cc_freq > 0 && Math.abs(trkFreq - tr.cc_freq) > 3000;
+  trkState = !tr.enabled ? 'off' : (!tr.cc_freq ? 'wait' : (tr.tuned ? (trkDec.carrier ? 'follow' : 'hang') :
+    (away || (!trkDec.carrier && tr.quiet > (tr.hangtime||0)+1) ? 'hunt' : 'cc')));
+  reflect('tk-grp', tr.group); reflect('tk-prv', tr.private); reflect('tk-data', tr.data); reflect('tk-enc', tr.enc);
+  reflect('tk-allow', tr.allow_list);
+  if (document.activeElement !== $('tk-hang') && tr.hangtime !== undefined) $('tk-hang').value = tr.hangtime;
+  renderTrunkNow();
+}
+
+const TRK_BADGE = {off:['Off',''], wait:['Waiting','warn'], cc:['Watching','live'], follow:['Following','live'], hang:['Returning','warn'], hunt:['Searching','off']};
+// spectrum marks for the control channel and the channels of calls on air
+let trkMarks = [];
+function trunkMarks(){
+  trkMarks = [];
+  if (!(trk.enabled || trunkable(sysPic))) return;
+  const cc = trk.cc_freq || (sysPic && sysPic.p25 && sysPic.p25.cc);
+  if (cc) trkMarks.push({freq:cc, name:'Control channel', k:'cc'});
+  const f=trk.follow||{}, seen=new Set([cc]);
+  for (const it of acts.values()){
+    if (it.k!=='call' || it.p!=='P25' || !it.live || !(it.freq > 0) || seen.has(it.freq)) continue;
+    seen.add(it.freq);
+    const name = it.g===0 ? 'TG '+it.dst+(tgName(it.dst) ? ' '+tgName(it.dst) : '') : '→ '+it.dst;
+    trkMarks.push({freq:it.freq, name, k: trkState==='follow' && f.f===it.freq ? 'fol' : 'air'});
+  }
+}
+function renderTrunkNow(){
+  trunkMarks();
+  const tr=trk, st=trkState, f=tr.follow||{};
+  $('card-trk').classList.toggle('hidden', !(tr.enabled || trunkable(sysPic)));
+  const [bt, bc] = TRK_BADGE[st];
+  setTxt($('trk-badge'), bt); $('trk-badge').className = 'badge '+bc;
+  const lamp=$('st-trk');
+  setTxt(lamp, st==='follow' && f.id > 0 ? (f.k===0 || f.k===-1 ? 'TG ' : 'Radio ')+f.id : 'Trunking', 'Trunking: '+bt.toLowerCase());
+  lamp.className = 'badge '+bc+(tr.enabled ? '' : ' hidden');
+  setTxt($('trk-sys'), sysLine(sysPic) || (tr.cc_freq ? 'Control channel '+(tr.cc_freq/1e6).toFixed(5)+' MHz' : ''));
+  let what='', sub='';
+  const show = {go:false, skip:false, back:false, hold:false, block:false, stop:!!tr.enabled};
+  if (st==='off'){
+    what = 'Not following calls';
+    sub = tr.can===false ? 'Trunking needs a receiver DSD-FME can retune: start it with <code>-i rtl</code>, or with rigctl (<code>-U</code>).'
+      : 'Follow calls: the receiver jumps to each call’s channel and comes back here when the call ends.';
+    show.go = true;
+  }
+  else if (st==='wait'){
+    what = 'Waiting for the control channel';
+    sub = 'It identifies itself within a few seconds. DMR and NXDN systems that send channel numbers need a channel map (Settings → Trunk).';
+  }
+  else if (st==='follow' || st==='hang'){
+    if (st==='follow'){
+      what = 'Following '+callWho(f);
+      const bits=[];
+      if (f.f) bits.push('<b>'+(f.f/1e6).toFixed(5)+' MHz</b>'+(f.ch ? ' (ch '+escH(f.ch)+')' : ''));
+      bits.push(f.k===2 ? 'packet data, nothing to hear' : (KIND_WORD[f.k] || 'call'));
+      if (f.src > 0) bits.push('radio '+idWithName(f.src));
+      // the voice channel names the cipher; without its key the decoder keeps the audio muted
+      const enc = (trkSlot.tg || trkSlot.src ? (trkSlot.enc||'').trim() : '') || (f.enc ? 'encrypted' : ''); // the slot keeps it after a call
+      if (enc) bits.push(escH(enc)+(trkFlags.key_loaded ? '' : ', muted without its key'));
+      if (f.em) bits.push('<b>emergency</b>');
+      bits.push(fmtClock(f.dur||0));
+      sub = bits.join(' · ');
+      // a data channel is shared: everything it carried since the receiver got there, newest first
+      const since = Date.now()/1000 - (f.dur||0) - 1, pk = [];
+      if (f.k===2) for (const it of acts.values()) if (isPkt(it) && it.t >= since) pk.push(it);
+      pk.sort((a,b)=>b.t-a.t);
+      if (pk.length) sub += '<br>'+pk.length+' packet'+(pk.length===1?'':'s')+' here: '+pk.slice(0,3).map(pktLine).join(' · ')+(pk.length > 3 ? ' …' : '');
+      else if (f.k===2 && tr.data) sub += '<br>Data calls carry no audio. To wait for voice calls instead, switch off Data under Follow.';
+      else if (f.k!==2 && !enc && !audioOn) sub += '<br>The audio plays on the DSD-FME computer. To hear it in this browser, press Audio off at the top.';
+      show.skip = !(tr.tg_hold && tr.tg_hold===f.id);
+    } else {
+      what = 'Call ended';
+      sub = 'Back to the control channel in '+Math.max(0, Math.ceil((tr.hangtime||0) - (tr.quiet||0)))+' s';
+      show.back = true;
+    }
+    show.hold = f.id > 0; show.block = f.id > 0 && tr.tg_hold!==f.id;
+  }
+  else if (st==='hunt'){
+    const h=tr.hunt||[], i=h.indexOf(trkFreq);
+    what = 'Control channel lost';
+    sub = 'Searching: trying <b>'+(trkFreq/1e6).toFixed(5)+' MHz</b>'+(i>=0 ? ' ('+(i+1)+' of '+h.length+')' : '')+
+      '. A site moves its control channel to a backup when the main one fails.';
+  }
+  else {
+    what = 'Watching the control channel';
+    const l=tr.last;
+    sub = (l ? 'Last call: '+callWho(l)+', '+fmtClock(l.dur)+', '+ago(l.ago) : 'No call followed yet')+
+      ' · '+(tr.nf||0)+' followed, '+(tr.ns||0)+' not followed';
+    const g=tgSummary;
+    if (g.voice || g.data) sub += '<br>Heard so far: '+g.voice+' voice call'+(g.voice===1?'':'s')+
+      (g.enc ? ' ('+(g.enc===g.voice ? (g.voice===1 ? 'encrypted' : 'all encrypted') : g.enc+' encrypted')+')' : '')+', '+g.data+' data';
+    if (tr.allow_list && ![...groups.values()].some(g => g.m && g.m!=='B' && g.m!=='DE'))
+      sub += '<br>Only lit talkgroups are followed, and none is lit yet: light the ones to follow below.';
+  }
+  if (tr.enabled && tr.tg_hold){ sub += '<br>Holding '+holdWho(tr.tg_hold)+': calls to anything else are not followed.'; show.hold = true; }
+  const skipping = (tr.skip||[]).filter(id => id !== f.id);
+  if (tr.enabled && skipping.length) sub += '<br>Skipped until their calls end: '+skipping.map(idWithName).join(', ');
+  setHTML($('trk-what'), what); setHTML($('trk-sub'), sub);
+  $('trk-now').classList.toggle('on', st==='follow');
+  for (const k in show) $('trk-'+k).classList.toggle('hidden', !show[k]);
+  $('trk-go').disabled = tr.can===false;
+  setTxt($('trk-hold'), tr.tg_hold ? 'Release hold' : (f.k===0 || f.k===-1 ? 'Hold TG' : 'Hold radio'));
+}
+// a held number is a talkgroup unless the list only knows it as a radio
+const tgKinds = new Map();
+function holdWho(id){ const k=tgKinds.get(id); return (k && k!=='grp' ? 'radio ' : 'TG ')+idWithName(id); }
+
+// the talkgroup list, rebuilt from the activity: grants on the control channel (this system's), and
+// calls heard on voice channels while trunking
+const TG_KIND = {'Group call grant':'grp', 'Private call grant':'prv', 'Data channel grant':'data', 'Phone call grant':'tel'};
+const TG_WORD = {grp:'Group', prv:'Private', data:'Data', tel:'Phone'};
+function grantSys(it){ for (const [k,v] of it.f||[]) if (k==='System'){ const m=/WACN (\w+), SYS (\w+)/.exec(v); return m ? m[1]+'-'+m[2] : ''; } return ''; }
+function tgBuild(){
+  const p=sysPic && sysPic.p25, cur = p && p.wacn && p.sys ? p.wacn+'-'+p.sys : '';
+  const list=new Map(), now=Date.now()/1000;
+  for (const it of [...acts.values()].sort((a,b)=>a.t-b.t)){
+    if (it.k!=='call' || !(it.dst > 0)) continue;
+    const grant = it.p==='P25' && TG_KIND[it.ty];
+    if (grant){ const s=grantSys(it); if (cur && s && s!==cur) continue; }
+    else if (!it.trkd) continue;
+    let r=list.get(it.dst);
+    if (!r){ r={id:it.dst, calls:0, end:0}; list.set(it.dst, r); }
+    const end = it.live ? now : it.t+(it.dur||0);
+    if (it.t > r.end + 5){ r.calls++; r.epEnc = false; } // a call is the grants and voice of one stretch of activity
+    if (it.enc && !r.epEnc){ r.epEnc = true; r.encCalls = (r.encCalls||0)+1; }
+    r.end = Math.max(r.end, end);
+    r.kind = grant ? TG_KIND[it.ty] : (it.g===1 ? 'prv' : 'grp');
+    r.live = r.live || !!it.live;
+    if (grant && it.trk !== undefined){ r.trk=it.trk; r.why=it.why||''; r.dur = it.live ? now-it.t : it.dur; }
+  }
+  // packets to or from the radios in the list (heard on data channels while following)
+  for (const it of acts.values()){
+    if (!isPkt(it)) continue;
+    const r = list.get(it.dst > 0 ? it.dst : it.src); if (!r) continue;
+    r.pk = (r.pk||0) + 1;
+    const w = PKT_TALLY[it.ty] || it.ty.toLowerCase();
+    (r.pkc = r.pkc || {})[w] = (r.pkc[w]||0) + (it.rep||1);
+  }
+  return list;
+}
+// what a radio's packets came to, most first: "3 delivered · 1 resend"
+const PKT_TALLY = {ACK:'delivered', SACK:'resend', NACK:'not delivered', LRRP:'location', ARS:'registration', SNDCP:'session',
+  'Encrypted data':'encrypted', Location:'position', 'Data error':'damaged'};
+function pktTally(r){ return Object.entries(r.pkc||{}).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([w,n])=>n+' '+w).join(' · '); }
+let tgT=0, tgTimer=0;
+function renderTalkgroups(){
+  if (tgTimer) return;
+  tgTimer=setTimeout(()=>{ tgTimer=0; tgT=Date.now(); drawTalkgroups(); }, Math.max(0, 700-(Date.now()-tgT)));
+}
+function drawTalkgroups(){
+  if (tgEdit) return; // a name being typed: the list waits
+  const now=Date.now()/1000, all=[...tgBuild().values()];
+  tgKinds.clear(); for (const r of all) tgKinds.set(r.id, r.kind);
+  tgSummary = {voice:0, enc:0, data:0};
+  for (const r of all){ if (r.kind==='data') tgSummary.data += r.calls; else { tgSummary.voice += r.calls; tgSummary.enc += r.encCalls||0; } }
+  const list=all.filter(r => !tgKind || (tgKind==='grp') === (r.kind==='grp')).sort((a,b)=>(b.live-a.live) || (b.end-a.end));
+  $('tg-count').textContent = list.length===all.length ? all.length : list.length+' of '+all.length;
+  const f=trk.follow||{};
+  let h='';
+  // a call type switched off above leaves its rows' keys dark and out of reach
+  const typeOff = {grp:!trk.group, prv:!trk.private, tel:!trk.private, data:!trk.data};
+  const typeName = {grp:'Group calls', prv:'Private calls', tel:'Private calls', data:'Data calls'};
+  for (const r of list.slice(0,300)){
+    const off=typeOff[r.kind], lit=!off && tgLit(r.id), held=trk.tg_hold===r.id, name=tgName(r.id), here=trkState==='follow' && f.id===r.id;
+    let out;
+    if (here) out='<span class="fol">Listening</span> · '+fmtClock(f.dur||0);
+    else if (r.trk===1) out='<span class="fol">Followed</span>'+(r.dur ? ' · '+fmtClock(r.dur) : '');
+    else if (r.trk===0) out=(r.live ? 'On air, not followed: ' : 'Not followed: ')+escH(r.why);
+    else out=r.live ? 'On air' : 'Heard';
+    // a data radio's packets say more than its follow: they were only heard because it was followed
+    let tip = out.replace(/<[^>]+>/g,'');
+    if (r.pk && !here){ out=escH(pktTally(r)); tip += ' · '+r.pk+' packet'+(r.pk===1?'':'s')+': '+out; }
+    const what=(r.kind==='grp' ? 'TG ' : 'radio ')+r.id;
+    h+='<tr data-id="'+r.id+'"'+(here||held ? ' class="'+(here?'live':'')+(held?' held':'')+'"' : '')+'>'+
+      '<td><button class="tgl sm led'+(lit?' on':'')+'" data-act="led" aria-pressed="'+lit+'" aria-label="Follow '+what+'"'+(off ? ' aria-disabled="true"' : '')+' title="'+
+        (off ? typeName[r.kind]+' are off: switch them on under Follow to follow '+what : (lit ? 'Followed: click to stop following '+what : 'Not followed: click to follow '+what))+'"></button></td>'+
+      '<td><button class="num" data-act="find" title="Show everything about '+what+' in Activity">'+r.id+'</button><button class="nm'+(name?'':' add')+'" data-act="name" title="Name '+what+'">'+(name ? escH(name) : 'name')+'</button></td>'+
+      '<td class="opt"'+(r.kind==='data' ? ' title="Packet data for this radio: nothing to hear"' : '')+'>'+TG_WORD[r.kind]+'</td>'+
+      '<td class="opt2">'+(r.live ? '<span class="air">On air</span>' : ago(now-r.end))+'</td>'+
+      '<td class="opt">'+r.calls+'</td>'+
+      '<td class="out" title="'+escH(tip)+'">'+out+'</td>'+
+      '<td><button class="sm hold" data-act="hold" title="'+(held ? 'Stop holding '+what : 'Follow only '+what)+'">'+(held ? 'Release' : 'Hold')+'</button></td></tr>';
+  }
+  if (!all.length) h='<tr><td colspan="7" class="empty">Talkgroups show up here as the control channel grants calls.</td></tr>';
+  else if (!list.length) h='<tr><td colspan="7" class="empty">None of this kind yet.</td></tr>';
+  // rebuilt every second or so: keep keyboard focus on the same key, without scrolling to it (a key
+  // tapped on a phone keeps the focus, and the page would jump back to it on every rebuild)
+  const fo=document.activeElement, fr=fo && fo.closest && fo.closest('#tg-body tr'), fid=fr ? fr.dataset.id : null, fact=fo && fo.dataset ? fo.dataset.act : null;
+  $('tg-body').innerHTML=h;
+  if (fid){ const b=$('tg-body').querySelector('tr[data-id="'+fid+'"] [data-act="'+fact+'"]'); if (b) b.focus({preventScroll:true}); }
+}
+function tgNameEdit(id){
+  const row=$('tg-body').querySelector('tr[data-id="'+id+'"]'); if (!row) return;
+  tgEdit=id;
+  const b=row.querySelector('[data-act="name"]'), inp=document.createElement('input');
+  inp.className='nmed'; inp.maxLength=60; inp.value=tgName(id); inp.setAttribute('aria-label', 'Name for '+id);
+  inp.placeholder='name';
+  b.replaceWith(inp); inp.focus(); inp.select();
+  let done=false;
+  const finish=(save)=>{ if (done) return; done=true; tgEdit=0;
+    if (save){ const v=cleanName(inp.value); const g=groups.get(id);
+      if (v !== tgName(id)){ send({cmd:'tg_name', id, name:v}); groups.set(id, {m:g ? g.m : '', n:v}); renderActs(); } }
+    drawTalkgroups();
+    const nb=$('tg-body').querySelector('tr[data-id="'+id+'"] [data-act="name"]'); if (nb) nb.focus({preventScroll:true}); };
+  inp.addEventListener('keydown', e=>{ if (e.key==='Enter'){ e.preventDefault(); finish(true); } else if (e.key==='Escape'){ e.preventDefault(); finish(false); } });
+  inp.addEventListener('blur', ()=>finish(true));
+}
+$('tg-body').addEventListener('click', e=>{
+  const b=e.target.closest('[data-act]'); if (!b) return;
+  const id=+b.closest('tr').dataset.id;
+  if (b.dataset.act==='led'){
+    if (b.getAttribute('aria-disabled')==='true') return; // its call type is off (the title says so)
+    const mode = b.classList.contains('on') ? 'B' : 'A';
+    send({cmd:'tg_mode', id, mode}); groups.set(id, {m:mode, n:tgName(id)}); drawTalkgroups();
+  }
+  else if (b.dataset.act==='name') tgNameEdit(id);
+  else if (b.dataset.act==='find'){ // Activity, filtered to this number, all kinds
+    $('act-q').value=String(id);
+    const all=$('act-kinds').querySelector('[data-k=""]'); if (actKind) all.click(); else renderActs();
+    document.querySelector('.card-act').scrollIntoView({block:'start'});
+  }
+  else if (b.dataset.act==='hold') send({cmd:'tg_hold', tg: trk.tg_hold===id ? 0 : id});
+});
+$('tg-kinds').addEventListener('click', e=>{
+  const c=e.target.closest('.chip'); if (!c) return;
+  tgKind=c.dataset.k;
+  for (const x of $('tg-kinds').children){ x.classList.toggle('on', x===c); x.setAttribute('aria-pressed', x===c); }
+  drawTalkgroups();
+});
+$('trk-go').onclick=()=>send({cmd:'trunk_start'});
+$('trk-stop').onclick=()=>send({cmd:'trunk_stop'});
+$('trk-skip').onclick=()=>send({cmd:'trunk_skip'});
+$('trk-back').onclick=()=>send({cmd:'return_cc'});
+$('trk-hold').onclick=()=>{ const f=trk.follow||{}; send({cmd:'tg_hold', tg: trk.tg_hold ? 0 : (f.id||0)}); };
+// block the call being followed and leave it now
+$('trk-block').onclick=()=>{ const f=trk.follow||{}; if (!(f.id > 0)) return;
+  send({cmd:'tg_mode', id:f.id, mode:'B'}); groups.set(f.id, {m:'B', n:tgName(f.id)}); send({cmd:'return_cc'}); };
+for (const [id,key] of [['tk-grp','group'],['tk-prv','private'],['tk-data','data'],['tk-enc','enc'],['tk-allow','allow_list']])
+  $(id).onclick=()=>{ const on=!$(id).classList.contains('on'); const o={cmd:'trunk_opts'}; o[key]=on; send(o); reflect(id, on); if (key==='allow_list'){ trk.allow_list=on; drawTalkgroups(); } };
+$('tk-hang').onchange=()=>{ const v=+$('tk-hang').value; if (v >= 0) send({cmd:'hangtime', seconds:v}); };
+setInterval(()=>{ if (!$('card-trk').classList.contains('hidden')) renderTalkgroups(); }, 1000);
 
 //---------------------------------------------------------------- map (modal)
 // OpenStreetMap tiles when the browser is online; offline the dots still sit right on a dark
@@ -717,7 +1024,7 @@ function mapSide(now){
   // rebuilt every second while someone talks: keep keyboard focus on the same radio
   const f=document.activeElement, fid=f && f.classList.contains('it') ? f.dataset.id : null;
   setHTML($('mapside'), h);
-  if (fid && document.activeElement!==f){ const b=[...$('mapside').querySelectorAll('.it')].find(x=>x.dataset.id===fid); if (b) b.focus(); }
+  if (fid && document.activeElement!==f){ const b=[...$('mapside').querySelectorAll('.it')].find(x=>x.dataset.id===fid); if (b) b.focus({preventScroll:true}); }
 }
 function mapZoom(dz, cx, cy){
   const v=$('mapview'), w=v.clientWidth, h=v.clientHeight, z=MAP.z, nz=Math.max(2, Math.min(19, z+dz));
@@ -830,6 +1137,7 @@ function renderSystem(m){
   }
   if (m.nxdn){ const n=m.nxdn; h+='<div><h4>NXDN</h4>'+kv([['RAN',n.ran],['System code',n.sys],['Site code',n.site]])+'</div>'; }
   setHTML($('sysinfo'), h ? '<div class="sysg">'+h+'</div>' : '<div class="hint">System details show up here once a repeater or control channel identifies itself.</div>');
+  sysPic = m; renderTrunkNow(); renderTalkgroups();
 }
 
 function logConsole(line){
@@ -1124,17 +1432,17 @@ $('btn-bw').onclick=()=>send({cmd:'rtl', bw:+$('rtlbw').value});
 $('btn-sq').onclick=()=>send({cmd:'rtl', squelch:+$('rtlsq').value});
 $('btn-smb').onclick=()=>send({cmd:'setmod_bw', hz:+$('setmodbw').value});
 
-// Trunk / scan
-$('tg-trunk').onclick=()=>{ const on=!$('tg-trunk').classList.contains('on'); send({cmd:'trunk', enable:on}); };
+// Settings → Trunk: lists and the conventional scanner (trunking itself is in its card)
 $('tg-scan').onclick=()=>{ const on=!$('tg-scan').classList.contains('on'); send({cmd:'scanner', enable:on}); };
-$('btn-cc').onclick=()=>send({cmd:'return_cc'});
 $('btn-cycle').onclick=()=>send({cmd:'cycle'});
-for (const [id,key] of [['tg-grp','group'],['tg-prv','private'],['tg-data','data'],['tg-enc','enc'],['tg-allow','allow_list']])
-  $(id).onclick=(function(id,key){ return ()=>{ const on=!$(id).classList.contains('on'); const o={cmd:'trunk_opts'}; o[key]=on; send(o); reflect(id, on); }; })(id,key);
-$('btn-hang').onclick=()=>send({cmd:'hangtime', seconds:+$('hang').value});
-$('btn-tgh').onclick=()=>send({cmd:'tg_hold', tg:+$('tghold').value});
 $('btn-chan').onclick=()=>send({cmd:'csv', kind:'channel', text:$('csv-chan').value});
 $('btn-group').onclick=()=>send({cmd:'csv', kind:'group', text:$('csv-group').value});
+// the names and choices as they are, in the group CSV format the import (and -G) reads
+$('btn-group-cur').onclick=()=>{
+  const rows=['DEC,Mode,Name,Tag'];
+  for (const [id,g] of [...groups].sort((a,b)=>a[0]-b[0])) rows.push(id+','+(g.m || 'A')+','+(g.n||'').replace(/,/g,' '));
+  $('csv-group').value=rows.join('\n');
+};
 $('btn-scanset').onclick=()=>{ const fs=$('scanlist').value.split(/\s+/).map(parseFreq).filter(x=>x); send({cmd:'scan_set', freqs:fs}); };
 $('btn-scanbm').onclick=()=>{ $('scanlist').value=bmFiltered().slice(0,26).map(b=>(b.freq/1e6).toFixed(6)+'M').join('\n'); };
 

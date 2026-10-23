@@ -223,6 +223,10 @@ void processMPDU(dsd_opts * opts, dsd_state * state)
 
   }
 
+  //web activity log: responses are logged by the header decode, so they go first
+  if (opts->web_enable == 1 && err[0] == 0 && fmt == 3)
+    web_p25_pdu (opts, state, mpdu_byte, 12*(blks+1), 0, 1);
+
   if (err[0] == 0)
     p25_decode_pdu_header (opts, state, mpdu_byte);
   else if (opts->aggressive_framesync == 0)
@@ -329,6 +333,10 @@ void processMPDU(dsd_opts * opts, dsd_state * state)
       mpdu_byte[mpdu_idx++] = r34bytes[i];
     }
 
+    //web activity log: the packet before the decoder logs it
+    if (opts->web_enable == 1 && blks != 0 && fmt != 3 && (err[0] == 0 || opts->aggressive_framesync == 0))
+      web_p25_pdu (opts, state, mpdu_byte, mpdu_idx-1, 1, err[0] == 0 && err[1] == 0);
+
     //minus 1 to offset the last rounds mpdu_idx++
     if (err[1] == 0 && blks != 0)
       p25_decode_pdu_data(opts, state, mpdu_byte, mpdu_idx-1);
@@ -395,6 +403,10 @@ void processMPDU(dsd_opts * opts, dsd_state * state)
       if (CRCComputed == CRCExtracted) err[1] = 0;
     }
     else err[1] = 0; //No CRC32 on a lonely header
+
+    //web activity log: the packet before the decoder logs it
+    if (opts->web_enable == 1 && blks != 0 && fmt != 3 && (err[0] == 0 || opts->aggressive_framesync == 0))
+      web_p25_pdu (opts, state, mpdu_byte, len, 0, err[0] == 0 && err[1] == 0);
 
     if (err[1] == 0 && blks != 0)
       p25_decode_pdu_data(opts, state, mpdu_byte, len);
