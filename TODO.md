@@ -27,5 +27,6 @@ Open bugs and planned work for this fork, mostly the web interface. Bugs in the 
 
 - `getFrameSync` (dsd_frame_sync.c) copies the 24 symbols before `synctest_p` (48 for EDACS) without checking that many have been read, so it reads before `synctest_buf` right after entry for the short frame types (M17, NXDN, dPMR) and after the buffer wraps. AddressSanitizer flags it without `--web` too.
 - `-b` clamps the key number to 256, but `BPK` (include/bp.h) has entries 0–255, so `-b 256` reads past the end of the table.
+- `rtl_return_rms` (rtl_sdr_fm.cpp) smooths with `(prev_rms * 3 + sr) / 4` in integers, which truncates: any value up to 3 under the input is a resting point, so the RMS reads 2–3 counts low (about 10 % on a quiet channel at low gain). Minor; the web's Auto floor squelch just sits that much further over it.
 - P25 response packets that carry a block (SACK) go through `p25_decode_pdu_data`, which reads their status byte as a SAP, so the console reports them as encrypted or unknown IP data. The web log decodes them correctly.
 - AddressSanitizer on 2026-10-21 also reported a stack overflow in `ysf_soft_decision_viterbi` (AUTO mode on noise), a memcpy over-read in dmr_dburst.c and undefined shifts in dmr_block.c and `dmr_locn`. Re-check on current upstream before reporting.

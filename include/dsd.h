@@ -1722,6 +1722,7 @@ void rtl_dev_set_bandwidth(dsd_opts * opts, int khz);
 void rtl_dev_set_agc(dsd_opts * opts, int on);
 uint32_t rtl_dev_rate(void);
 uint32_t rtl_dev_rate_target(void);
+double rtl_dev_noise_gain(void);
 long int rtl_return_rms();
 void rtl_clean_queue();
 

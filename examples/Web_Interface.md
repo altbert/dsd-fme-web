@@ -58,8 +58,9 @@ frequency, pick a bookmark or follow trunked calls (this rigctl path hasn't
 been tested from the web page yet). All decoding and its views work:
 readouts, slots, activity log, packet data, radios, map, keys, browser audio
 and recordings. The spectrum and waterfall (with click-to-tune and
-auto-tune), the band scan and the RTL settings in the RF tab need raw IQ
-samples, which DSD-FME only gets from an RTL-SDR; SDR++ has its own waterfall.
+auto-tune), the band scan, the squelch's Auto floor and the RTL settings in the
+RF tab need raw IQ samples, which DSD-FME only gets from an RTL-SDR; SDR++ has
+its own waterfall and squelch.
 DSD-FME's notes say SDR++ copes with weak signals better than the built-in RTL
 demodulator, so this setup is worth a try with an RTL-SDR too.
 
@@ -86,8 +87,15 @@ per slot (TG/SRC, group/private, burst type, errors, ENC alg/key, talker alias,
 GPS), plus site/system context (P25 WACN/SYS/NAC/RFSS/SITE, DMR colour code and
 branding, NXDN RAN/cipher) and the event history.
 
-**RF** — RTL gain / PPM / sample volume / bandwidth / RMS squelch, and the
-RIGCTL SetMod bandwidth.
+**RF** — RTL gain / PPM / sample volume / bandwidth / sample rate, the RMS
+squelch, and the RIGCTL SetMod bandwidth. The squelch gates NXDN, dPMR and M17
+sync and the analog monitor. **Auto floor**, on by default with an RTL-SDR,
+keeps it a margin (+4 dB unless you pick another) over the noise floor measured
+across the whole spectrum, so it follows gain and AGC changes and holds on a
+channel that never goes quiet. A squelch given on the command line
+(`-i rtl:…:sq`) starts with Auto floor off. Off, the level stays where you put
+it: type one and press *Set*, or press *Channel floor* to take the tuned
+frequency's own quiet level plus the margin.
 
 **Trunk** — enable trunking or the conventional scanner, toggle tuning of
 group/private/data/encrypted calls, allow-list mode, hang time, TG hold, return

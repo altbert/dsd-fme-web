@@ -1406,6 +1406,40 @@ uint32_t rtl_dev_rate_target(void)
 	return rtl_rate_target;
 }
 
+//rtl_return_rms() squared over the variance of white noise in the IQ samples (I or Q alone, in 8-bit
+//steps) for the decimation running now: the web turns the noise floor of the spectrum, which is fed
+//the same samples, into the RMS squelch's units with it
+double rtl_dev_noise_gain(void)
+{
+	struct demod_state *d = &demod;
+	if (!d->downsample_passes) {
+		//low_pass sums downsample samples, scaled to the default decimation's level
+		double g = d->downsample != d->downsample_ref ? (double)d->downsample_ref / d->downsample : 1.0;
+		return g * g * d->downsample;
+	}
+	//fifth_order passes (1 5 10 10 5 1 over 16, half the rate each) as one filter at the capture rate,
+	//pass p with its taps 2^p samples apart; the droop filter after them is never switched on
+	static double h[1 + 5 * 1023], t[1 + 5 * 1023];
+	static const double tap[6] = {1, 5, 10, 10, 5, 1};
+	int passes = d->downsample_passes > 10 ? 10 : d->downsample_passes;
+	int len = 1;
+	h[0] = 1.0;
+	for (int p = 0; p < passes; p++) {
+		int step = 1 << p, nlen = len + 5 * step;
+		memset(t, 0, sizeof(double) * nlen);
+		for (int i = 0; i < len; i++)
+			for (int k = 0; k < 6; k++)
+				t[i + k * step] += h[i] * tap[k] / 16.0;
+		memcpy(h, t, sizeof(double) * nlen);
+		len = nlen;
+	}
+	double s = 0;
+	for (int i = 0; i < len; i++)
+		s += h[i] * h[i];
+	//full_demod shifts the level to the default pass count's
+	return s * pow(4.0, d->downsample_passes_ref - passes);
+}
+
 static long int prev_rms = 0;
 
 long int rtl_return_rms()
