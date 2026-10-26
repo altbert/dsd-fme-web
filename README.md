@@ -1,7 +1,7 @@
 
 # DSD-FME web
 
-> **Vibecoded DSD-FME web, made for fun.** I have zero idea how any of this works: the radios talk, the AI types, I press refresh. If something breaks, that's between you and the waterfall. Pull requests welcome (push requests too, whatever those are).
+> A hobby project, built with AI assistance. Expect some rough edges; issues and pull requests are welcome.
 
 A fork of [DSD-FME](https://github.com/lwvmobile/dsd-fme) with a browser interface built in. Start it with `--web` and open the page:
 
@@ -23,6 +23,8 @@ dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 - **Works on phones.**
 
 Without `--web` it's the regular DSD-FME. Flags and details: [examples/Web_Interface.md](examples/Web_Interface.md).
+
+**Kept up to date with DSD-FME.** Changes to the original project ([lwvmobile/dsd-fme](https://github.com/lwvmobile/dsd-fme), branch `audio_work`) are merged in regularly, so new capabilities and fixes from DSD-FME arrive here too, with the web interface on top.
 
 <p>
   <img src="docs/screenshots/web-activity.webp" width="49%" alt="Activity log and radios table">
