@@ -111,6 +111,9 @@ input[type=range]:disabled{opacity:.4;cursor:default}
 button.fold{padding:0;width:28px;min-width:28px;color:var(--silk-2)}
 button.fold .i{transition:transform .15s}
 .card.folded>.body{display:none}
+/* the title has no bottom padding (the body's top padding spaces it); folded, the card pads it instead,
+   so the title bar is centered and doesn't move */
+.card.folded{padding-bottom:10px}
 .card.folded button.fold .i{transform:rotate(-90deg)}
 .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
 .row:first-child{margin-top:0}
@@ -419,6 +422,7 @@ canvas{display:block;width:100%}
   .col{gap:10px}
   .card>h2{padding:8px 12px 0;min-height:40px}
   .card>.body{padding:8px 12px 12px}
+  .card.folded{padding-bottom:8px}
   .spec-wrap{margin:8px 12px 0}
   #spec{height:110px} #wf{height:170px}
   .card>h2 .meta{gap:8px;font-size:12.5px}
