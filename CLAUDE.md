@@ -10,7 +10,7 @@ Remotes: `origin` is altbert/DSD-FME-web, `upstream` is lwvmobile/dsd-fme. Merge
 
 CLI usage is in examples/Example_Usage.md, install steps in examples/Install_Notes.md, the web UI in examples/Web_Interface.md.
 
-Open bugs and planned work are in TODO.md: add what you find, remove what you fix.
+Open bugs and planned work are in TODO.md: add what you find. Work on a TODO item only when the user asks for that item; don't fix one on your own initiative. If other work ends up fixing an item anyway, tell the user which one and how, ask for their input where it makes sense, and update TODO.md once they agree.
 
 ## Build
 
