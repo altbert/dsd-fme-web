@@ -24,7 +24,11 @@ dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 
 Without `--web` it's the regular DSD-FME. Flags and details: [examples/Web_Interface.md](examples/Web_Interface.md).
 
+**Radios.** RTL-SDR dongles connect directly, on this computer or over `rtl_tcp`. Other SDRs (HackRF, Airspy, SDRplay, LimeSDR…) work through SDR++, which demodulates and takes tuning commands: the page then decodes and tunes, but has no spectrum or band scan. Details: [Receivers](examples/Web_Interface.md#receivers-rtl-sdr-and-other-sdrs).
+
 **Kept up to date with DSD-FME.** Changes to the original project ([lwvmobile/dsd-fme](https://github.com/lwvmobile/dsd-fme), branch `audio_work`) are merged in regularly, so new capabilities and fixes from DSD-FME arrive here too, with the web interface on top.
+
+Known bugs and planned work: [TODO.md](TODO.md).
 
 <p>
   <img src="docs/screenshots/web-activity.webp" width="49%" alt="Activity log and radios table">
