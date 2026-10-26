@@ -138,6 +138,8 @@ typedef struct
   uint32_t rate;         //sample rate (span) in Hz
   uint64_t seq;          //frame sequence number
   double data_time;      //wall time (s) when the newest sample in the frame arrived
+  double bin_unit;       //power a bin shows for white IQ noise of variance 1 (I² + Q², 8-bit steps)
+  int avg;               //FFTs averaged into the frame
   float * power;         //linear power per bin, low to high frequency
 } spectrum_frame;
 

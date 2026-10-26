@@ -123,6 +123,26 @@ static struct
   char bs_saved_mode[16];
   char bs_msg[128];
 
+  //squelch: Auto floor holds it a margin over the noise floor of the spectrum
+  int sq_auto;
+  int sq_margin;                      //dB over the floor, for Auto floor and Channel floor
+  int sq_mine;                        //level last set here, another one was set elsewhere
+  int sq_scan;                        //the band scan had the squelch
+  double sq_t;                        //last run
+  double sq_reset_t;                  //last retune or RF setting change
+  long sq_freq;                       //frequency sq_chan belongs to
+  float sq_floor;                     //noise floor in RMS units, 0 until measured
+  float sq_floor_db;                  //the same per bin, in dB as the spectrum shows it
+  float sq_chan;                      //quiet level of the tuned frequency (RMS), 0 until measured
+  spectrum_frame sq_sf;
+  uint64_t sq_seq;
+  int sq_frames, sq_ffts, sq_bins;    //spectra summed in sq_acc, the FFTs in them, their size
+  uint64_t sq_center;
+  uint32_t sq_rate;
+  double sq_t0;                       //data time of the first one
+  float sq_power[16384];
+  float sq_acc[16384];
+
   //scanner list edited from the web (mirrors trunk_lcn_freq via scan apply)
   long scan_list[1024];
   int scan_count;
@@ -1173,6 +1193,136 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
 }
 
 //----------------------------------------------------------------------------
+// Squelch: Auto floor holds the RMS squelch a margin over the noise floor
+//
+// The spectrum and the channel RMS are fed the same IQ, so the noise floor of
+// the spectrum (a low percentile over the clean part of the capture, where
+// most bins are noise) converts into the RMS a channel with only noise on it
+// shows: through the window's noise bandwidth and the demod's decimation
+// filter (rtl_dev_noise_gain). It follows gain and AGC changes and holds on a
+// channel that never goes quiet. Channel floor takes the tuned frequency's own
+// quiet level instead, once. The band scan sets a squelch for each carrier it
+// probes and puts this one back when it stops; Auto floor waits for it.
+//----------------------------------------------------------------------------
+
+#define SQ_MARGIN 4    //dB over the floor by default: opens about 2 dB over the noise in the channel
+
+static int sq_level (float rms)
+{
+  return (int)(rms * powf (10.0f, W.sq_margin / 20.0f)) + 1;
+}
+
+static void sq_set (dsd_opts * opts, int level)
+{
+  opts->rtl_squelch_level = level;
+  W.sq_mine = level;
+}
+
+//a retune or an RF setting change: the floor and the channel level are measured again
+static void sq_restart (void)
+{
+  W.sq_reset_t = spectrum_now ();
+  W.sq_frames = 0;
+  W.sq_chan = 0;
+}
+
+#ifdef USE_RTLSDR
+//floor of the summed spectra, and the RMS a channel with only that noise on it shows
+static void sq_floor (double bin_unit)
+{
+  static float tmp[16384];
+  int n = W.sq_bins, m = 0;
+  //-15%..+45% of the span around the tuned frequency: the left quarter is the top of the
+  //capture wrapped around, and the capture edges roll off (as in bs_find_peaks)
+  for (int i = n / 2 - (int)(0.15 * n); i < n / 2 + (int)(0.45 * n); i++) tmp[m++] = W.sq_acc[i];
+  double p = select_kth (tmp, m, (int)(0.3 * m)) / W.sq_frames;
+  //a noise bin is chi-square with 2 degrees of freedom per FFT summed into it, so its 30th
+  //percentile sits under the mean (Wilson-Hilferty, z = -0.524)
+  double v = 2.0 / (9.0 * 2.0 * W.sq_ffts), q = 1.0 - v - 0.524 * sqrt (v);
+  double fl = p / (q * q * q);
+  W.sq_frames = 0;
+  if (!(fl > 0) || !(bin_unit > 0)) return;
+  W.sq_floor_db = (float)(10.0 * log10 (fl));
+  W.sq_floor = (float)sqrt (rtl_dev_noise_gain () * fl / (2.0 * bin_unit)); //per I or Q, as rms() reads it
+}
+#endif
+
+static void run_squelch (dsd_opts * opts)
+{
+#ifdef USE_RTLSDR
+  if (opts->audio_in_type != 3) return;
+  double now = spectrum_now ();
+  if (now - W.sq_t < 0.1) return;
+  W.sq_t = now;
+
+  long f = current_freq (opts);
+  if (f != W.sq_freq)
+  {
+    W.sq_freq = f;
+    sq_restart ();
+  }
+
+  //the tuned frequency's quiet level: the lowest RMS since the retune, creeping up (~10 s) so one
+  //dip doesn't hold it down for good; right after a retune the RTL hands over muted samples
+  float r = (float)opts->rtl_rms;
+  if (now - W.sq_reset_t > 0.5 && r > 0)
+  {
+    if (W.sq_chan <= 0 || r < W.sq_chan) W.sq_chan = r;
+    else W.sq_chan += 0.01f * (r - W.sq_chan);
+  }
+
+  //about a second of spectra from the settled receiver, then the floor
+  spectrum_frame * sf = &W.sq_sf;
+  sf->power = W.sq_power;
+  if (spectrum_copy_latest (sf, 16384) && sf->seq != W.sq_seq && sf->data_time > W.sq_reset_t + BS_SETTLE)
+  {
+    W.sq_seq = sf->seq;
+    if (W.sq_frames && (sf->bins != W.sq_bins || sf->center != W.sq_center || sf->rate != W.sq_rate)) W.sq_frames = 0;
+    if (W.sq_frames == 0)
+    {
+      memset (W.sq_acc, 0, sizeof(float) * sf->bins);
+      W.sq_bins = sf->bins;
+      W.sq_center = sf->center;
+      W.sq_rate = sf->rate;
+      W.sq_t0 = sf->data_time;
+      W.sq_ffts = 0;
+    }
+    for (int i = 0; i < sf->bins; i++) W.sq_acc[i] += sf->power[i];
+    W.sq_frames++;
+    W.sq_ffts += sf->avg;
+    //the percentile over thousands of bins is steady from a few frames on, so the first floor
+    //comes quickly (the startup squelch may sit under the noise); later ones cover a second
+    int first = W.sq_floor <= 0;
+    if (W.sq_frames >= (first ? 3 : 4) && sf->data_time - W.sq_t0 >= (first ? 0.15 : 1.0)) sq_floor (sf->bin_unit);
+  }
+
+  if (W.bs_state != BS_OFF)
+  {
+    W.sq_scan = 1;
+    return;
+  }
+  if (W.sq_scan) //the scan's restore isn't a change from elsewhere
+  {
+    W.sq_scan = 0;
+    W.sq_mine = opts->rtl_squelch_level;
+  }
+  if (opts->rtl_squelch_level != W.sq_mine) //set elsewhere (the ncurses menu): that level stays
+  {
+    if (W.sq_auto) web_log ("Squelch set to %d outside the web page, Auto floor off.", opts->rtl_squelch_level);
+    W.sq_auto = 0;
+    W.sq_mine = opts->rtl_squelch_level;
+  }
+  if (W.sq_auto && W.sq_floor > 0)
+  {
+    int want = sq_level (W.sq_floor), cur = opts->rtl_squelch_level;
+    if (abs (want - cur) * 100 > abs (cur) * 3) sq_set (opts, want); //moves of over 3 %
+  }
+#else
+  UNUSED (opts);
+#endif
+}
+
+//----------------------------------------------------------------------------
 // Key / encryption setup (reuses the decoder's own keystream builders)
 //----------------------------------------------------------------------------
 
@@ -1513,19 +1663,63 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       {
         if (g) web_log ("RTL LNA gain %d dB (manual).", g);
         else web_log ("RTL hardware AGC on.");
+        sq_restart ();
       }
       opts->rtl_gain_value = g;
       opts->rtl_gain_actual = 0;
     }
     if (jv_has (cmd, "ppm")) opts->rtlsdr_ppm_error = (int)jv_int (cmd, "ppm", 0);
     if (jv_has (cmd, "vol")) { int v = (int)jv_int (cmd, "vol", 2); if (v < 1) v = 1; if (v > 3) v = 3; opts->rtl_volume_multiplier = v; }
-    if (jv_has (cmd, "squelch")) opts->rtl_squelch_level = (int)jv_int (cmd, "squelch", 0);
+    if (jv_has (cmd, "sql_margin"))
+    {
+      int m = (int)jv_int (cmd, "sql_margin", SQ_MARGIN);
+      W.sq_margin = m < 1 ? 1 : (m > 30 ? 30 : m);
+      if (W.sq_auto && W.sq_floor > 0 && W.bs_state == BS_OFF) sq_set (opts, sq_level (W.sq_floor));
+    }
+    if (jv_has (cmd, "sql_auto"))
+    {
+      //Auto floor needs the spectrum, so the RTL input
+      int on = jv_bool (cmd, "sql_auto", 1) && opts->audio_in_type == 3;
+      if (on != W.sq_auto)
+      {
+        if (on) web_log ("Squelch: Auto floor on, %d dB over the noise floor.", W.sq_margin);
+        else web_log ("Squelch: Auto floor off, holding %d.", opts->rtl_squelch_level);
+      }
+      W.sq_auto = on;
+      if (on && W.sq_floor > 0 && W.bs_state == BS_OFF) sq_set (opts, sq_level (W.sq_floor));
+    }
+    if (jv_has (cmd, "squelch"))
+    {
+      //a level by hand turns Auto floor off; during a band scan it is the one put back after it
+      int sq = (int)jv_int (cmd, "squelch", 0);
+      if (W.sq_auto) web_log ("Squelch %d, Auto floor off.", sq);
+      W.sq_auto = 0;
+      sq_set (opts, sq);
+      if (W.bs_state != BS_OFF) W.bs_saved_sql = sq;
+    }
+    if (jv_bool (cmd, "sql_chan", 0) && opts->audio_in_type == 3)
+    {
+      //the tuned frequency's quiet level plus the margin, once
+      float r = W.sq_chan > 0 ? W.sq_chan : (float)opts->rtl_rms;
+      if (W.bs_state != BS_OFF) web_log ("Channel floor: not while the band scan runs.");
+      else if (r <= 0) web_log ("Channel floor: no level measured on this frequency yet.");
+      else
+      {
+        W.sq_auto = 0;
+        sq_set (opts, sq_level (r));
+        if (W.sq_floor > 0 && r > 2.0f * W.sq_floor)
+          web_log ("Squelch %d from this frequency (%.0f RMS, %.0f dB over the noise floor: probably a signal on it), Auto floor off.",
+                   opts->rtl_squelch_level, r, 20.0 * log10 (r / W.sq_floor));
+        else web_log ("Squelch %d from this frequency (%.0f RMS), Auto floor off.", opts->rtl_squelch_level, r);
+      }
+    }
     if (jv_has (cmd, "bw"))
     {
       //the bandwidths -i rtl takes; the stream reads it once when it opens, so apply it live
       int b = (int)jv_int (cmd, "bw", 12);
       if (b == 4 || b == 6 || b == 8 || b == 12 || b == 16 || b == 24)
       {
+        if (b != opts->rtl_bandwidth) sq_restart ();
 #ifdef USE_RTLSDR
         if (opts->audio_in_type == 3 && opts->rtl_started == 1 && b != opts->rtl_bandwidth)
           rtl_dev_set_bandwidth (opts, b);
@@ -1540,6 +1734,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       if (r < 0 || r > 3200000) r = 0;
       bs_stop (opts, state, " (sample rate changed)"); //its windows are sized for the old span
       uint32_t got = rtl_dev_set_rate (opts, (uint32_t)r);
+      sq_restart ();
       web_log ("RTL sample rate %.3f MSPS%s", got / 1e6, r ? "" : " (default)");
     }
     if (jv_has (cmd, "dagc"))
@@ -1551,6 +1746,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       {
         if (opts->audio_in_type == 3 && opts->rtl_started == 1) rtl_dev_set_agc (opts, on);
         else opts->rtl_digital_agc = on; //applied when the stream opens
+        sq_restart ();
         web_log ("RTL digital AGC %s.", on ? "on" : "off");
       }
     }
@@ -2111,6 +2307,11 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_int (b, "vol", opts->rtl_volume_multiplier);
   jb_int (b, "squelch", opts->rtl_squelch_level);
   jb_int (b, "rms", opts->rtl_rms);
+  jb_bool (b, "sql_auto", W.sq_auto);
+  jb_int (b, "sql_margin", W.sq_margin);
+  jb_int (b, "sql_floor", lroundf (W.sq_floor));
+  jb_dbl (b, "sql_floor_db", W.sq_floor_db, 1);
+  jb_int (b, "sql_chan", lroundf (W.sq_chan));
   jb_int (b, "bw", opts->rtl_bandwidth);
 #ifdef USE_RTLSDR
   if (opts->audio_in_type == 3)
@@ -2333,6 +2534,11 @@ void web_init (dsd_opts * opts, dsd_state * state)
   W.cosine_default = opts->frame_m17 ? 1 : opts->use_cosine_filter; //-fz turns it off for M17 only
   W.user_monitor = opts->monitor_input_audio && !mode_is_analog (opts);
   W.gain_manual = opts->rtl_gain_value > 0 ? opts->rtl_gain_value : 0; //0: started on AGC, the page keeps its own
+  //Auto floor needs the spectrum (RTL input); a squelch other than the default 100 came from
+  //-i rtl:...:sq and is kept
+  W.sq_margin = SQ_MARGIN;
+  W.sq_auto = opts->audio_in_type == 3 && opts->rtl_squelch_level == 100;
+  W.sq_mine = opts->rtl_squelch_level;
   opts->monitor_input_audio = analog_wanted (opts);
   bm_init (opts->web_bookmarks);
   fprintf (stderr, "Web bookmarks: %s\n", bm_path ());
@@ -2367,6 +2573,7 @@ void web_poll (dsd_opts * opts, dsd_state * state)
   run_auto_tune (opts, state);
   run_auto_decode (opts, state);
   run_band_scan (opts, state);
+  run_squelch (opts);
   run_key_hunt (opts, state);
   web_act_poll (opts, state);
 

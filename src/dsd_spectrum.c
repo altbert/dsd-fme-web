@@ -44,6 +44,8 @@ static struct
   uint32_t latest_center, latest_rate;
   uint64_t latest_seq;
   double latest_time;
+  double latest_unit;      // what a bin of it shows for white IQ noise of variance 1
+  int latest_avg;          // FFTs averaged into it
 } S;
 
 //--- FFT state (worker thread only) -----------------------------------------
@@ -51,6 +53,7 @@ static int fn = 0;
 static float * w_re, * w_im, * win, * tw_re, * tw_im, * acc;
 static int * brev;
 static float win_norm = 1.0f;
+static double win_unit;   // bin power for white IQ noise of variance 1 (I² + Q², in 8-bit steps)
 
 static void fft_prepare (int n)
 {
@@ -72,14 +75,15 @@ static void fft_prepare (int n)
     tw_re[k] = (float)cos (-2.0 * M_PI * k / n);
     tw_im[k] = (float)sin (-2.0 * M_PI * k / n);
   }
-  double s = 0;
+  double s = 0, s2 = 0;
   for (int i = 0; i < n; i++)
   {
     double x = 2.0 * M_PI * i / n;
     double v = 0.35875 - 0.48829 * cos (x) + 0.14128 * cos (2 * x) - 0.01168 * cos (3 * x);
-    win[i] = (float)v; s += v;
+    win[i] = (float)v; s += v; s2 += v * v;
   }
   win_norm = (float)(1.0 / ((s * 128.0) * (s * 128.0))); // full-scale tone -> ~0 dBFS
+  win_unit = s2 / ((s * 128.0) * (s * 128.0));
   fn = n;
 }
 
@@ -234,6 +238,8 @@ static void * worker (void * arg)
     S.latest_rate = rate;
     S.latest_seq++;
     S.latest_time = data_time; // when the newest sample in the frame arrived
+    S.latest_unit = win_unit;
+    S.latest_avg = avg;
     pthread_mutex_unlock (&S.mtx);
 
     if (web_server_subs () & WEB_SUB_FFT)
@@ -315,6 +321,8 @@ int spectrum_copy_latest (spectrum_frame * out, int max_bins)
     out->rate = S.latest_rate;
     out->seq = S.latest_seq;
     out->data_time = S.latest_time;
+    out->bin_unit = S.latest_unit;
+    out->avg = S.latest_avg;
     ok = 1;
   }
   pthread_mutex_unlock (&S.mtx);

@@ -353,6 +353,8 @@ canvas{display:block;width:100%}
 #autokey-stat{color:var(--silk-2);font-size:13px}
 #autokey-stat .found{color:var(--live);font-weight:600}
 #rtlratev{margin:0}
+/* squelch readouts: a line of their own under the controls, one line whatever the numbers */
+.sqv{flex-basis:100%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--silk-3);font-size:13px}
 
 /* ---------- overlays: login, map ---------- */
 .overlay{position:fixed;inset:0;background:rgba(10,11,12,.82);display:flex;align-items:center;justify-content:center;z-index:50;padding:12px}
@@ -778,8 +780,19 @@ canvas{display:block;width:100%}
             <option value="2560000">2.56 MSPS (unstable)</option><option value="2880000">2.88 MSPS (unstable)</option><option value="3200000">3.2 MSPS (unstable)</option>
           </select></div>
         <div class="row"><span class="lbl"></span><span id="rtlratev" class="hint"></span></div>
-        <div class="row"><label for="rtlsq">Squelch</label><input id="rtlsq" type="number" value="100" style="width:84px"><span class="unit">RMS</span><button class="sm" id="btn-sq">Set</button></div>
-        <div class="hint">The RMS squelch gates NXDN, dPMR and M17 sync, the analog monitor and the band scan.</div>
+        <div class="row"><span class="lbl">Squelch</span><div class="ctl">
+          <button class="tgl sm on" id="tg-sqauto" title="Keep the squelch a margin over the noise floor measured across the whole spectrum, so it follows gain and AGC changes">Auto floor</button>
+          <select id="sqmargin" aria-label="Margin over the noise floor" title="How far over the noise floor the squelch sits, for Auto floor and Channel floor">
+            <option value="2">+2 dB</option><option value="3">+3 dB</option><option value="4" selected>+4 dB</option><option value="6">+6 dB</option>
+            <option value="8">+8 dB</option><option value="10">+10 dB</option><option value="12">+12 dB</option><option value="15">+15 dB</option><option value="20">+20 dB</option>
+          </select>
+          <span class="sqv" id="sqfloor"></span></div></div>
+        <div class="row"><label for="rtlsq" class="lbl">Level</label><div class="ctl">
+          <input id="rtlsq" type="number" value="100" style="width:84px"><span class="unit">RMS</span>
+          <button class="sm" id="btn-sq" title="Hold the level typed in the box (turns Auto floor off)">Set</button>
+          <button class="sm" id="btn-sqchan" title="Set the level once from this frequency's own quiet level plus the margin (turns Auto floor off)">Channel floor</button>
+          <span class="sqv" id="sqchan"></span></div></div>
+        <div class="hint">Auto floor keeps the squelch the chosen margin over the noise floor of the whole spectrum, so it follows the gain. Off, the level stays where Set or Channel floor (this frequency's own quiet level plus the margin) put it. The squelch gates NXDN, dPMR and M17 sync, the analog monitor and the band scan.</div>
         <div class="row"><label for="setmodbw">SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:84px"><span class="unit">Hz (RIGCTL)</span><button class="sm" id="btn-smb">Set</button></div>
       </div>
 

@@ -337,6 +337,13 @@ function renderStatus(m){
     if (document.activeElement !== $('rtlrate')) $('rtlrate').value = String(inp.rate_target||0);
     $('rtlratev').textContent = 'Running at '+(inp.rate/1e6).toFixed(3)+' MSPS';
   }
+  // squelch: Auto floor and Channel floor need the RTL spectrum; the box shows the running level unless it is being edited
+  const rtl = inp.type === 'rtl';
+  reflect('tg-sqauto', inp.sql_auto); $('tg-sqauto').disabled = !rtl; $('btn-sqchan').disabled = !rtl;
+  if (document.activeElement !== $('rtlsq')) $('rtlsq').value = inp.squelch;
+  if (inp.sql_margin && document.activeElement !== $('sqmargin')) $('sqmargin').value = String(inp.sql_margin);
+  setTxt($('sqfloor'), !rtl ? 'Needs the RTL-SDR input.' : 'Noise floor '+(inp.sql_floor ? inp.sql_floor+' RMS, '+(+inp.sql_floor_db).toFixed(1)+' dB' : '—'));
+  setTxt($('sqchan'), !rtl ? '' : 'This frequency '+(inp.sql_chan ? inp.sql_chan+' RMS' : '—'));
   // hardware AGC greys out the manual LNA gain; the slider then shows the last manual value
   const agc = !!inp.agc;
   reflect('tg-agc', agc); $('rtlgain').disabled = agc;
@@ -1429,7 +1436,11 @@ $('btn-ppm').onclick=()=>send({cmd:'rtl', ppm:+$('rtlppm').value});
 $('rtlvol').onchange=()=>send({cmd:'rtl', vol:+$('rtlvol').value});
 $('rtlrate').onchange=()=>{ send({cmd:'rtl', rate:+$('rtlrate').value}); $('rtlrate').blur(); };
 $('btn-bw').onclick=()=>send({cmd:'rtl', bw:+$('rtlbw').value});
-$('btn-sq').onclick=()=>send({cmd:'rtl', squelch:+$('rtlsq').value});
+// squelch: Auto floor follows the spectrum's noise floor; Set and Channel floor fix a level and turn it off
+$('tg-sqauto').onclick=()=>{ const on=!$('tg-sqauto').classList.contains('on'); reflect('tg-sqauto', on); send({cmd:'rtl', sql_auto:on}); };
+$('sqmargin').onchange=()=>send({cmd:'rtl', sql_margin:+$('sqmargin').value});
+$('btn-sq').onclick=()=>{ reflect('tg-sqauto', false); send({cmd:'rtl', squelch:+$('rtlsq').value}); };
+$('btn-sqchan').onclick=()=>{ reflect('tg-sqauto', false); send({cmd:'rtl', sql_chan:true}); };
 $('btn-smb').onclick=()=>send({cmd:'setmod_bw', hz:+$('setmodbw').value});
 
 // Settings → Trunk: lists and the conventional scanner (trunking itself is in its card)
