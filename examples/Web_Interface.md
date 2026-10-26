@@ -34,9 +34,38 @@ dsd-fme -i rtl --web 8080
 dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C connect_plus_chan.csv -G group.csv \
         --web 0.0.0.0:8080 --web-pass hunter2
 
-# Spectrum from an RTL dongle, decode fed from SDR++ over TCP is also fine:
-dsd-fme -i tcp --web 8080     # (spectrum needs the RTL input; TCP has no IQ)
+# Any other SDR through SDR++: audio over TCP, tuning over rigctl (no spectrum, see below)
+dsd-fme -i tcp -U 4532 --web 8080
 ```
+
+## Receivers: RTL-SDR and other SDRs
+
+DSD-FME opens RTL-SDR dongles itself. Any other radio works through SDR
+software that demodulates the signal and sends DSD-FME the audio.
+
+| Input | Radio | What the web page can do |
+|-------|-------|--------------------------|
+| `-i rtl` | RTL-SDR dongle on this computer | Everything |
+| `-i rtltcp:host:port:...` | RTL-SDR dongle on another machine running `rtl_tcp` | Everything in principle, but untested; the capture rate, bandwidth and RTL AGC controls don't work over rtl_tcp yet ([TODO](../TODO.md)) |
+| `-i tcp -U 4532` | Anything SDR++ supports: HackRF, Airspy, SDRplay, LimeSDR, PlutoSDR, … | Decode and tune; no spectrum, waterfall, band scan or RTL settings |
+| `-i tcp` or `-i pulse` alone | Any radio, any SDR program | Decode; you tune in the SDR program |
+
+**Other SDRs through SDR++.** In SDR++, set the VFO's audio sink to
+*Network* (TCP, port 7355, where `-i tcp` connects by default) and enable the
+*Rigctl Server* module (port 4532). Then run `dsd-fme -i tcp -U 4532 --web 8080`.
+DSD-FME decodes what SDR++ demodulates, and retunes SDR++ when you type a
+frequency, pick a bookmark or follow trunked calls (this rigctl path hasn't
+been tested from the web page yet). All decoding and its views work:
+readouts, slots, activity log, packet data, radios, map, keys, browser audio
+and recordings. The spectrum and waterfall (with click-to-tune and
+auto-tune), the band scan and the RTL settings in the RF tab need raw IQ
+samples, which DSD-FME only gets from an RTL-SDR; SDR++ has its own waterfall.
+DSD-FME's notes say SDR++ copes with weak signals better than the built-in RTL
+demodulator, so this setup is worth a try with an RTL-SDR too.
+
+Instead of TCP, any SDR program's audio can come in through PulseAudio
+(`-i pulse`; pick the program's output as DSD-FME's source in pavucontrol, see
+[Audio Plumbing](Audio_Plumbing.md)).
 
 ## What you can do from the browser
 
