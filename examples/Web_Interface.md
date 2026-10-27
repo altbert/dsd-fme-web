@@ -94,8 +94,9 @@ keeps it a margin (+4 dB unless you pick another) over the noise floor measured
 across the whole spectrum, so it follows gain and AGC changes and holds on a
 channel that never goes quiet. A squelch given on the command line
 (`-i rtl:…:sq`) starts with Auto floor off. Off, the level stays where you put
-it: type one and press *Set*, or press *Channel floor* to take the tuned
-frequency's own quiet level plus the margin.
+it: step it with the box's arrows (applied as you go), type one and press *Set*
+or Enter, or press *Channel floor* to take the tuned frequency's own quiet level
+plus the margin. The margin goes from 0 dB (right at the floor) to +20 dB.
 
 **Trunk** — enable trunking or the conventional scanner, toggle tuning of
 group/private/data/encrypted calls, allow-list mode, hang time, TG hold, return
