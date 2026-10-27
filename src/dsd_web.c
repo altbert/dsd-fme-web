@@ -1673,7 +1673,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (jv_has (cmd, "sql_margin"))
     {
       int m = (int)jv_int (cmd, "sql_margin", SQ_MARGIN);
-      W.sq_margin = m < 1 ? 1 : (m > 30 ? 30 : m);
+      W.sq_margin = m < 0 ? 0 : (m > 30 ? 30 : m);
       if (W.sq_auto && W.sq_floor > 0 && W.bs_state == BS_OFF) sq_set (opts, sq_level (W.sq_floor));
     }
     if (jv_has (cmd, "sql_auto"))

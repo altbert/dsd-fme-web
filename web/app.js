@@ -341,7 +341,8 @@ function renderStatus(m){
   const rtl = inp.type === 'rtl';
   reflect('tg-sqauto', inp.sql_auto); $('tg-sqauto').disabled = !rtl; $('btn-sqchan').disabled = !rtl;
   if (document.activeElement !== $('rtlsq')) $('rtlsq').value = inp.squelch;
-  if (inp.sql_margin && document.activeElement !== $('sqmargin')) $('sqmargin').value = String(inp.sql_margin);
+  $('rtlsq').step = [1,2,5,10,20,50,100,200,500].filter(s => s <= inp.squelch/40).pop() || 1; // an arrow press moves it ~0.2-0.5 dB
+  if (inp.sql_margin != null && document.activeElement !== $('sqmargin')) $('sqmargin').value = String(inp.sql_margin);
   setTxt($('sqfloor'), !rtl ? 'Needs the RTL-SDR input.' : 'Noise floor '+(inp.sql_floor ? inp.sql_floor+' RMS, '+(+inp.sql_floor_db).toFixed(1)+' dB' : '—'));
   setTxt($('sqchan'), !rtl ? '' : 'This frequency '+(inp.sql_chan ? inp.sql_chan+' RMS' : '—'));
   // hardware AGC greys out the manual LNA gain; the slider then shows the last manual value
@@ -1439,7 +1440,13 @@ $('btn-bw').onclick=()=>send({cmd:'rtl', bw:+$('rtlbw').value});
 // squelch: Auto floor follows the spectrum's noise floor; Set and Channel floor fix a level and turn it off
 $('tg-sqauto').onclick=()=>{ const on=!$('tg-sqauto').classList.contains('on'); reflect('tg-sqauto', on); send({cmd:'rtl', sql_auto:on}); };
 $('sqmargin').onchange=()=>send({cmd:'rtl', sql_margin:+$('sqmargin').value});
-$('btn-sq').onclick=()=>{ reflect('tg-sqauto', false); send({cmd:'rtl', squelch:+$('rtlsq').value}); };
+// the arrows (spin buttons, arrow keys) apply the level as it steps; a typed number waits for Set or Enter
+let sqTimer=0;
+const sqApply=()=>{ clearTimeout(sqTimer); const v=Math.round(+$('rtlsq').value);
+  if ($('rtlsq').value==='' || !(v>=0)) return; reflect('tg-sqauto', false); send({cmd:'rtl', squelch:v}); };
+$('rtlsq').addEventListener('input', e=>{ if (!e.inputType){ clearTimeout(sqTimer); sqTimer=setTimeout(sqApply, 250); } });
+$('rtlsq').addEventListener('keydown', e=>{ if (e.key==='Enter') sqApply(); });
+$('btn-sq').onclick=sqApply;
 $('btn-sqchan').onclick=()=>{ reflect('tg-sqauto', false); send({cmd:'rtl', sql_chan:true}); };
 $('btn-smb').onclick=()=>send({cmd:'setmod_bw', hz:+$('setmodbw').value});
 
