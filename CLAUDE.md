@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A fork of [DSD-FME](https://github.com/lwvmobile/dsd-fme), a C/C++ decoder for digital voice and data radio (DMR, P25 Phase 1/2, NXDN, dPMR, YSF, D-STAR, M17, EDACS, ProVoice, X2-TDMA). It targets Linux desktops first. The fork adds a browser interface (`--web`) and keeps merging upstream `lwvmobile/dsd-fme` branch `audio_work`, so edits to upstream files should stay small and easy to carry through merges.
 
-Remotes: `origin` is altbert/DSD-FME-web, `upstream` is lwvmobile/dsd-fme. Merge with `git fetch upstream && git merge upstream/audio_work`.
+Remotes: `origin` is altbert/dsd-fme-web (a GitHub fork of upstream; never open pull requests to upstream), `upstream` is lwvmobile/dsd-fme. Merge with `git fetch upstream && git merge upstream/audio_work`.
 
 CLI usage is in examples/Example_Usage.md, install steps in examples/Install_Notes.md, the web UI in examples/Web_Interface.md.
 
