@@ -539,8 +539,8 @@ canvas{display:block;width:100%}
             <option>1024</option><option>2048</option><option selected>4096</option>
             <option>8192</option><option>16384</option>
           </select></label>
-          <label class="pair">FPS <input id="fps" type="number" value="15" min="1" max="60"></label>
-          <label class="pair">Average <input id="avg" type="number" value="2" min="1" max="32"></label>
+          <label class="pair" title="Spectrum frames per second">FPS <input id="fps" type="number" value="15" min="1" max="60"></label>
+          <label class="pair" title="FFTs averaged into each frame, at least. A frame always averages all the IQ since the one before, so short bursts show; when that is fewer FFTs, it takes this many of the newest">Average <input id="avg" type="number" value="2" min="1" max="32"></label>
           <label class="pair">Range <input id="dbrange" type="range" min="30" max="120" value="80"></label>
         </div>
       </div>

@@ -71,8 +71,14 @@ Instead of TCP, any SDR program's audio can come in through PulseAudio
 ## What you can do from the browser
 
 **Spectrum / Waterfall** — real-time FFT of the RTL-SDR IQ stream. Configurable
-FFT size (1k–16k), frame rate, averaging and dynamic range. Click anywhere on
-the spectrum or waterfall to tune the dongle there.
+FFT size (1k–16k), frame rate, averaging and dynamic range. Every frame
+averages all the IQ since the one before (FFTs overlapping by half), so a short
+burst between two frames still shows. *Average* is the least number of FFTs a
+frame averages; it only matters at high frame rates or with large FFTs, when a
+frame holds fewer. The RTL hands over its samples a USB transfer at a time, and
+the spectrum runs one transfer behind the receiver to keep its frames evenly
+spaced: about 0.13 s at the default sample rate, 0.5 s at 0.25 MSPS. Click
+anywhere on the spectrum or waterfall to tune the dongle there.
 
 **Tuning** — type a frequency (`851.0125M`, `154987500`, `446M`…) or click the
 spectrum. **Auto-tune** snaps the dongle onto the strongest nearby peak and

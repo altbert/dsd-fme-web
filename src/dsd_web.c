@@ -668,7 +668,7 @@ static float bs_center_snr (void)
   static uint64_t seq;
   static float last = -999;
   W.sf.power = W.sf_power;
-  if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.data_time < W.bs_t + BS_SETTLE) return -999;
+  if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.start_time < W.bs_t + BS_SETTLE) return -999;
   if (W.sf.seq == seq) return last;
   seq = W.sf.seq;
   int n = W.sf.bins;
@@ -1100,7 +1100,7 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
     //sum a few spectra taken after the retune settled, then queue the carriers in the window
     if (now - W.bs_t < BS_SETTLE) return;
     W.sf.power = W.sf_power;
-    if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.seq == W.bs_seq || W.sf.data_time < W.bs_t + BS_SETTLE
+    if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.seq == W.bs_seq || W.sf.start_time < W.bs_t + BS_SETTLE
         || (long long)W.sf.center != W.bs_tuned)
     {
       if (now - W.bs_t > 5.0) bs_next_window (opts, state); //no spectrum for this window, move on
@@ -1274,7 +1274,7 @@ static void run_squelch (dsd_opts * opts)
   //about a second of spectra from the settled receiver, then the floor
   spectrum_frame * sf = &W.sq_sf;
   sf->power = W.sq_power;
-  if (spectrum_copy_latest (sf, 16384) && sf->seq != W.sq_seq && sf->data_time > W.sq_reset_t + BS_SETTLE)
+  if (spectrum_copy_latest (sf, 16384) && sf->seq != W.sq_seq && sf->start_time > W.sq_reset_t + BS_SETTLE)
   {
     W.sq_seq = sf->seq;
     if (W.sq_frames && (sf->bins != W.sq_bins || sf->center != W.sq_center || sf->rate != W.sq_rate)) W.sq_frames = 0;
@@ -2134,7 +2134,8 @@ static void run_auto_tune (dsd_opts * opts, dsd_state * state)
   if (now - W.last_autotune < 2.0) return;
 
   W.sf.power = W.sf_power;
-  if (!spectrum_copy_latest (&W.sf, 16384)) return;
+  //a frame from before the last snap (or still settling from it) would snap the same way again
+  if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.start_time < W.last_autotune + BS_SETTLE) return;
   int n = W.sf.bins;
   if (n < 16) return;
 

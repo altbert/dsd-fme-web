@@ -114,6 +114,7 @@ function binsTo(vals, bins, n, out){
   return out;
 }
 let rowS = new Float32Array(0), rowW = new Float32Array(0);
+const fftHist = new Uint32Array(256);
 
 function handleFFT(dv, buf){
   const bins = dv.getUint16(2, true);
@@ -122,9 +123,16 @@ function handleFFT(dv, buf){
   const dbmin = dv.getFloat32(12, true);
   const u8 = new Uint8Array(buf, 16, bins);
   const vals = new Float32Array(bins);
-  let mn = 999;
-  for (let i=0;i<bins;i++){ const d = dbmin + u8[i]*0.5; vals[i]=d; if (d<mn) mn=d; }
-  noiseFloor = lastFFT ? noiseFloor*0.9 + mn*0.1 : mn; // the first frame sets it, so the waterfall doesn't start too bright
+  fftHist.fill(0);
+  for (let i=0;i<bins;i++){ vals[i] = dbmin + u8[i]*0.5; fftHist[u8[i]]++; }
+  // the noise level from the 10th and 30th percentiles (noise while signals fill under 70 % of the span):
+  // averaging more FFTs narrows the gap between them as much as it lifts the 10th towards the mean, so
+  // p10 + 1.7 (p30 - p10) is the mean whatever a frame averages. The floor goes 21 dB under it, where the
+  // lowest bin of a 2-FFT frame used to be, so the colors look as they did
+  const pct = (p) => { let k = 0; for (let c = fftHist[0]; k < 255 && c < bins*p; ) c += fftHist[++k]; return dbmin + k*0.5; };
+  const p10 = pct(0.1), p30 = pct(0.3);
+  const lo = p10 + 1.7*(p30 - p10) - 21;
+  noiseFloor = lastFFT ? noiseFloor*0.9 + lo*0.1 : lo; // the first frame sets it, so the waterfall doesn't start too bright
   lastFFT = {bins, center, rate, dbmin, vals};
   drawSpectrum();
   setHTML($('specmeta'), '<b>'+(center/1e6).toFixed(4)+' MHz</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
