@@ -147,6 +147,9 @@ canvas{display:block;width:100%}
   background:rgba(15,16,15,.82);padding:0 6px;border-radius:3px}
 .specinfo:empty{display:none}
 #cursor{position:absolute;top:0;bottom:0;width:1px;background:rgba(108,184,255,.65);pointer-events:none;display:none}
+/* the demodulator's channel: Bandwidth (RF tab) around the tuned frequency, the middle of the span */
+#bwband{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);min-width:3px;pointer-events:none;display:none;
+  background:rgba(255,176,46,.08);border-left:1px solid rgba(255,176,46,.45);border-right:1px solid rgba(255,176,46,.45)}
 .tune{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
 .tune-in,.tune-auto{display:flex;align-items:center;gap:6px}
 #tunefreq{width:210px}
@@ -517,6 +520,7 @@ canvas{display:block;width:100%}
       <div class="spec-wrap glass" id="specbox">
         <canvas id="spec"></canvas>
         <canvas id="wf"></canvas>
+        <div id="bwband"></div>
         <div class="specinfo" id="specinfo"></div>
         <div id="cursor"></div>
       </div>

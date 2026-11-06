@@ -133,9 +133,19 @@ function handleFFT(dv, buf){
   const p10 = pct(0.1), p30 = pct(0.3);
   const lo = p10 + 1.7*(p30 - p10) - 21;
   noiseFloor = lastFFT ? noiseFloor*0.9 + lo*0.1 : lo; // the first frame sets it, so the waterfall doesn't start too bright
+  const newRate = !lastFFT || lastFFT.rate !== rate;
   lastFFT = {bins, center, rate, dbmin, vals};
+  if (newRate) placeBand();
   drawSpectrum();
   setHTML($('specmeta'), '<b>'+(center/1e6).toFixed(4)+' MHz</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
+}
+
+// the demodulator's channel (the RTL Bandwidth, kHz) as a band around the tuned frequency, the middle of the span
+let bandKHz = 0;
+function placeBand(){
+  const b = $('bwband'), rate = lastFFT ? lastFFT.rate : 0;
+  if (!rate || !bandKHz){ b.style.display = 'none'; return; }
+  b.style.width = (bandKHz*1e5/rate)+'%'; b.style.display = 'block';
 }
 
 function drawSpectrum(){
@@ -341,6 +351,7 @@ function renderStatus(m){
   }
   // only when the running value changes, so a pick waiting for Set isn't overwritten
   if (inp.bw && inp.bw !== shownBw){ shownBw = inp.bw; $('rtlbw').value = String(inp.bw); }
+  if ((inp.bw||0) !== bandKHz){ bandKHz = inp.bw||0; placeBand(); }
   if (inp.rate !== undefined){
     if (document.activeElement !== $('rtlrate')) $('rtlrate').value = String(inp.rate_target||0);
     $('rtlratev').textContent = 'Running at '+(inp.rate/1e6).toFixed(3)+' MSPS';
