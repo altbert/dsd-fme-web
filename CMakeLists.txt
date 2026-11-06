@@ -161,6 +161,12 @@ target_compile_options(dsd-fme PRIVATE -Wunused-but-set-variable -Wunused-variab
                        -Wmisleading-indentation -Wparentheses -Wunused-value -Wreturn-type
                        -Wtautological-compare)
 
+#a plain `cmake ..` (no build type, no -O in the flags) builds optimized with debug info; unlike the Release
+#types it leaves out -DNDEBUG, so the asserts stay in. -DCMAKE_BUILD_TYPE=Debug gives an -O0 build
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES AND NOT "${CMAKE_C_FLAGS} ${CMAKE_CXX_FLAGS}" MATCHES "(^| )-O")
+    target_compile_options(dsd-fme PRIVATE -O2 -g)
+endif()
+
 include(GNUInstallDirs)
 install(TARGETS dsd-fme DESTINATION ${CMAKE_INSTALL_BINDIR})
 

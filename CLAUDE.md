@@ -21,6 +21,7 @@ cmake -B build && cmake --build build -j"$(nproc)"    # binary: build/dsd-fme
 - Required: libsndfile, mbelib (lwvmobile's fork, see Install_Notes.md), ncursesw, PulseAudio. Optional: librtlsdr (`-i rtl` and every RTL feature of the web UI; defines `USE_RTLSDR`) and codec2 (M17 voice).
 - Sources are globbed (`src/*.c src/*.cpp`): re-run cmake after adding a file and after upstream merges, which add files.
 - Feature switches are the cmake `-D` options at the top of CMakeLists.txt.
+- With no build type and no `-O` in the flags, CMakeLists.txt adds `-O2 -g`, keeping the asserts that the Release types drop with `-DNDEBUG`; `-DCMAKE_BUILD_TYPE=Debug` builds at `-O0`.
 - There is no test suite or linter; changes are checked by running the binary (see below).
 
 ## Architecture
@@ -36,7 +37,7 @@ cmake -B build && cmake --build build -j"$(nproc)"    # binary: build/dsd-fme
 - `dsd_web_json.c` is a small JSON parser (`jv_*`) and builder (`jb_*`). `dsd_web_bookmarks.c` keeps bookmarks in `~/.config/dsd-fme/web_bookmarks.json` (`--web-bookmarks` overrides).
 - Wire format: text messages are JSON with a `type` (`hello`, `auth`, `status`, `activity`, `system`, `groups`, `files`, `bookmarks`…); binary frames start with a type byte, 1 = FFT, 2 = audio. The browser sends `{"cmd": ...}` objects.
 
-**Taps in upstream files** are guarded by `opts->web_enable == 1` and kept to a line or two; the logic belongs in `dsd_web_*.c`. Console output without `--web` must stay byte-identical to upstream: record a capture with `-c file.bin` while decoding, replay it with `-i file.bin -o null -Z` through an upstream build and this one, and compare the logs.
+**Taps in upstream files** are guarded by `opts->web_enable == 1` and kept to a line or two; the logic belongs in `dsd_web_*.c`. Console output without `--web` must stay byte-identical to upstream: record a capture with `-c file.bin` while decoding, replay it with `-i file.bin -o null -Z` through an upstream build and this one, and compare the logs. Build the upstream copy with `-DCMAKE_C_FLAGS="-O2 -g" -DCMAKE_CXX_FLAGS="-O2 -g"`: its CMakeLists.txt doesn't add them, so it would build at `-O0`.
 
 ## Web UI
 
