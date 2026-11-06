@@ -50,10 +50,10 @@ cmake -B build && cmake --build build -j"$(nproc)"    # binary: build/dsd-fme
 
 - The user often has their own `dsd-fme -i rtl --web <port>` running and holding the RTL-SDR. Never stop it; start a second instance on another port.
 - Start test instances from a scratch directory (the Files tab lists `./WAV` of the working directory), with `-o null` so nothing plays on the speakers, and with their own `--web-bookmarks` file.
-- Without hardware, `LD_PRELOAD` a stand-in librtlsdr that synthesizes signals; dsd-fme only calls about 13 `rtlsdr_*` functions.
+- Without hardware, `LD_PRELOAD` the stand-in librtlsdr in tools/screenshots/fakertl.c, which synthesizes stations (`FAKERTL_STATIONS`). It has to define every `rtlsdr_*` function dsd-fme imports: add new ones there.
 - Stop instances by PID (`ss -ltnp`), not `pkill -f "--web ..."`, which also matches the shell running the command.
 - Drive and screenshot the UI with headless Chromium over the DevTools protocol (`--remote-debugging-port`).
 
 ## Data hygiene
 
-Captures and recordings hold real third-party traffic. Never commit `build/WAV/`, `.bin`/`.wav` captures, key files, or real frequencies, IDs or positions; screenshots use demo data. `.gitignore` ignores `examples/`, `*.csv` and `*.sh`, so new files there need `git add -f`.
+Captures and recordings hold real third-party traffic. Never commit `build/WAV/`, `.bin`/`.wav` captures, key files, or real frequencies, IDs or positions; screenshots use demo data (retake them with `node tools/screenshots/shoot.mjs`, see tools/screenshots/README.md). `.gitignore` ignores `examples/`, `*.csv` and `*.sh`, so new files there need `git add -f`.

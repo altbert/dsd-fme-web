@@ -36,7 +36,7 @@ Known bugs and planned work: [TODO.md](TODO.md).
 </p>
 <p align="center"><img src="docs/screenshots/web-phone.webp" width="280" alt="Phone layout"></p>
 
-<sub>Screenshots use a simulated receiver and made-up demo data, no real traffic. The radios are in Florida, obviously: it's the Florida Man Edition.</sub>
+<sub>Screenshots use a simulated receiver and made-up demo data, no real traffic ([tools/screenshots](tools/screenshots/) retakes them). The radios are in Florida, obviously: it's the Florida Man Edition.</sub>
 
 ---
 
