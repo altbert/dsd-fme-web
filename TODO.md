@@ -10,6 +10,7 @@ Open bugs and planned work for this fork, mostly the web interface. Bugs in the 
   - SIGSEGV 2026-10-22: in libc under `pa_simple_write`, from `playSynthesizedVoiceMS` (P25 voice, `processLDU1`).
   - SIGFPE 2026-10-22 and 2026-10-25: `getSymbol`, whose only division by a variable is `symbol = sum / count` (dsd_symbol.c:599). `count` stays 0 when no sample lands in the window it averages, which depends on `symbolCenter`, `samplesPerSymbol` and `rf_mod`: a mode switch may leave them inconsistent.
   - SIGFPE ×3 2026-10-21: `dc_block_filter` dividing by a `result_len` of 0 in the RTL demod thread. Not seen since.
+  - Three more on 2026-11-07 between 17:12 and 17:24, from the build of 27f0358 made at 16:04: SIGILL and SIGFPE in `getSymbol`, and SIGSEGV in libmbe's `mbe_initMbeParms`, called from `noCarrier` in `cleanupAndExit`, which `getSymbol` had called.
   - Next: run the usual session on an ASan/UBSan build, which reports a stray write where it happens.
 
 - [ ] **rtl_tcp: capture rate, bandwidth and RTL AGC from the web.** `rtl_dev_set_rate`, `rtl_dev_set_bandwidth` and `rtl_dev_set_agc` (src/rtl_sdr_fm.cpp) call librtlsdr directly, but with `-i rtltcp` there is no local device. After a rate or bandwidth change the tuner isn't re-centered, so the receiver ends up off frequency, and the AGC toggle fails with a warning. Use `rtlsdr_or_tcp_set_center_freq`; AGC needs an rtl_tcp wrapper (the protocol has a set-AGC-mode command) or the toggle hidden over rtl_tcp. Found by reading the code, not reproduced yet.
@@ -48,6 +49,16 @@ Open bugs and planned work for this fork, mostly the web interface. Bugs in the 
 - [ ] **Survey every carrier of a band-scan window at once.** The band scan still visits the carriers of a window one after another, about 3 s each when nothing is heard. Cut each one out of the spectrum's IQ instead: an overlap-save filter bank over the IQ ring in src/dsd_spectrum.c (its FFT can be shared), an FM discriminator per carrier, and one sync detector (src/dsd_web_detect.c) and one set of CTCSS/DCS detectors (src/dsd_web_analog.c, made per channel) on each. A window would then take a few seconds whatever it holds, and the decoder would only visit the finds to confirm and name them. RTL and rtl_tcp only, since the other inputs bring no IQ.
 
 ## Upstream bugs (fix on a fix/ branch, PR to lwvmobile/dsd-fme)
+
+Fixed on a branch and merged here, waiting for a pull request upstream (remove each entry when upstream merges it):
+
+- `fix/csv-import-bounds`: the `-C` channel map import writes past `trunk_lcn_freq[26]` from the 27th row on, which puts later rows' frequencies into the lowest channels of `trunk_chan_map`. Channel numbers outside the map and `-K` hex key numbers over 0x1FCFD also write out of bounds, and `FFFFFFFF` crashes.
+- `fix/dmr-data-string-order`: the ENC PDU, MNIS and Unknown PDU Format strings in `dmr_block_assembler` print the source ID under TGT and the target ID under SRC.
+- `fix/pulse-output-reopen`: `-fA -N` aborts as soon as the ncurses menu opens (`pa_simple_free` on the digital stream, which `-fA` never opens).
+
+Not fixed yet:
+
+- After `-fA`, choosing a digital decoder in the ncurses menu leaves `analog_only` set, so `openPulseOutput` never opens the digital stream, and digital voice would then write to a NULL stream. Found by reading the code; not reproduced (it needs a voice signal). Until fix/pulse-output-reopen, the menu aborted before this point.
 
 - `getFrameSync` (dsd_frame_sync.c) copies the 24 symbols before `synctest_p` (48 for EDACS) without checking that many have been read, so it reads before `synctest_buf` right after entry for the short frame types (M17, NXDN, dPMR) and after the buffer wraps. AddressSanitizer flags it without `--web` too.
 - `-b` clamps the key number to 256, but `BPK` (include/bp.h) has entries 0–255, so `-b 256` reads past the end of the table.
