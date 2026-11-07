@@ -8,7 +8,7 @@ A fork of [DSD-FME](https://github.com/lwvmobile/dsd-fme), a C/C++ decoder for d
 
 Remotes: `origin` is altbert/dsd-fme-web (a GitHub fork of upstream; never open pull requests to upstream), `upstream` is lwvmobile/dsd-fme. Merge with `git fetch upstream && git merge upstream/audio_work`.
 
-CLI usage is in examples/Example_Usage.md, install steps in examples/Install_Notes.md, the web UI in examples/Web_Interface.md.
+Build steps and dependencies are in BUILD.md (examples/Install_Notes.md and the download-and-install scripts are upstream's and clone upstream), CLI usage in examples/Example_Usage.md, the web UI in examples/Web_Interface.md.
 
 Open bugs and planned work are in TODO.md: add what you find. Work on a TODO item only when the user asks for that item; don't fix one on your own initiative. If other work ends up fixing an item anyway, tell the user which one and how, ask for their input where it makes sense, and update TODO.md once they agree.
 

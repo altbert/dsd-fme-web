@@ -22,7 +22,7 @@ dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 - **Bookmarks, keys, audio and recordings**: bookmarks with groups, key entry (plus auto-find for DMR Basic Privacy), decoded audio in the browser, per-call WAV downloads.
 - **Works on phones.**
 
-Without `--web` it's the regular DSD-FME. Flags and details: [examples/Web_Interface.md](examples/Web_Interface.md).
+Without `--web` it's the regular DSD-FME. Flags and details: [examples/Web_Interface.md](examples/Web_Interface.md). Building it and what it needs: [BUILD.md](BUILD.md).
 
 **Radios.** RTL-SDR dongles connect directly, on this computer or over `rtl_tcp`. Other SDRs (HackRF, Airspy, SDRplay, LimeSDR…) work through SDR++, which demodulates and takes tuning commands: the page then decodes and tunes, but has no spectrum or band scan. Details: [Receivers](examples/Web_Interface.md#receivers-rtl-sdr-and-other-sdrs).
 
