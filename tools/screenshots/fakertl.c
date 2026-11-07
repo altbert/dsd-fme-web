@@ -20,7 +20,9 @@
 //
 // FAKERTL_IQFILE=rec.u8 plays an rtl_sdr recording instead (8-bit IQ, made at the rate dsd-fme
 // asks for, 1.008 MSPS by default, and tuned to the channel + rate/4, where dsd-fme puts the
-// dongle), ignoring tuning, and stops dsd-fme with SIGINT at its end.
+// dongle), ignoring tuning, and stops dsd-fme with SIGINT at its end. A recording made at another
+// rate needs FAKERTL_IQRATE=<its rate>, e.g. 252000 for the web page's 0.25 MSPS: it starts once
+// dsd-fme asks for that rate, with silence until then.
 //
 // It defines every rtlsdr_* function dsd-fme imports (shoot.mjs checks that with nm). When dsd-fme
 // starts calling a new one, add it here: the real librtlsdr would get this fake device.
@@ -316,9 +318,12 @@ int rtlsdr_read_async (rtlsdr_dev_t * dev, rtlsdr_read_async_cb_t cb, void * ctx
   FILE * iq = iqf ? fopen (iqf, "rb") : NULL;
   int playing = iq != NULL;
   if (iqf && !iq) fprintf (stderr, "fakertl: cannot open %s\n", iqf);
+  const char * iqr = getenv ("FAKERTL_IQRATE");
+  uint32_t iq_rate = iqr ? (uint32_t)strtoul (iqr, NULL, 10) : 0;
   while (!dev->cancel && iq)
   {
-    if (fread (buf, 1, buf_len, iq) != buf_len) { fclose (iq); free (buf); raise (SIGINT); return 0; }
+    if (iq_rate && dev->rate != iq_rate) memset (buf, 127, buf_len); // not the recording's rate yet
+    else if (fread (buf, 1, buf_len, iq) != buf_len) { fclose (iq); free (buf); raise (SIGINT); return 0; }
     tsim += buf_len / 2.0 / dev->rate;
     clock_gettime (CLOCK_MONOTONIC, &now);
     double ahead = tsim - ((now.tv_sec - t0.tv_sec) + (now.tv_nsec - t0.tv_nsec) * 1e-9);
