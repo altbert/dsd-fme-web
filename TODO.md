@@ -1,6 +1,6 @@
 # TODO
 
-Open bugs and planned work for this fork, mostly the web interface. Bugs in the original DSD-FME are reported to [lwvmobile/dsd-fme](https://github.com/lwvmobile/dsd-fme) instead of fixed here, so merges stay easy; the ones seen so far are listed at the end.
+Open bugs and planned work for this fork, mostly the web interface. Bugs in the original DSD-FME are listed at the end. Each one is fixed on its own `fix/<topic>` branch made from `upstream/audio_work`, merged into this fork, and sent to [lwvmobile/dsd-fme](https://github.com/lwvmobile/dsd-fme) as a pull request, so the fork's changes to upstream files stay few.
 
 ## Fix
 
@@ -47,7 +47,7 @@ Open bugs and planned work for this fork, mostly the web interface. Bugs in the 
 - [ ] **Scan bookmarks.** Scan the bookmarks themselves: the ones ticked in the list, or all of a group or tag (bookmarks have a group but no tags yet), each with its own decoder. Today "From bookmarks" only copies the first 26 filtered frequencies into the conventional scan list, which holds 26 and runs one decoder for all of them. Needs a way to pick bookmarks, a dwell and hang time, and skip and hold keys like the Trunking card's. Tune through `do_tune`, as the band scan does, so it works with both modes of the sweep item's toggle.
 - [ ] **Survey every carrier of a band-scan window at once.** The band scan still visits the carriers of a window one after another, about 3 s each when nothing is heard. Cut each one out of the spectrum's IQ instead: an overlap-save filter bank over the IQ ring in src/dsd_spectrum.c (its FFT can be shared), an FM discriminator per carrier, and one sync detector (src/dsd_web_detect.c) and one set of CTCSS/DCS detectors (src/dsd_web_analog.c, made per channel) on each. A window would then take a few seconds whatever it holds, and the decoder would only visit the finds to confirm and name them. RTL and rtl_tcp only, since the other inputs bring no IQ.
 
-## Upstream bugs seen (report to lwvmobile/dsd-fme)
+## Upstream bugs (fix on a fix/ branch, PR to lwvmobile/dsd-fme)
 
 - `getFrameSync` (dsd_frame_sync.c) copies the 24 symbols before `synctest_p` (48 for EDACS) without checking that many have been read, so it reads before `synctest_buf` right after entry for the short frame types (M17, NXDN, dPMR) and after the buffer wraps. AddressSanitizer flags it without `--web` too.
 - `-b` clamps the key number to 256, but `BPK` (include/bp.h) has entries 0–255, so `-b 256` reads past the end of the table.

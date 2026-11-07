@@ -6,7 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A fork of [DSD-FME](https://github.com/lwvmobile/dsd-fme), a C/C++ decoder for digital voice and data radio (DMR, P25 Phase 1/2, NXDN, dPMR, YSF, D-STAR, M17, EDACS, ProVoice, X2-TDMA). It targets Linux desktops first. The fork adds a browser interface (`--web`) and keeps merging upstream `lwvmobile/dsd-fme` branch `audio_work`, so edits to upstream files should stay small and easy to carry through merges.
 
-Remotes: `origin` is altbert/dsd-fme-web (a GitHub fork of upstream; never open pull requests to upstream), `upstream` is lwvmobile/dsd-fme. Merge with `git fetch upstream && git merge upstream/audio_work`.
+Remotes: `origin` is altbert/dsd-fme-web (a GitHub fork of upstream), `upstream` is lwvmobile/dsd-fme. Merge with `git fetch upstream && git merge upstream/audio_work`.
+
+Bugs in upstream code are fixed on a branch of their own, so they can go back upstream as pull requests. Each branch is named `fix/<topic>`, holds one bug, and starts from `upstream/audio_work`, never from `audio_work`: no web code goes on it. Merge it into `audio_work` with `--no-ff` straight away, and never rebase it after that: answer review comments with new commits and merge the branch again. Once lwvmobile merges the PR, the next upstream merge already has the commit. The user opens the PRs; ask before pushing. The local `upstream-fix` skill has the steps.
 
 Build steps and dependencies are in BUILD.md (examples/Install_Notes.md and the download-and-install scripts are upstream's and clone upstream), CLI usage in examples/Example_Usage.md, the web UI in examples/Web_Interface.md.
 
@@ -37,7 +39,7 @@ cmake -B build && cmake --build build -j"$(nproc)"    # binary: build/dsd-fme
 - `dsd_web_json.c` is a small JSON parser (`jv_*`) and builder (`jb_*`). `dsd_web_bookmarks.c` keeps bookmarks in `~/.config/dsd-fme/web_bookmarks.json` (`--web-bookmarks` overrides).
 - Wire format: text messages are JSON with a `type` (`hello`, `auth`, `status`, `activity`, `system`, `groups`, `files`, `bookmarks`…); binary frames start with a type byte, 1 = FFT, 2 = audio. The browser sends `{"cmd": ...}` objects.
 
-**Taps in upstream files** are guarded by `opts->web_enable == 1` and kept to a line or two; the logic belongs in `dsd_web_*.c`. Console output without `--web` must stay byte-identical to upstream: record a capture with `-c file.bin` while decoding, replay it with `-i file.bin -o null -Z` through an upstream build and this one, and compare the logs. Build the upstream copy with `-DCMAKE_C_FLAGS="-O2 -g" -DCMAKE_CXX_FLAGS="-O2 -g"`: its CMakeLists.txt doesn't add them, so it would build at `-O0`.
+**Taps in upstream files** are guarded by `opts->web_enable == 1` and kept to a line or two; the logic belongs in `dsd_web_*.c`. Console output without `--web` must stay byte-identical to upstream, except where a `fix/*` branch that upstream hasn't merged yet changes it: record a capture with `-c file.bin` while decoding, replay it with `-i file.bin -o null -Z` through an upstream build and this one, and compare the logs. Build the upstream copy with `-DCMAKE_C_FLAGS="-O2 -g" -DCMAKE_CXX_FLAGS="-O2 -g"`: its CMakeLists.txt doesn't add them, so it would build at `-O0`.
 
 ## Web UI
 
