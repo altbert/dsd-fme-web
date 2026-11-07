@@ -321,7 +321,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   </ul>
   <h3>Keys</h3>
   <ul>
-    <li>Keys for DMR Basic Privacy, NXDN/dPMR scramblers, RC4, DES, AES-128/256, Hytera and vendor modes (TYT, Retevis, Baofeng, Anytone, Kenwood, Connect Systems, Vertex, Auctus, straight XOR, Hytera RAS), or a hex or decimal key-list CSV.</li>
+    <li>Keys for DMR Basic Privacy, NXDN/dPMR scramblers, RC4, DES, AES-128/256, Hytera and vendor modes (TYT, Retevis, Baofeng, Anytone, Kenwood, Connect Systems, Vertex, Auctus, straight XOR, Hytera RAS, Hytera OTA signalling), or a hex or decimal key-list CSV.</li>
     <li><span class="k">Force key</span> uses the key even when the call's encryption identifiers say otherwise; <span class="k">Clear all keys</span> removes them.</li>
     <li><span class="k">Auto-find BP key</span> finds a DMR Basic Privacy key (1–255) from encrypted voice: in speech pauses radios send a fixed silence frame, which gives the key away. Let it run over some encrypted BP voice. Strong ciphers (AES, DES, RC4) can't be found this way.</li>
   </ul>

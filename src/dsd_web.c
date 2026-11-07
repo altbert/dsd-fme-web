@@ -1499,6 +1499,20 @@ static size_t key_field_max (const char * s)
   return best;
 }
 
+//Hytera over-the-air signalling encryption off, as initState leaves it: no key, no check, no call context
+static void hota_reset (dsd_state * state)
+{
+  state->hota_enc_check = state->hota_key_loaded = state->dmr_is_hota = 0;
+  state->hota_bit_shift = 0;
+  memset (state->hota_byte_shifts, 0, sizeof(state->hota_byte_shifts));
+  memset (state->hota_rc4_key, 0, sizeof(state->hota_rc4_key));
+  memset (state->hota_rc4_ks, 0, sizeof(state->hota_rc4_ks));
+  memset (state->hota_lc_ctx, 0, sizeof(state->hota_lc_ctx));
+  memset (state->hota_ctx_ok, 0, sizeof(state->hota_ctx_ok));
+  state->hota_sbrc_idx1[0] = state->hota_sbrc_idx1[1] = -1;
+  state->hota_sbrc_idx2[0] = state->hota_sbrc_idx2[1] = -1;
+}
+
 static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
 {
   const char * type = jv_str (cmd, "keytype", "");
@@ -1506,9 +1520,10 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
   char buf[1024];
   snprintf (buf, sizeof(buf), "%s", val ? val : "");
 
-  //the straight XOR and Vertex 256-bit parsers unpack their hex field into fixed buffers
-  //(112 and 32 bytes) without checking its length
-  if ((!strcmp (type, "straight") && key_field_max (buf) > 224) || (!strcmp (type, "vertex") && key_field_max (buf) > 64))
+  //the straight XOR, Vertex 256-bit and Hytera OTA parsers unpack their hex field into fixed
+  //buffers (112, 32 and 50 bytes) without checking its length; an OTA key is 16 bytes
+  if ((!strcmp (type, "straight") && key_field_max (buf) > 224) || (!strcmp (type, "vertex") && key_field_max (buf) > 64) ||
+      (!strcmp (type, "hytera_ota") && key_field_max (buf) > 32))
   {
     web_log ("Key not set: the %s key value is too long.", type);
     return;
@@ -1528,8 +1543,27 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     state->baofeng_ap = state->csi_ee = state->ken_sc = state->any_bp = 0;
     state->straight_ks = state->straight_mod = state->straight_discard = 0;
     state->forced_alg_id = 0; state->keyloader = 0;
+    hota_reset (state);
     opts->dmr_mute_encL = 1; opts->dmr_mute_encR = 1;
     web_log ("All keys cleared.");
+    return;
+  }
+
+  //Hytera OTA signalling encryption, the value as -H O: takes it: 128:<32 hex>, or 0:0 to only detect
+  //it. Replaces the earlier setting and the call context built with it, and leaves the voice mute
+  //alone, as -H O: does
+  if (!strcmp (type, "hytera_ota"))
+  {
+    hota_reset (state);
+    //the slots' radio and talkgroup were read under the old setting, and with a wrong key nothing
+    //replaces them: the activity log would file every call under the last ones (as at a carrier
+    //drop, and with -H O: from the start, they begin at 0)
+    state->lastsrc = state->lastsrcR = 0;
+    state->lasttg = state->lasttgR = 0;
+    hytera_ota_keystream_setup (state, buf);
+    if (state->hota_key_loaded) web_log ("Key set: Hytera OTA signalling.");
+    else if (state->hota_enc_check) web_log ("Hytera OTA check on: encrypted signalling is reported, calls show under pseudo TG 8686868.");
+    else web_log ("Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 to only detect it.");
     return;
   }
 
