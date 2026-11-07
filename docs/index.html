@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSD-FME web: digital voice decoder with a browser UI</title>
+<meta name="description" content="DSD-FME with a web interface: decode DMR, P25 Phase 1/2, NXDN, dPMR, YSF, D-STAR and M17 from an RTL-SDR, with spectrum, waterfall, trunking, call log and a radio map in the browser.">
+<link rel="canonical" href="https://altbert.github.io/dsd-fme-web/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="DSD-FME web">
+<meta property="og:description" content="Digital voice decoder (DMR, P25, NXDN, YSF, D-STAR, M17) with spectrum, waterfall, trunking, call log and radio map in the browser.">
+<meta property="og:url" content="https://altbert.github.io/dsd-fme-web/">
+<meta property="og:image" content="https://altbert.github.io/dsd-fme-web/screenshots/web-desktop.webp">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareSourceCode",
+  "name": "DSD-FME web",
+  "description": "DSD-FME digital voice decoder with a web interface: spectrum, waterfall, trunking, call log and radio map.",
+  "url": "https://altbert.github.io/dsd-fme-web/",
+  "codeRepository": "https://github.com/altbert/dsd-fme-web",
+  "programmingLanguage": ["C", "C++", "JavaScript"],
+  "runtimePlatform": "Linux",
+  "isBasedOn": "https://github.com/lwvmobile/dsd-fme"
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --chassis:#1b1d20; --plate:#23262a; --plate-edge:#33373c;
+  --glass:#0f100f; --glass-edge:#2b2d2a;
+  --silk:#dfe2dc; --silk-2:#aab0a7; --silk-3:#8b918a;
+  --amber:#ffb02e; --live:#4fe08d; --link:#6cb8ff;
+  --sans:'Barlow Semi Condensed','Roboto Condensed','Arial Narrow',system-ui,sans-serif;
+  --mono:ui-monospace,'DejaVu Sans Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark;scroll-behavior:smooth}
+body{margin:0;background:var(--chassis);color:var(--silk);font:400 17px/1.5 var(--sans)}
+a{color:var(--link)}
+main{max-width:1040px;margin:0 auto;padding:32px 16px 48px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 16px;margin-bottom:6px}
+h1{margin:0;font-weight:600;font-size:clamp(28px,6vw,40px);letter-spacing:.01em}
+h1 span{color:var(--amber)}
+.lede{margin:0 0 22px;color:var(--silk-2);font-size:19px;max-width:46em}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 26px}
+.btn{display:inline-block;padding:9px 16px;border-radius:6px;border:1px solid var(--plate-edge);
+  background:var(--plate);color:var(--silk);text-decoration:none;font-weight:500}
+.btn.primary{border-color:var(--link);color:var(--link)}
+.btn:hover{background:#2e3237}
+pre{margin:0 0 26px;padding:14px 16px;background:var(--glass);border:1px solid var(--glass-edge);
+  border-radius:6px;overflow-x:auto;font:14px/1.5 var(--mono);color:var(--amber)}
+pre .c{color:var(--silk-3)}
+section pre{margin:10px 0 12px}
+figure{margin:0 0 30px}
+figure img{display:block;width:100%;height:auto;border:1px solid var(--glass-edge);border-radius:6px;background:var(--glass)}
+figcaption{margin-top:6px;color:var(--silk-3);font-size:14px}
+h2{margin:0 0 12px;font-weight:600;font-size:22px}
+section{background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;padding:18px 20px;margin-bottom:22px;scroll-margin-top:12px}
+ul{margin:0;padding-left:20px}
+li{margin:4px 0}
+li b{font-weight:600}
+code{white-space:nowrap}
+.protocols{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 26px;padding:0;list-style:none}
+.protocols li{margin:0;padding:2px 10px;border:1px solid var(--plate-edge);border-radius:999px;color:var(--silk-2);font-size:15px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:30px}
+.pair figure{margin:0}
+.intro{display:grid;grid-template-columns:1fr 240px;gap:22px;align-items:start;margin-bottom:22px}
+.intro section{margin:0}
+.intro figure{margin:0}
+@media (max-width:760px){.intro{grid-template-columns:1fr}.intro figure{max-width:240px;margin:0 auto}}
+@media (max-width:640px){.pair{grid-template-columns:1fr}}
+footer{color:var(--silk-3);font-size:14px}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 22px;font-size:15px}
+h3{margin:18px 0 6px;font-weight:600;font-size:18px;color:var(--silk)}
+h3:first-of-type{margin-top:4px}
+section p{margin:6px 0}
+.k{display:inline-block;padding:0 7px;border:1px solid #43494f;border-bottom-width:2px;border-radius:4px;
+  background:#2e3237;font-weight:500;font-size:15px;line-height:1.45;white-space:nowrap}
+.note{color:var(--silk-2);font-size:15px}
+.tbl{width:100%;border-collapse:collapse;font-size:16px}
+.tbl th,.tbl td{text-align:left;vertical-align:top;padding:7px 10px 7px 0;border-top:1px solid var(--plate-edge)}
+.tbl th{font-weight:600;color:var(--silk-2);border-top:0}
+.tbl td:first-child{white-space:nowrap;padding-right:16px}
+.tbl code{color:var(--amber)}
+.tbl-wrap{overflow-x:auto}
+@media (max-width:640px){
+  .tbl tr:has(th){display:none}
+  .tbl tr{display:block;border-top:1px solid var(--plate-edge);padding:8px 0}
+  .tbl td{display:block;border:0;padding:0}
+  .tbl td:first-child{white-space:normal;padding:0 0 2px}
+  .tbl td code{white-space:normal;overflow-wrap:anywhere}
+}
+.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.panel{background:var(--chassis);border:1px solid var(--plate-edge);border-radius:6px;padding:12px 14px}
+.panel h3{margin-top:0}
+.panel ul{padding-left:18px}
+@media (max-width:420px){.panels{grid-template-columns:1fr}}
+dl.qa{margin:0}
+dl.qa dt{font-weight:600;margin-top:12px}
+dl.qa dt:first-child{margin-top:0}
+dl.qa dd{margin:2px 0 0}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>DSD-FME <span>web</span></h1>
+</header>
+<p class="lede">A digital voice decoder with a browser interface built in. Point it at an RTL-SDR, start it with <code>--web</code>, and get the spectrum, waterfall, calls, trunking and a radio map in any browser, phones included.</p>
+
+<div class="actions">
+  <a class="btn primary" href="https://github.com/altbert/dsd-fme-web">Source on GitHub</a>
+  <a class="btn" href="#build">Build it</a>
+  <a class="btn" href="https://github.com/altbert/dsd-fme-web/blob/audio_work/examples/Web_Interface.md">Web interface guide</a>
+</div>
+
+<ul class="protocols" aria-label="Supported protocols">
+  <li>DMR</li><li>P25 Phase 1</li><li>P25 Phase 2</li><li>NXDN</li><li>dPMR</li><li>YSF</li>
+  <li>D-STAR</li><li>M17</li><li>EDACS</li><li>ProVoice</li><li>X2-TDMA</li><li>Analog FM</li>
+</ul>
+
+<pre><span class="c"># then open http://localhost:8080/</span>
+dsd-fme -i rtl --web 8080</pre>
+
+<figure>
+  <img src="screenshots/web-desktop.webp" width="1440" height="900" alt="Spectrum with the demodulator's channel shaded, waterfall, bookmarks and a DMR call on both slots">
+  <figcaption>Spectrum and waterfall, the receiver readout and a DMR call on both slots.</figcaption>
+</figure>
+
+<div class="intro">
+  <section>
+    <h2>What it adds to DSD-FME</h2>
+    <ul>
+      <li><b>A web server inside dsd-fme</b>: the page is built into the binary, with an optional password. Nothing else to install.</li>
+      <li><b>Spectrum and waterfall</b> from the RTL-SDR: click to tune, auto-tune, auto-decode, and a band scan that saves what it finds as bookmarks.</li>
+      <li><b>Activity log</b>: calls, LRRP positions, ARS registrations, text messages, P25 packet data, and analog FM with its CTCSS tone, DCS code and DTMF ANI.</li>
+      <li><b>Radios and map</b>: every radio heard, positions on an OpenStreetMap map.</li>
+      <li><b>Trunking</b>: follows calls from a P25 control channel, with skip, hold and block per talkgroup.</li>
+      <li><b>Audio and recordings</b>: decoded audio in the browser and per-call WAV downloads.</li>
+      <li><b>Other SDRs</b> (HackRF, Airspy, SDRplay…) through SDR++, and RTL-SDR over <code>rtl_tcp</code>.</li>
+      <li><b>Kept up to date</b>: changes to the original DSD-FME are merged in regularly.</li>
+    </ul>
+    <p class="note">Without <code>--web</code> it is the regular DSD-FME.</p>
+  </section>
+  <figure>
+    <img src="screenshots/web-phone.webp" width="780" height="1688" alt="The page on a phone" loading="lazy">
+    <figcaption>The same page on a phone.</figcaption>
+  </figure>
+</div>
+
+<div class="pair">
+  <figure><img src="screenshots/web-activity.webp" width="1440" height="900" alt="Activity log and radios table" loading="lazy"></figure>
+  <figure><img src="screenshots/web-map.webp" width="1440" height="900" alt="Radio map" loading="lazy"></figure>
+</div>
+
+<nav class="toc" aria-label="Guide">
+  <a href="#build">Build and install</a>
+  <a href="#options">Command-line options</a>
+  <a href="#receivers">Receivers</a>
+  <a href="#page">The page, panel by panel</a>
+  <a href="#settings">Settings tabs</a>
+  <a href="#security">Security</a>
+  <a href="#trouble">Troubleshooting</a>
+</nav>
+
+<section id="build">
+  <h2>Build and install</h2>
+  <p>Developed and tested on Linux (Manjaro). Install the libraries; librtlsdr gives the RTL-SDR input and the spectrum, codec2 gives M17 voice.</p>
+  <pre><span class="c"># Arch, Manjaro</span>
+sudo pacman -S --needed base-devel cmake git libsndfile libpulse ncurses rtl-sdr codec2
+
+<span class="c"># Debian, Ubuntu, Raspberry Pi OS, Mint</span>
+sudo apt install build-essential cmake git pkg-config libsndfile1-dev libpulse-dev \
+  libncurses-dev librtlsdr-dev rtl-sdr libcodec2-dev</pre>
+  <p>Then mbelib, lwvmobile's fork (read its <a href="https://github.com/lwvmobile/mbelib#readme">patent notice</a> first), and this repository:</p>
+  <pre>git clone https://github.com/lwvmobile/mbelib
+cd mbelib &amp;&amp; git checkout ambe_tones
+cmake -B build &amp;&amp; cmake --build build -j"$(nproc)"
+sudo cmake --install build &amp;&amp; sudo ldconfig
+cd ..
+
+git clone https://github.com/altbert/dsd-fme-web
+cd dsd-fme-web
+cmake -B build &amp;&amp; cmake --build build -j"$(nproc)"
+./build/dsd-fme -i rtl --web 8080</pre>
+  <p class="note">Look for <code>Found RTLSDR</code> in the output of <code>cmake -B build</code>: without it there is no RTL input or spectrum. <code>sudo cmake --install build</code> installs it in /usr/local/bin. Fedora packages, build options and updating: <a href="https://github.com/altbert/dsd-fme-web/blob/audio_work/BUILD.md">BUILD.md</a>.</p>
+</section>
+
+<section id="options">
+  <h2>Command-line options</h2>
+  <p>The web server is off unless you pass <code>--web</code>. Each option also works as <code>--option=value</code>.</p>
+  <div class="tbl-wrap"><table class="tbl">
+    <tr><th>Option</th><th>What it does</th></tr>
+    <tr><td><code>--web [bind:]port</code></td><td>Starts the web server. <code>--web</code> alone listens on <code>127.0.0.1:8080</code>, so only this computer can open it. <code>--web 9000</code> changes the port. IPv6 goes in brackets: <code>--web [::1]:8080</code>.</td></tr>
+    <tr><td><code>--web 0.0.0.0:8080</code></td><td>Listens on every network interface, so phones and other computers on your LAN can open it. Set a password if you do this.</td></tr>
+    <tr><td><code>--web-pass &lt;pw&gt;</code></td><td>Asks for a password before the page shows or controls anything. It also lets the page be opened under any host name (see <a href="#security">Security</a>).</td></tr>
+    <tr><td><code>--web-bookmarks &lt;file&gt;</code></td><td>Where bookmarks are saved. The default is <code>~/.config/dsd-fme/web_bookmarks.json</code>.</td></tr>
+    <tr><td><code>--web-root &lt;dir&gt;</code></td><td>Serves the page from a folder on disk instead of the copy built into the binary (for working on the UI).</td></tr>
+  </table></div>
+  <h3>DSD-FME options that go well with it</h3>
+  <div class="tbl-wrap"><table class="tbl">
+    <tr><td><code>-i rtl:dev:freq:gain:ppm:bw:sq:vol</code></td><td>Starts the RTL-SDR with these settings: dongle number, frequency, gain (0 = the tuner's AGC), PPM, bandwidth in kHz, squelch and sample volume. Everything after <code>rtl</code> is optional, and the RF tab changes them while it runs.</td></tr>
+    <tr><td><code>-o null</code></td><td>Keeps the sound off the computer's speakers; listen in the browser instead.</td></tr>
+    <tr><td><code>-N</code></td><td>The DSD-FME terminal interface, at the same time as the web page.</td></tr>
+    <tr><td><code>-T -C chan.csv -G group.csv</code></td><td>Trunking with a channel map and a talkgroup list from the start. Both lists can also be pasted in the Trunk tab.</td></tr>
+  </table></div>
+  <pre style="margin:14px 0 0"><span class="c"># DMR trunking on the LAN, with a password</span>
+dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
+        --web 0.0.0.0:8080 --web-pass hunter2</pre>
+</section>
+
+<section id="receivers">
+  <h2>Receivers</h2>
+  <div class="tbl-wrap"><table class="tbl">
+    <tr><th>Input</th><th>What the page can do</th></tr>
+    <tr><td><code>-i rtl</code></td><td>Everything: an RTL-SDR dongle on this computer.</td></tr>
+    <tr><td><code>-i rtltcp:host:port</code></td><td>An RTL-SDR on another machine running <code>rtl_tcp</code>. Not tested yet, and the sample rate, bandwidth and RTL AGC settings don't work over it.</td></tr>
+    <tr><td><code>-i tcp -U 4532</code></td><td>Any radio SDR++ supports (HackRF, Airspy, SDRplay, LimeSDR, Pluto…). In SDR++, send the audio to the Network sink (TCP, port 7355) and turn on the Rigctl Server (port 4532). Decoding and tuning work; there is no spectrum, waterfall or band scan.</td></tr>
+    <tr><td><code>-i tcp</code> / <code>-i pulse</code></td><td>Audio from any radio or SDR program. Decoding works; you tune in the other program.</td></tr>
+  </table></div>
+</section>
+
+<section id="page">
+  <h2>The page, panel by panel</h2>
+  <div class="panels">
+    <div class="panel">
+      <h3>Top bar</h3>
+      <p>Lamps for the connection to dsd-fme, sync and the decoder in use, plus Trunking and Band scan lamps while those run.</p>
+      <ul>
+        <li><span class="k">Map</span> opens the radio map.</li>
+        <li><span class="k">Audio</span> plays the decoded voice and analog audio in the browser, with a volume slider. The speakers and WAV outputs keep working as before.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Spectrum and waterfall</h3>
+      <p>Live view from the RTL-SDR. The shaded band is the channel the demodulator hears. Click anywhere to tune there.</p>
+      <ul>
+        <li>Type a frequency (<code>851.0125M</code>, <code>154987500</code>) and press <span class="k">Tune</span>. <span class="k">★</span> bookmarks it.</li>
+        <li><span class="k">Auto-tune</span> moves onto the strongest nearby signal and keeps it centered.</li>
+        <li><span class="k">Auto-decode</span> listens for every protocol's sync at once and switches the decoder to the one it hears, usually within a second.</li>
+        <li><span class="k">Analog</span> (on at first) plays analog FM whenever there is no digital sync, in AUTO and Auto-decode. Set the squelch so noise stays muted.</li>
+        <li><b>FFT</b>, <b>FPS</b>, <b>Average</b> and <b>Range</b> set the detail, speed, smoothing and contrast.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Decode</h3>
+      <p>The 7-segment readout shows the tuned frequency and bookmark name, the system, frame type and modulation. The meters show the demodulated signal level while in sync, and the RF level against the squelch.</p>
+      <p>One box per slot shows the call: talkgroup and source, group or private, how long it has lasted, talker alias, GPS position, encryption and the last data received.</p>
+      <p>The system box shows the site once a repeater or control channel identifies itself: P25 WACN/SYS/NAC/RFSS/site, DMR color code and system, NXDN RAN. On analog FM, the <b>Tone</b> row shows the CTCSS tone, DCS code and DTMF ANI.</p>
+    </div>
+    <div class="panel">
+      <h3>Trunking</h3>
+      <p>Shows up once a control channel is heard. It is built around P25: it shows the call being followed and a state badge (Watching, Following, Waiting, Returning, Searching). On DMR and NXDN trunked systems it shows up too, and Follow calls turns on DSD-FME's own trunking.</p>
+      <ul>
+        <li><span class="k">Follow calls</span> starts following; <span class="k">Stop</span> stops and stays on the control channel.</li>
+        <li><span class="k">Skip call</span> leaves the current call until it ends; <span class="k">Back now</span> returns to the control channel without waiting out the hang time.</li>
+        <li><span class="k">Hold</span> follows only this talkgroup until you release it; <span class="k">Block</span> stops following it until DSD-FME closes.</li>
+        <li><span class="k">Group calls</span> <span class="k">Private calls</span> <span class="k">Data</span> <span class="k">Encrypted</span> pick which calls to follow. Data calls have nothing to hear, and encrypted ones stay muted without a key.</li>
+        <li>In the talkgroup list, a lit key means followed: click it to change. Click a number to see its calls in Activity, or a name to edit it. <span class="k">Only lit</span> follows the lit ones and nothing else.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Activity</h3>
+      <p>A log of everything decoded: calls with their length, LRRP positions, ARS registrations, text messages, P25 packet data and analog FM calls with their tone.</p>
+      <ul>
+        <li>Show <span class="k">All</span> <span class="k">Calls</span> <span class="k">Data</span> <span class="k">Signalling</span> <span class="k">System</span> or <span class="k">Decoder log</span> (DSD-FME's event history), or type a radio, talkgroup or text to filter.</li>
+        <li><span class="k">Errors</span> also lists packets that failed their CRC check.</li>
+        <li><span class="k">Clear</span> empties the log and the decoder's event history.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Radios and map</h3>
+      <p>Every radio heard: its ID and alias, when it was last heard, what it did, its talkgroup and position. Radios on air are green.</p>
+      <p>The map puts positions on OpenStreetMap, and radios on air pulse. <span class="k">Follow on air</span> brings radios that start talking into view.</p>
+    </div>
+    <div class="panel">
+      <h3>Bookmarks</h3>
+      <p>Saved channels, each with a name, frequency, decoder, modulation and group. Click one to tune and switch decoder in one step. They are saved on the computer running dsd-fme.</p>
+      <ul>
+        <li><span class="k">Add</span> saves the tuned channel. Search matches name, group or MHz; the menu picks a group.</li>
+        <li><b>Import / export</b>: <span class="k">Export</span> saves them as a file; <span class="k">Import…</span> takes that file, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3>Band scan</h3>
+      <p>Sweeps whole bands with the RTL-SDR and tries every signal it sees. It stops on the first one that decodes and saves it as a bookmark. Toned analog FM is saved too, as analog.</p>
+      <ul>
+        <li><b>Bands</b>: all land mobile (136–941 MHz), VHF, UHF, 470–512, 800, 900, ham 2 m + 70 cm, PMR446 or a custom range. <b>Threshold</b> is how far over the noise a signal has to be.</li>
+        <li><b>Exclude</b> lists frequencies or ranges it never stops on. <span class="k">Exclude &amp; continue</span> adds the current one and moves on.</li>
+        <li><span class="k">Skip bookmarked</span> passes over channels you already have; <span class="k">Keep going</span> bookmarks every find without stopping.</li>
+        <li><span class="k">Start</span> <span class="k">Stop</span> <span class="k">Continue</span> control the sweep.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="settings">
+  <h2>Settings tabs</h2>
+  <h3>Decoder</h3>
+  <p>The decoder: AUTO (P25, DMR, YSF, D-STAR, X2-TDMA), TDMA trunk, P25 Phase 1 or 2, DMR, NXDN48 / IDAS, NXDN96, dPMR, YSF, D-STAR, M17, ProVoice, EDACS or Analog FM, and the modulation (C4FM, QPSK, GFSK).</p>
+  <ul>
+    <li><span class="k">Invert</span> for inverted signals; <span class="k">Slot 1</span> <span class="k">Slot 2</span> turn each TDMA slot's audio on or off.</li>
+    <li><b>Digital gain</b> (0 = automatic) and <b>Analog gain</b>; audio filters <span class="k">HPF-D</span> (high-pass on digital voice), <span class="k">HPF</span> <span class="k">LPF</span> <span class="k">PBF</span>.</li>
+    <li><span class="k">Payload</span> prints frame payloads in dsd-fme's console; <span class="k">Monitor</span> plays analog audio whenever there is no digital sync, in any decoder; <span class="k">Rec WAV</span> records each call; <span class="k">Clear events</span> empties the event history.</li>
+    <li><b>P2 params</b>: WACN, system and NAC for decoding P25 Phase 2 voice when no control channel has given them.</li>
+  </ul>
+  <h3>RF</h3>
+  <ul>
+    <li>RTL-SDR: <b>LNA gain</b>, <span class="k">Tuner AGC</span> (the tuner sets its own gain; the slider is off meanwhile), <span class="k">RTL AGC</span> (digital gain that lifts noise too, so the squelch works poorly with it), <b>PPM</b> correction, sample <b>Volume</b> (×1–3), <b>Bandwidth</b> (4–24 kHz) and <b>Sample rate</b> (0.25–3.2 MSPS; above 2.4 most dongles drop samples).</li>
+    <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio and the band scan.</li>
+    <li><b>SetMod BW</b>: the bandwidth sent over rigctl (SDR++).</li>
+  </ul>
+  <h3>Trunk</h3>
+  <ul>
+    <li><b>Channel map</b>: for DMR Tier III, Capacity Plus, NXDN and EDACS systems that send channel numbers instead of frequencies (P25 sends its own channel plan). Paste <code>channel,frequency in Hz</code> lines and press <span class="k">Import channel map</span>.</li>
+    <li><b>Talkgroup list</b>: DSD-FME's group CSV, where mode A follows and B blocks. <span class="k">Import groups</span> applies it; <span class="k">Current list</span> fills the box with the names and choices made in the Trunking card, to copy and keep.</li>
+    <li><b>Scan list</b>: the conventional <span class="k">Scanner</span> steps through these frequencies and stops on each one with a signal. Fill it by hand or <span class="k">From bookmarks</span>; <span class="k">Next</span> jumps ahead. It doesn't run together with trunking.</li>
+  </ul>
+  <h3>Keys</h3>
+  <ul>
+    <li>Keys for DMR Basic Privacy, NXDN/dPMR scramblers, RC4, DES, AES-128/256, Hytera and vendor modes (TYT, Retevis, Baofeng, Anytone, Kenwood, Connect Systems, Vertex, Auctus, straight XOR, Hytera RAS), or a hex or decimal key-list CSV.</li>
+    <li><span class="k">Force key</span> uses the key even when the call's encryption identifiers say otherwise; <span class="k">Clear all keys</span> removes them.</li>
+    <li><span class="k">Auto-find BP key</span> finds a DMR Basic Privacy key (1–255) from encrypted voice: in speech pauses radios send a fixed silence frame, which gives the key away. Let it run over some encrypted BP voice. Strong ciphers (AES, DES, RC4) can't be found this way.</li>
+  </ul>
+  <p class="note">Keys apply to the running decoder. Decode only traffic you are allowed to.</p>
+  <h3>Files</h3>
+  <p><span class="k">Per-call WAV</span> records each call; the recordings are listed here for download. <span class="k">Refresh list</span> picks up new ones.</p>
+  <h3>Log</h3>
+  <p>What the web side did: tuning, decoder changes, trunking and band scan steps, and errors. DSD-FME's own event history is under Activity → Decoder log.</p>
+</section>
+
+<section id="security">
+  <h2>Security</h2>
+  <ul>
+    <li>The server listens only on this computer unless you give another address.</li>
+    <li>On a network, anyone who can open the page controls the decoder and can download the recordings. Use <code>--web-pass</code>, and a reverse proxy with TLS if it can be reached from outside your LAN.</li>
+    <li>Without a password, the page only opens by IP address, <code>localhost</code> or this computer's own name (also with <code>.local</code>). Under a domain name, behind a reverse proxy for example, it needs <code>--web-pass</code>. This stops websites from reaching it through DNS tricks.</li>
+    <li>Connections from other websites are refused, and downloads are limited to the recordings folder.</li>
+  </ul>
+</section>
+
+<section id="trouble">
+  <h2>Troubleshooting</h2>
+  <dl class="qa">
+    <dt><code>--web</code> isn't recognized</dt>
+    <dd>An older DSD-FME runs instead, often an upstream one in /usr/local/bin. <code>which -a dsd-fme</code> lists them; run <code>./build/dsd-fme</code> or install this build.</dd>
+    <dt>No spectrum, or <code>RTL Support not enabled/compiled</code></dt>
+    <dd>librtlsdr wasn't found when cmake ran. Install its development package and run <code>cmake -B build</code> again. With <code>-i tcp</code> or <code>-i pulse</code> there is no spectrum at all.</dd>
+    <dt><code>usb_claim_interface error -6</code></dt>
+    <dd>Another program has the dongle (another dsd-fme, rtl_tcp, SDR++…), or the DVB-T TV driver took it: replug it, or <code>sudo modprobe -r dvb_usb_rtl28xxu</code>.</dd>
+    <dt><code>403 Unknown host name</code></dt>
+    <dd>The page was opened under a name it doesn't know. Use the IP address or <code>localhost</code>, or start with <code>--web-pass</code>.</dd>
+    <dt><code>libmbe.so.1</code> not found</dt>
+    <dd>Run <code>sudo ldconfig</code> after installing mbelib.</dd>
+  </dl>
+  <p class="note">More in <a href="https://github.com/altbert/dsd-fme-web/blob/audio_work/BUILD.md#troubleshooting">BUILD.md</a>. Known bugs and planned work: <a href="https://github.com/altbert/dsd-fme-web/blob/audio_work/TODO.md">TODO.md</a>.</p>
+</section>
+
+<footer>
+  <p>A fork of <a href="https://github.com/lwvmobile/dsd-fme">DSD-FME</a> by lwvmobile, kept merged with its <code>audio_work</code> branch. License and credits: see the <a href="https://github.com/altbert/dsd-fme-web#license">README</a>. Screenshots use a simulated receiver and made-up demo data.</p>
+</footer>
+</main>
+</body>
+</html>
