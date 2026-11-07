@@ -133,7 +133,9 @@ int csvChanImport(dsd_opts * opts, dsd_state * state) //channel map import
   int row_count = 0;
   int field_count = 0;
 
-  long int chan_number;
+  long int chan_number = -1;
+  const long int chan_max = (long int)(sizeof(state->trunk_chan_map) / sizeof(state->trunk_chan_map[0]));
+  const int lcn_max = (int)(sizeof(state->trunk_lcn_freq) / sizeof(state->trunk_lcn_freq[0]));
 
   while (fgets(buffer, BSIZE, fp)) {
     field_count = 0;
@@ -145,21 +147,29 @@ int csvChanImport(dsd_opts * opts, dsd_state * state) //channel map import
 
       if (field_count == 0)
       {
+        chan_number = -1; //rows without a usable channel number are skipped
         sscanf (field, "%ld", &chan_number);
       }
 
-      if (field_count == 1)
+      //channel numbers outside of the map would write past it
+      if (field_count == 1 && chan_number >= 0 && chan_number < chan_max)
       {
         sscanf (field, "%ld", &state->trunk_chan_map[chan_number]);
         //adding this should be compatible with EDACS, test and obsolete the LCN Import function if desired
-        sscanf (field, "%ld", &state->trunk_lcn_freq[state->lcn_freq_count]);
-        state->lcn_freq_count++; //keep tally of number of Frequencies imported
+        //(trunk_lcn_freq only has room for 26, more would overwrite the start of trunk_chan_map)
+        if (state->lcn_freq_count < lcn_max)
+        {
+          sscanf (field, "%ld", &state->trunk_lcn_freq[state->lcn_freq_count]);
+          state->lcn_freq_count++; //keep tally of number of Frequencies imported
+        }
       }
 
       field = strtok(NULL, ",");
       field_count++;
     }
-    fprintf (stderr, "Channel [%05ld] [%09ld]", chan_number, state->trunk_chan_map[chan_number]);
+    if (chan_number >= 0 && chan_number < chan_max)
+      fprintf (stderr, "Channel [%05ld] [%09ld]", chan_number, state->trunk_chan_map[chan_number]);
+    else fprintf (stderr, "Channel row %d skipped (no valid channel number)", row_count);
     fprintf (stderr, "\n");
 
   }
@@ -247,7 +257,9 @@ int csvKeyImportHex(dsd_opts * opts, dsd_state * state) //key import for hex key
   }
   int row_count = 0;
   int field_count = 0;
-  unsigned long long int keynumber;
+  unsigned long long int keynumber = 0;
+  //the long key parts go at +0x101, +0x201 and +0x301, all of them have to fit
+  const unsigned long long int key_max = sizeof(state->rkey_array) / sizeof(state->rkey_array[0]) - 0x301;
 
   while (fgets(buffer, BSIZE, fp)) {
     field_count = 0;
@@ -259,7 +271,10 @@ int csvKeyImportHex(dsd_opts * opts, dsd_state * state) //key import for hex key
 
       if (field_count == 0)
       {
+        keynumber = 0;
         sscanf (field, "%llX", &keynumber);
+        if (keynumber >= key_max)
+          break;
       }
 
       if (field_count == 1)
@@ -285,6 +300,12 @@ int csvKeyImportHex(dsd_opts * opts, dsd_state * state) //key import for hex key
 
       field = strtok(NULL, ",");
       field_count++;
+    }
+
+    if (keynumber >= key_max)
+    {
+      fprintf (stderr, "Key [%04llX] out of range, skipped\n", keynumber);
+      continue;
     }
 
     fprintf (stderr, "Key [%04llX] [%016llX]", keynumber, state->rkey_array[keynumber]);
