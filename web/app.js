@@ -290,15 +290,20 @@ function esc(s){ return (s==null?'':(''+s)); }
 // decoder strings (talker alias, call text, GPS) come over the air: escape before innerHTML
 function escH(s){ return esc(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function renderStatus(m){
-  const d=m.decode||{}, inp=m.input||{}, tr=m.trunk||{}, fl=m.flags||{}, site=m.site||{}, au=m.auto||{};
-  const ana = !d.carrier && d.analog;
+  const d=m.decode||{}, inp=m.input||{}, tr=m.trunk||{}, fl=m.flags||{}, site=m.site||{}, au=m.auto||{}, aid=m.analog_id||{};
+  // analog FM: the monitor plays it, or its CTCSS / DCS is heard (also with a digital decoder alone)
+  const ana = !d.carrier && (d.analog || !!aid.tone);
+  const aTone = aid.tone || (aid.active ? aid.tx_tone : ''), aAni = aid.active ? aid.ani : '';
   setTxt($('st-carrier'), d.carrier ? 'Sync' : (ana ? 'Analog' : 'No sync'));
   $('st-carrier').className = 'badge '+(d.carrier?'live':(ana?'warn':''));
   setTxt($('st-mode'), esc(d.name) || '—');
   // the readout's unlit segments are "8888.888888"; no frequency (non-RTL input) leaves them all dark
   setTxt($('d-freq'), inp.freq > 0 ? (inp.freq/1e6).toFixed(6) : '');
   $('d-sys').textContent = ana ? 'Analog FM' : (esc(d.sys) || '—');
-  $('d-ftype').textContent = esc(d.ftype).trim()||'—';
+  // the frame row tells the tone and DTMF ANI of an analog transmission while it is on
+  const toneRow = ana && (aTone || aAni);
+  setTxt($('d-ftype-k'), toneRow ? 'Tone' : 'Frame');
+  $('d-ftype').textContent = toneRow ? [aTone, aAni && 'ANI '+aAni].filter(Boolean).join(', ') : (esc(d.ftype).trim()||'—');
   $('d-mod').textContent = esc(d.mod)+', '+esc(d.rate)+' sps';
   $('d-level').style.width = (d.level||0)+'%';
   const sq=inp.squelch||1, rms=inp.rms||0;
@@ -1396,7 +1401,7 @@ function renderBscan(bs, d){
   else if (bs.state === 'found'){ t = 'Decoding '+(bs.desc || esc(d.name))+' on '+mhz(bs.freq)+', collecting ids for the bookmark…'; short = 'Band scan: locked on '+mhz(bs.freq); }
   else if (bs.state === 'fixed'){ t = 'Found '+bs.last_name+' on '+mhz(bs.last_freq)+' and bookmarked it (group "Band scan"). Continue keeps looking.'; short = 'Band scan: found '+bs.last_name; }
   else if (bs.msg) t = 'Band scan '+bs.msg;
-  else t = 'Sweeps the bands with the RTL-SDR, tries every signal it sees with the digital decoders, and stops on the first one that decodes, saving it as a bookmark.'
+  else t = 'Sweeps the bands with the RTL-SDR, tries every signal it sees with the digital decoders, and stops on the first one that decodes, or that is analog FM with a CTCSS tone or DCS code, saving it as a bookmark.'
     + (bs.found ? ' Last find: '+bs.last_name+' on '+mhz(bs.last_freq)+'.' : '');
   $('bs-stat').textContent = t;
   $('bs-stat').style.color = !on && bs.msg ? 'var(--fail)' : '';

@@ -1767,6 +1767,7 @@ void web_audio_push (dsd_opts * opts, const void * data, size_t nbytes, int anal
 void web_key_capture (dsd_opts * opts, dsd_state * state, int slot, char * ambe_d); //DMR BP key-hunt sample tap
 void web_frame_tap (dsd_state * state); //getFrameSync entry: counts accepted frames
 void web_frame_good (void); //a frame whose FEC checked out (M17 LICH)
+void web_analog_tap (dsd_opts * opts, dsd_state * state, const short * in, int n); //no-sync audio for the CTCSS/DCS/DTMF detectors
 //read-only taps for the web activity log (dsd_web_data.c)
 void web_dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t * dheader); //DMR data header that passed its CRC
 void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok); //completed DMR packet, before it is deciphered

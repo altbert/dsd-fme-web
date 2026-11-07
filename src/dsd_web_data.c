@@ -202,6 +202,16 @@ static struct
   uint32_t groups_hash; //the group list as last sent
   int groups_dirty;
   double groups_t;
+
+  //the analog transmission on the channel (dsd_web_analog.c tells its tone and ANI)
+  struct
+  {
+    int on;
+    act_item a;
+    unsigned long tx;    //the detector's key-up it belongs to
+    char tone[16], ani[24];
+    double play_since;   //the monitor has been playing it since
+  } ana;
 } A;
 
 //----------------------------------------------------------------------------
@@ -815,6 +825,69 @@ static void call_end (call_track * k)
   act_publish (&k->a);
   act_free (&k->a);
   k->on = 0;
+}
+
+//----------------------------------------------------------------------------
+// Analog transmissions: one item per key-up that carries a CTCSS tone, a DCS code
+// or a DTMF ANI, or that the monitor played for 2 s and sounds like speech
+//----------------------------------------------------------------------------
+
+static void ana_fill (const web_analog_info * an)
+{
+  act_item * a = &A.ana.a;
+  snprintf (A.ana.tone, sizeof(A.ana.tone), "%s", an->tx_tone);
+  snprintf (A.ana.ani, sizeof(A.ana.ani), "%s", an->ani);
+  act_type (a, "Analog call");
+  if (an->ani[0]) snprintf (a->srcs, sizeof(a->srcs), "ANI %s", an->ani);
+  else a->srcs[0] = 0;
+  jb_reset (&a->f);
+  if (an->tx_tone[0]) act_kv (a, an->tx_tone[0] == 'D' ? "DCS" : "CTCSS", "%s", an->tx_tone + (an->tx_tone[0] == 'D' ? 4 : 6));
+  if (an->ani[0]) act_kv (a, "DTMF ANI", "%s", an->ani);
+  act_sum (a, "%s%s%s", a->srcs[0] ? a->srcs : "unknown radio", an->tx_tone[0] ? ", " : "", an->tx_tone);
+}
+
+static void ana_end (void)
+{
+  if (!A.ana.on) return;
+  A.ana.a.live = 0;
+  act_publish (&A.ana.a);
+  act_free (&A.ana.a);
+  A.ana.on = 0;
+}
+
+static void analog_poll (dsd_opts * opts, dsd_state * state)
+{
+  web_analog_info an;
+  web_analog_get (&an);
+  double now = wall_now ();
+  int heard = an.active && !state->carrier;
+  //a digital sync ends it too, once it lasts (AUTO and the short sync words false trigger on analog now and then)
+  if (A.ana.on && (an.tx != A.ana.tx || (!heard && now - A.ana.a.t_end > CALL_HANG))) ana_end ();
+  int playing = heard && web_analog_playing ();
+  if (!playing) A.ana.play_since = 0;
+  else if (!A.ana.play_since) A.ana.play_since = now;
+  if (!heard) return;
+  if (!A.ana.on)
+  {
+    //untoned: only what the monitor plays and sounds like speech (not noise over a low squelch, not digital)
+    if (!an.tx_tone[0] && !an.ani[0] && !(an.voice && A.ana.play_since && now - A.ana.play_since >= 2.0)) return; //a tone shows within 1.5 s
+    act_new (&A.ana.a, "call", "Analog FM", 0);
+    A.ana.a.t = an.t_keyup > 0 && an.t_keyup <= now ? an.t_keyup : now;
+    A.ana.a.t_end = now;
+    A.ana.a.live = 1;
+    A.ana.a.freq = opts->rtlsdr_center_freq > 0 ? (long long)opts->rtlsdr_center_freq : 0;
+    A.ana.tx = an.tx;
+    A.ana.on = 1;
+    ana_fill (&an);
+    act_publish (&A.ana.a);
+    return;
+  }
+  A.ana.a.t_end = now;
+  if (strcmp (A.ana.tone, an.tx_tone) || strcmp (A.ana.ani, an.ani))
+  {
+    ana_fill (&an);
+    act_publish (&A.ana.a);
+  }
 }
 
 static void calls_poll (dsd_opts * opts, dsd_state * state)
@@ -2936,6 +3009,7 @@ void web_act_poll (dsd_opts * opts, dsd_state * state)
   //a frame went by: claims on the decoder's data log lines end here
   for (int s = 0; s < 2; s++) { A.claim[s] = 0; A.claimed[s] = NULL; }
   calls_poll (opts, state);
+  analog_poll (opts, state);
   grants_poll ();
   trk_poll (state);
   sys_poll (opts, state);
@@ -2973,6 +3047,7 @@ void web_act_clear (void)
   //calls and grants still running show up again with their next update
   for (int s = 0; s < 2; s++) if (A.call[s].on) act_publish (&A.call[s].a);
   for (int i = 0; i < GRANT_MAX; i++) if (A.grant[i].on) act_publish (&A.grant[i].a);
+  if (A.ana.on) act_publish (&A.ana.a);
 }
 
 //the P25 site picture belongs to the system the radio was on; forget it with a new frequency
@@ -2985,6 +3060,7 @@ void web_act_retuned (void)
   A.p25_logged_wacn = 0; A.p25_logged_sys = A.p25_logged_rfss = A.p25_logged_site = A.p25_logged_cc = 0;
   for (int i = 0; i < GRANT_MAX; i++) grant_end (&A.grant[i]);
   for (int i = 0; i < TRK_SKIP_MAX; i++) if (A.skip[i].on) trk_unskip (&A.skip[i]);
+  ana_end ();
 }
 
 //----------------------------------------------------------------------------

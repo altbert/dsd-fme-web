@@ -86,7 +86,26 @@ tune the dongle there.
 spectrum. **Auto-tune** snaps the dongle onto the strongest nearby peak and
 keeps it centred. **Auto-decode** cycles the decoders that cannot be passively
 detected (NXDN48/96, dPMR, M17, ProVoice) until one gets a frame sync and then
-holds there — useful once you have fixed onto a signal.
+holds there — useful once you have fixed onto a signal. A sync only counts once
+it holds for 2 s at a real frame rate (for M17, with at least 15 frames in 2 s
+and a third of them passing the LICH check): the short sync words of NXDN, dPMR and M17 also match by chance on
+noise or on any other signal over the squelch, and a decoder that only finds
+such false syncs gets 4 s before Auto-decode moves on.
+
+**Analog FM** — while no digital sync is held, the audio the analog monitor
+would play is checked for a CTCSS tone, a DCS code and the DTMF ANI some radios
+send at key-up (their ID as digits). The Decode readout then shows them in its
+*Tone* row (e.g. `DCS 023N, ANI 1234`), and each analog transmission becomes a
+call in the Activity log with its tone and ANI (the ANI also lists the radio
+under Radios). A tone or code is a sure sign of analog: Auto-decode then stops
+cycling at once, and the band scan bookmarks the carrier as "Analog FM CTCSS
+100.0" with the Analog decoder. Carriers with no tone, which could as well be
+paging or a digital mode DSD-FME doesn't decode, are skipped as before. A toned
+carrier with one at least 6 dB stronger within 40 kHz is left for a later pass,
+since what is heard on it may be that neighbour leaking in. An untoned
+transmission gets an Activity item only when the monitor plays it for 2 s and
+it sounds like speech, so noise over a low squelch doesn't fill the log.
+The DTMF high group goes up to 1633 Hz: keep the RTL bandwidth at 6 kHz or more.
 
 **Decode** — pick the decoder class (AUTO, TDMA trunk, P25 P1/P2, DMR, NXDN,
 dPMR, YSF, D-STAR, M17, ProVoice, EDACS), modulation, signal inversion, TDMA

@@ -196,6 +196,25 @@ void web_groups_reset (void);                    //a group CSV import replaced s
 int  web_p25_cc_list (long long * out, int max); //the site's control channel, then its secondary ones
 
 //----------------------------------------------------------------------------
+// Analog FM identification (dsd_web_analog.c), decoder thread
+//----------------------------------------------------------------------------
+
+typedef struct
+{
+  int active;          //the channel is open (over the squelch) now
+  char tone[16];       //"CTCSS 100.0" / "DCS 023N" while it is heard, "" otherwise
+  char tx_tone[16];    //the tone of the current or last transmission
+  char ani[24];        //the DTMF ANI of the current or last transmission
+  unsigned long tx;    //transmissions so far (key-ups)
+  double t_keyup;      //wall clock of the last key-up
+  int voice;           //this transmission sounds like speech so far (not noise, not a digital signal)
+} web_analog_info;
+
+void web_analog_retuned (dsd_opts * opts); //tuned to opts->rtlsdr_center_freq: forget the last channel (the tap, web_analog_tap, is in dsd.h)
+void web_analog_get (web_analog_info * out);
+int  web_analog_playing (void); //analog audio went out in the last 0.6 s (dsd_web.c)
+
+//----------------------------------------------------------------------------
 // Main thread interface (dsd_web.c)
 //----------------------------------------------------------------------------
 

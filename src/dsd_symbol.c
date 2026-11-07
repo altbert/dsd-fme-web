@@ -268,6 +268,9 @@ getSymbol (dsd_opts * opts, dsd_state * state, int have_sync)
 
         if (state->analog_sample_counter == 960)
         {
+          if (opts->web_enable == 1)
+            web_analog_tap(opts, state, state->analog_out, 960);
+
           //get an rms value if not using the rtl built in version
           if (opts->audio_in_type != 3  && opts->monitor_input_audio == 1)
             opts->rtl_rms = raw_rms(state->analog_out, 960, 1);

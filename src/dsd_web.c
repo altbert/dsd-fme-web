@@ -44,12 +44,15 @@ typedef struct
   int width;      //Hz at -6 dB
 } bs_peak;
 
-//an unbroken sync being watched: when it began and the frame counters at that point
+//an unbroken sync being watched: when it began, the window it is judged on (see hold_ok)
 typedef struct
 {
   double since;          //0 = no sync
-  unsigned long frames;
-  unsigned long good;
+  double win_t;          //start of the current window and the frame counters there
+  unsigned long win_frames;
+  unsigned long win_good;
+  int trusted;           //the last closed window passed
+  int ever;              //some window of this hold passed
 } sync_hold;
 
 static struct
@@ -109,6 +112,13 @@ static struct
   double bs_cand_t, bs_gone_since;
   sync_hold bs_hold;
   int bs_lock_sync;                   //sync type that locked
+  int bs_analog;                      //the find is analog FM (a CTCSS tone or DCS code)
+  float bs_near[8];                   //strongest neighbor in the last spectra while probing, dB over the carrier
+  int bs_near_n;
+  char bs_tone[16];                   //the tone of an analog find
+  struct { long long freq; char tone[16]; } bs_an[32]; //analog finds of this scan, for telling leaks apart
+  int bs_nan;
+  uint64_t bs_near_seq;
   char bs_desc[96];                   //name for the bookmark, refined while it decodes
   int bs_found;
   long long bs_last_freq;
@@ -198,6 +208,7 @@ static void do_tune (dsd_opts * opts, dsd_state * state, long freq)
 #endif
   opts->rtlsdr_center_freq = (uint32_t)freq;
   state->last_cc_sync_time = time (NULL);
+  web_analog_retuned (opts); //the tone of the last channel is not this one's
 }
 
 //----------------------------------------------------------------------------
@@ -397,7 +408,8 @@ static int channel_active (dsd_opts * opts)
 //and stop the control channel hunt
 static int analog_wanted (dsd_opts * opts)
 {
-  if (W.bs_state != BS_OFF) return 0; //band scan hunts digital signals, the carriers it probes would just buzz
+  //the carriers the band scan probes would just buzz; an analog find it holds on plays
+  if (W.bs_state != BS_OFF) return (W.bs_state == BS_FOUND || W.bs_state == BS_FIXED) && W.bs_analog;
   if (W.user_monitor || mode_is_analog (opts)) return 1;
   return W.auto_analog && opts->p25_trunk == 0 && (W.auto_decode || mode_is_auto (opts));
 }
@@ -460,21 +472,51 @@ static void apply_mode (dsd_opts * opts, dsd_state * state, const char * m)
 
 static void hold_start (sync_hold * h, double now)
 {
-  h->since = now;
-  h->frames = W.frames;
-  h->good = W.good;
+  memset (h, 0, sizeof(*h));
+  h->since = h->win_t = now;
+  h->win_frames = W.frames;
+  h->win_good = W.good;
 }
 
-//a sync only counts once it holds. The short sync words (M17, dPMR, NXDN) can chain false
-//syncs on noise or analog audio for a second or two, so those also need a real frame rate
-//(a genuine signal brings a frame every 40-80 ms, a false chain only a few). M17 matches
-//just 8 symbol signs, so its frames also have to pass the LICH Golay check
-static int hold_ok (dsd_opts * opts, const sync_hold * h, double now)
+//a sync only counts once it holds. The short sync words (M17, dPMR, NXDN) chain false syncs on
+//noise or on any other signal over the squelch, and the chain can go on indefinitely: the carrier
+//only drops after 1800 symbols without a sync, and M17's 8 symbol signs match about every 50 ms.
+//So those are judged on 2 s windows by their frame rate: a real signal brings a frame every
+//40-80 ms. M17 frames also have to pass the LICH Golay check: a false chain on noise brings ~10
+//frames a second of which ~14 % pass (about 3 a window; 15 happens with p ~ 3e-7), a real stream
+//25 a second, still 38 % passing at a 10 % bit error rate
+#define HOLD_WIN 2.0
+static int hold_ok (dsd_opts * opts, sync_hold * h, double now)
 {
   if (!(opts->frame_m17 || opts->frame_dpmr || opts->frame_nxdn48 || opts->frame_nxdn96))
     return now - h->since >= 1.5;
-  if (now - h->since < 2.0 || W.frames - h->frames < 8) return 0;
-  return !opts->frame_m17 || W.good - h->good >= 6;
+  web_analog_info an;
+  web_analog_get (&an);
+  if (an.tone[0])
+  {
+    //CTCSS or DCS on the channel: analog FM, whatever syncs on it. The window starts again after it
+    //(over a longer one, NXDN's and dPMR's few false syncs would add up to a frame rate)
+    h->win_t = now;
+    h->win_frames = W.frames;
+    h->win_good = W.good;
+    return h->trusted = 0;
+  }
+  if (now - h->win_t >= HOLD_WIN)
+  {
+    unsigned long fr = W.frames - h->win_frames, gd = W.good - h->win_good;
+    h->trusted = opts->frame_m17 ? gd >= 15 && 3 * gd >= fr : fr >= 8;
+    h->ever |= h->trusted;
+    h->win_t = now;
+    h->win_frames = W.frames;
+    h->win_good = W.good;
+  }
+  return h->trusted;
+}
+
+//a sync that hasn't passed a window in twice that time is a false chain: carry on as without one
+static int hold_stale (const sync_hold * h, double now)
+{
+  return !h->ever && now - h->since >= 2 * HOLD_WIN;
 }
 
 static void set_modulation (dsd_opts * opts, dsd_state * state, const char * m)
@@ -682,6 +724,46 @@ static float bs_center_snr (void)
   return last;
 }
 
+//power in the 6 kHz around bin m of the spectrum bs_center_snr fetched last, 0 outside it
+static double bs_band_power (int m)
+{
+  int n = W.sf.bins, h = (int)(3000.0 / ((double)W.sf.rate / n));
+  if (h < 1) h = 1;
+  if (m - h < 0 || m + h >= n) return 0;
+  double s = 0;
+  for (int k = m - h; k <= m + h; k++) s += W.sf.power[k];
+  return s;
+}
+
+//the strongest carrier 9-40 kHz either side of the tuned one, in dB over the tuned one (6 kHz
+//each, which takes in most of a narrowband FM signal); -999 until a fresh spectrum
+static float bs_neighbor_db (void)
+{
+  if (W.sf.bins < 64 || W.sf.start_time < W.bs_t + BS_SETTLE) return -999;
+  int n = W.sf.bins;
+  double hz = (double)W.sf.rate / n, c = bs_band_power (n / 2), best = 0;
+  int lo = (int)(9000.0 / hz), hi = (int)(40000.0 / hz);
+  for (int side = -1; side <= 1; side += 2)
+    for (int o = lo; o <= hi; o++)
+    {
+      double s = bs_band_power (n / 2 + side * o);
+      if (s > best) best = s;
+    }
+  return c > 0 && best > 0 ? 10.0f * log10f ((float)(best / c)) : -999;
+}
+
+//dB the carrier at freq stands over the tuned one now, -999 when not in the clean part of the
+//capture (-15 %..+45 % of the span, as the peak finder) or no fresh spectrum
+static float bs_level_at (long long freq, long long tuned)
+{
+  if (W.sf.bins < 64 || W.sf.start_time < W.bs_t + BS_SETTLE || W.sf.rate == 0) return -999;
+  int n = W.sf.bins;
+  double hz = (double)W.sf.rate / n, off = (double)(freq - tuned);
+  if (off < -0.15 * W.sf.rate || off > 0.45 * W.sf.rate) return -999;
+  double c = bs_band_power (n / 2), s = bs_band_power (n / 2 + (int)llround (off / hz));
+  return c > 0 && s > 0 ? 10.0f * log10f ((float)(s / c)) : -999;
+}
+
 static int bs_skipped (long long f, double now)
 {
   for (int i = 0; i < W.bs_nskip; i++)
@@ -803,10 +885,16 @@ static void bs_save (dsd_opts * opts, dsd_state * state)
   bm.freq = llabs (ch - pk->freq) <= 1000 ? ch : llround (pk->freq / 100.0) * 100;
   snprintf (bm.name, sizeof(bm.name), "%s", W.bs_desc);
   snprintf (bm.group, sizeof(bm.group), "Band scan");
-  snprintf (bm.mode, sizeof(bm.mode), "%s", bs_sync_key (opts, state, W.bs_lock_sync));
+  snprintf (bm.mode, sizeof(bm.mode), "%s", W.bs_analog ? "analog" : bs_sync_key (opts, state, W.bs_lock_sync));
   int existed = bm_near (bm.freq, 2500);
   int id = bm_add (&bm);
   W.bs_found++;
+  if (W.bs_analog && W.bs_nan < (int)(sizeof(W.bs_an) / sizeof(W.bs_an[0])))
+  {
+    W.bs_an[W.bs_nan].freq = bm.freq;
+    snprintf (W.bs_an[W.bs_nan].tone, sizeof(W.bs_an[0].tone), "%s", W.bs_tone);
+    W.bs_nan++;
+  }
   W.bs_last_freq = bm.freq;
   snprintf (W.bs_last_name, sizeof(W.bs_last_name), "%s", W.bs_desc);
   if (existed) web_log ("Band scan: %s on %.6f MHz (already bookmarked).", W.bs_desc, bm.freq / 1e6);
@@ -897,6 +985,8 @@ static void bs_probe (dsd_opts * opts, dsd_state * state)
   W.bs_hold.since = 0;
   W.bs_gone_since = 0;
   W.bs_desc[0] = 0;
+  W.bs_analog = 0;
+  W.bs_near_n = 0;
   W.bs_state = BS_PROBE;
 }
 
@@ -1073,6 +1163,7 @@ static void bs_start (dsd_opts * opts, dsd_state * state, jv * cmd)
     W.bs_pass = 1;
     W.bs_nskip = 0;
     W.bs_found = 0;
+    W.bs_nan = 0;
   }
   W.bs_win_total = 0;
   for (int i = 0; i < W.bs_nranges; i++) W.bs_win_total += bs_windows (i);
@@ -1148,18 +1239,73 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
       if (snr < W.bs_thr_db - 4.0f) { if (W.bs_gone_since == 0) W.bs_gone_since = now; }
       else W.bs_gone_since = 0;
     }
-    if (state->carrier == 1)
+    //a CTCSS tone or DCS code: analog FM, no decoder needed (untoned carriers go through them all)
+    web_analog_info an;
+    web_analog_get (&an);
+    //is the tone this carrier's? The RTL channel filter lets strong carriers in from anywhere in the
+    //capture (13-34 dB down), and strong ones make intermodulation products that show up as weak
+    //carriers. So not when a find of this scan with the same tone stands 10 dB over it right now,
+    //nor with any carrier 12 dB over it within 40 kHz (in the sweep or while probing: carriers key
+    //up and down)
+    if (snr > -900 && W.sf.seq != W.bs_near_seq)
     {
-      //short sync words false trigger on noise and analog audio, only a sync that holds counts
-      if (W.bs_hold.since == 0) hold_start (&W.bs_hold, now);
-      if (!hold_ok (opts, &W.bs_hold, now)) return;
-      W.bs_lock_sync = state->lastsynctype;
-      bs_describe (opts, state);
+      W.bs_near_seq = W.sf.seq;
+      float nd = snr >= W.bs_thr_db - 4.0f ? bs_neighbor_db () : -999;
+      if (nd > -900) W.bs_near[W.bs_near_n++ % 8] = nd;
+      else W.bs_near_n = 0; //the carrier is off: what was near it then says nothing about its tone
+    }
+    int leak = 0;
+    if (an.tone[0])
+    {
+      //the median of the last spectra: one taken while the carrier keys up (or the dongle settles)
+      //says nothing
+      int m = W.bs_near_n < 8 ? W.bs_near_n : 8;
+      float v[8];
+      memcpy (v, W.bs_near, sizeof(v));
+      for (int i = 1; i < m; i++)
+        for (int j = i; j > 0 && v[j] < v[j-1]; j--) { float t = v[j]; v[j] = v[j-1]; v[j-1] = t; }
+      if (m >= 3 && v[m / 2] >= 12.0f) leak = 1;
+      for (int j = 0; j < W.bs_npeaks && !leak; j++)
+        if (j != W.bs_peak_idx && llabs (W.bs_peaks[j].freq - pk->freq) <= 40000 && W.bs_peaks[j].snr >= pk->snr + 12.0f) leak = 1;
+      for (int j = 0; j < W.bs_nan && !leak; j++)
+        if (llabs (W.bs_an[j].freq - pk->freq) > 3000 && !strcmp (W.bs_an[j].tone, an.tone) && bs_level_at (W.bs_an[j].freq, (long long)W.sf.center) >= 10.0f)
+          leak = 2;
+    }
+    if (leak)
+    {
+      //no decoder would hear anything but that carrier either; not on the skip list, so a later
+      //pass (with that one quiet) looks again
+      web_log ("Band scan: %s heard on %.6f MHz, but %s may be what is heard; looking again later.", an.tone, pk->freq / 1e6,
+               leak == 2 ? "a stronger carrier with the same tone" : "a carrier 12 dB stronger within 40 kHz");
+      bs_next_peak (opts, state);
+      return;
+    }
+    if (an.tone[0])
+    {
+      W.bs_analog = 1;
+      W.bs_lock_sync = -1;
+      snprintf (W.bs_tone, sizeof(W.bs_tone), "%s", an.tone);
+      snprintf (W.bs_desc, sizeof(W.bs_desc), "Analog FM %s", an.tone);
+      apply_mode (opts, state, "analog"); //what plays when the scan holds here
       W.bs_t = now;
       W.bs_state = BS_FOUND;
       return;
     }
-    W.bs_hold.since = 0;
+    if (state->carrier == 1)
+    {
+      //short sync words false trigger on noise and analog audio, only a sync that holds counts
+      if (W.bs_hold.since == 0) hold_start (&W.bs_hold, now);
+      if (hold_ok (opts, &W.bs_hold, now))
+      {
+        W.bs_lock_sync = state->lastsynctype;
+        bs_describe (opts, state);
+        W.bs_t = now;
+        W.bs_state = BS_FOUND;
+        return;
+      }
+      if (!hold_stale (&W.bs_hold, now)) return; //give it its windows; a false chain gets the decoder's turn
+    }
+    else W.bs_hold.since = 0;
     if (W.bs_gone_since && now - W.bs_gone_since > 1.0)
     {
       bs_next_peak (opts, state); //the transmission ended, it gets another look on a later pass
@@ -1180,8 +1326,8 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
   if (W.bs_state == BS_FOUND)
   {
     //a few seconds of decoding pick up ids (color code, NAC, RAN, callsign) for the name
-    if (state->carrier == 1) bs_describe (opts, state);
-    if (now - W.bs_t < 3.0 && state->carrier == 1) return;
+    if (state->carrier == 1 && !W.bs_analog) bs_describe (opts, state);
+    if (now - W.bs_t < 3.0 && state->carrier == 1 && !W.bs_analog) return;
     bs_save (opts, state);
     if (W.bs_keep_going) bs_next_peak (opts, state);
     else
@@ -2200,17 +2346,32 @@ static void run_auto_decode (dsd_opts * opts, dsd_state * state)
   if (state->carrier == 1)
   {
     if (W.ad_hold.since == 0) hold_start (&W.ad_hold, now);
-    if (!hold_ok (opts, &W.ad_hold, now)) return; //not trusted yet, but don't switch away mid-sync either
-    W.ad_locked = 1;
-    W.ad_last_sync = now; //locked, hold this mode
-    W.ad_tried = 0;
-    return;
+    if (hold_ok (opts, &W.ad_hold, now))
+    {
+      W.ad_locked = 1;
+      W.ad_last_sync = now; //locked, hold this mode
+      W.ad_tried = 0;
+      return;
+    }
+    if (!hold_stale (&W.ad_hold, now)) return; //not trusted yet, but don't switch away mid-sync either
+    //a false chain: go on probing as if there were no sync
   }
-  W.ad_hold.since = 0;
+  else W.ad_hold.since = 0;
 
   if (!active) return; //nothing to probe without a signal
 
   if (W.ad_analog) return;                  //analog FM: hold
+  web_analog_info an;
+  web_analog_get (&an);
+  if (an.tone[0])
+  {
+    //a CTCSS tone or DCS code says analog FM right away, no need to go through the decoders
+    W.ad_analog = 1;
+    W.ad_idx = AD_AUTO;
+    if (ad_current (opts, state) != AD_AUTO) apply_mode (opts, state, "auto");
+    web_log ("Auto-decode: %s on the channel, treating it as analog FM.", an.tone);
+    return;
+  }
   if (now - W.ad_last_sync < 6.0) return;   //recently had sync, wait a bit longer
   if (now - W.ad_last_switch < 4.0) return; //give each candidate a few seconds
 
@@ -2354,6 +2515,16 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_bool (b, "floating_point", opts->floating_point);
   jb_dbl (b, "digi_gain", state->aout_gain * 2, 0);
   jb_dbl (b, "analog_gain", opts->audio_gainA, 0);
+  jb_obj_end (b);
+
+  //analog FM identification: what is heard now, and the tone and ANI of the current or last transmission
+  web_analog_info an;
+  web_analog_get (&an);
+  jb_obj (b, "analog_id");
+  jb_bool (b, "active", an.active);
+  jb_str (b, "tone", an.tone);
+  jb_str (b, "tx_tone", an.tx_tone);
+  jb_str (b, "ani", an.ani);
   jb_obj_end (b);
 
   //trunking / scanner
@@ -2596,6 +2767,12 @@ void web_shutdown (dsd_opts * opts, dsd_state * state)
   spectrum_stop ();
   web_server_stop ();
   W.inited = 0;
+}
+
+//analog audio went out lately (the monitor is playing what is on the channel)
+int web_analog_playing (void)
+{
+  return W.inited && spectrum_now () - W.analog_last < 0.6;
 }
 
 //8 kHz decoded voice (or 48 kHz analog) tap -> web audio subscribers
