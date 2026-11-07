@@ -1804,7 +1804,7 @@ void web_frame_good (void); //a frame whose FEC checked out (M17 LICH)
 void web_analog_tap (dsd_opts * opts, dsd_state * state, const short * in, int n); //no-sync audio for the CTCSS/DCS/DTMF detectors
 //read-only taps for the web activity log (dsd_web_data.c)
 void web_dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t * dheader); //DMR data header that passed its CRC
-void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok); //completed DMR packet, before it is deciphered
+void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok); //completed DMR packet, before the assembler deciphers it (Hytera BP/EP: already per block)
 void web_dmr_pdu (dsd_opts * opts, dsd_state * state, int undecrypted); //the same packet after deciphering (if a key was loaded)
 void web_p25_tsbk (dsd_opts * opts, dsd_state * state, uint8_t * tsbk); //P25 TSBK (12 bytes) that passed its CRC
 void web_p25_pdu (dsd_opts * opts, dsd_state * state, const uint8_t * pdu, int len, int confirmed, int crc_ok); //P25 packet, header block first, before it is logged

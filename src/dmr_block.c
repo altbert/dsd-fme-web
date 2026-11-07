@@ -1031,7 +1031,7 @@ void dmr_block_assembler (dsd_opts * opts, dsd_state * state, uint8_t block_byte
       else if (state->data_header_format[slot] == 0xF && state->data_header_sap[slot] == 1)
         CRCCorrect = 1;
 
-      //web activity log: the packet as received, before anything below deciphers it in place
+      //web activity log: the packet before the code below deciphers it (Hytera BP/EP with a key: already done by dmr_dburst.c)
       if (opts->web_enable == 1)
         web_dmr_pdu_raw (opts, state, CRCComputed == CRCExtracted);
 

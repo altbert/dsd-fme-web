@@ -1875,7 +1875,9 @@ static void pkt_publish (int slot, act_item * a, uint32_t h)
 }
 
 //before the assembler deciphers anything: keep the packet as received and check its CRC
-//(the assembler's own check does not cover Motorola proprietary packets correctly)
+//(the assembler's own check does not cover Motorola proprietary packets correctly). Hytera BP/EP
+//packets come here already deciphered when their key is loaded: dmr_dburst.c does those block by
+//block, CRC included
 void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok)
 {
   UNUSED(opts);
@@ -1906,7 +1908,7 @@ void web_dmr_pdu (dsd_opts * opts, dsd_state * state, int undecrypted)
   int crc_ok = A.raw_crc[slot];
   int poc = state->data_block_poc[slot];
   int sap = state->data_header_sap[slot];
-  //deciphered by the assembler when it had the key, otherwise still as received
+  //deciphered when a key was loaded (by the assembler, or block by block for Hytera), otherwise as received
   static uint8_t buf[24 * 128];
   memcpy (buf, undecrypted ? A.raw[slot] : state->dmr_pdu_sf[slot], (size_t)ctr);
   //Motorola proprietary header (SAP 1, DPF 15, MFID 10) stored ahead of the data
