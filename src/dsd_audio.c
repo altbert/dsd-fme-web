@@ -28,9 +28,14 @@ pa_buffer_attr lt;
 
 void closePulseOutput (dsd_opts * opts)
 {
-  pa_simple_free (opts->pulse_digi_dev_out);
-  if (opts->frame_provoice == 1 || opts->monitor_input_audio == 1) //EDACS analog calls and/or monitoring source analog audio
+  //free the streams that are open, not the ones the current settings would open:
+  //-fA never opens the digital one, and the ncurses menu changes those settings
+  if (opts->pulse_digi_dev_out != NULL)
+    pa_simple_free (opts->pulse_digi_dev_out);
+  opts->pulse_digi_dev_out = NULL;
+  if (opts->pulse_raw_dev_out != NULL) //EDACS analog calls and/or monitoring source analog audio
     pa_simple_free (opts->pulse_raw_dev_out);
+  opts->pulse_raw_dev_out = NULL;
 }
 
 void closePulseInput (dsd_opts * opts)
@@ -60,7 +65,8 @@ void openPulseOutput(dsd_opts * opts)
   ff.rate = opts->pulse_digi_rate_out;
 
   //reconfigured to open when using edacs or raw analog monitor so we can have a analog audio out that runs at 48k1 and not 8k1 float/short
-  if (opts->frame_provoice == 1 || opts->monitor_input_audio == 1)
+  //streams that are already open are left alone, so this can be called again to open only what is missing
+  if ( (opts->frame_provoice == 1 || opts->monitor_input_audio == 1) && opts->pulse_raw_dev_out == NULL )
     opts->pulse_raw_dev_out  = pa_simple_new(NULL, "DSD-FME3", PA_STREAM_PLAYBACK, dev, "Analog", &ss, 0, NULL, &err);
 
   if (err != 0)
@@ -75,7 +81,7 @@ void openPulseOutput(dsd_opts * opts)
   pa_channel_map* fl = 0; //NULL and 0 are same in this context
   pa_channel_map* ss = 0; //NULL and 0 are same in this context
 
-  if (opts->floating_point == 0 && opts->analog_only == 0)
+  if (opts->floating_point == 0 && opts->analog_only == 0 && opts->pulse_digi_dev_out == NULL)
   {
     opts->pulse_digi_dev_out = pa_simple_new(NULL, "DSD-FME", PA_STREAM_PLAYBACK, dev, opts->output_name, &tt, ss, NULL, &err);
 
@@ -89,7 +95,7 @@ void openPulseOutput(dsd_opts * opts)
     }
   }
 
-  if (opts->floating_point == 1 && opts->analog_only == 0)
+  if (opts->floating_point == 1 && opts->analog_only == 0 && opts->pulse_digi_dev_out == NULL)
   {
     opts->pulse_digi_dev_out = pa_simple_new(NULL, "DSD-FME", PA_STREAM_PLAYBACK, dev, opts->output_name, &ff, fl, NULL, &err);
 
