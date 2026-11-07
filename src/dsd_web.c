@@ -14,6 +14,7 @@
 #include "bp.h"      //BPK[256] Basic Privacy lookup table
 #include <dirent.h>
 #include <errno.h>
+#include <locale.h>
 
 #ifdef USE_RTLSDR
 #include <rtl-sdr.h>
@@ -2718,8 +2719,25 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
 // Public entry points
 //----------------------------------------------------------------------------
 
+//Upstream switches the process to the environment's locale (setlocale (LC_ALL, "")) the first time
+//it decodes a UTF-16 talker alias (dsd_alias.c, nxdn_element.c), so that %lc prints it. From then on
+//printf and strtod take the user's decimal separator, and with a decimal comma (es_AR, most of Europe
+//and Latin America) every JSON number with a fraction, "t":1794068886,652, makes the page's JSON.parse
+//throw: status and activity stop updating while the console goes on. The decoder thread, which builds
+//and parses all of the web's JSON, keeps a locale of its own: the environment's, which %lc wants, with
+//C numbers
+static void web_c_numbers (void)
+{
+  locale_t env = newlocale (LC_ALL_MASK, "", (locale_t)0);
+  if (env == (locale_t)0) return; //no usable environment locale: upstream's setlocale fails as well, C stays
+  locale_t loc = newlocale (LC_NUMERIC_MASK, "C", env);
+  if (loc == (locale_t)0) { freelocale (env); return; }
+  uselocale (loc); //for the life of the process
+}
+
 void web_init (dsd_opts * opts, dsd_state * state)
 {
+  web_c_numbers (); //web_init runs on the decoder thread
   W.opts = opts;
   W.state = state;
   snprintf (W.password, sizeof(W.password), "%s", opts->web_password);
