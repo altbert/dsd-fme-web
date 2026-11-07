@@ -19,10 +19,6 @@
 #include <rtl-sdr.h>
 #endif
 
-//candidate decoder modes the auto-decode machine cycles through when a fixed
-//frequency produces no sync (the ones DSD-FME cannot passively auto-detect)
-enum { AD_AUTO = 0, AD_NXDN48, AD_NXDN96, AD_DPMR, AD_M17, AD_PROVOICE, AD_COUNT };
-
 //decoder keys the web UI knows, "autodecode" (bookmarks) hands the channel to the auto-decode machine
 static const char * web_modes[] = { "auto", "tdma", "p25p1", "p25p2", "dmr", "nxdn48", "nxdn96", "dpmr",
   "ysf", "dstar", "m17", "provoice", "edacs", "analog", "autodecode", NULL };
@@ -68,15 +64,15 @@ static struct
   int auto_tune;
   double last_autotune;
 
-  //auto decode (cycle non-detectable modes until a sync holds)
+  //auto decode (the sync detector hears what the channel carries, the decoder is switched to it)
   int auto_decode;
-  int ad_idx;
-  int ad_tried;          //candidates that had their window on a live signal without a sync
-  int ad_analog;         //verdict: analog FM (AUTO keeps watching for P25/DMR/YSF/D-STAR/X2)
+  int ad_analog;         //verdict: analog FM (AUTO and the sync detector keep listening)
   int ad_locked;         //sync has held long enough to trust it
-  double ad_last_switch;
-  double ad_last_sync;
-  double ad_last_active; //last time the squelch was open
+  double ad_quiet;       //the detector's listening time when a sync was last heard or held
+  int ad_try;            //protocol (web_detect_get) the decoder was switched to, its sync not held yet; -1 none
+  double ad_try_listen;  //the detector's listening time then
+  double ad_try_t;
+  unsigned ad_reject;    //protocols whose sync didn't hold on this channel, or heard inverted (a bit each)
   sync_hold ad_hold;     //the current unbroken sync
   unsigned long frames;  //frames the decoder accepted (web_frame_tap)
   unsigned long good;    //frames whose FEC checked out (web_frame_good)
@@ -108,8 +104,11 @@ static struct
   float bs_acc[16384];                //summed spectra of the window
   bs_peak bs_peaks[BS_MAX_PEAKS];     //carriers queued in the window
   int bs_npeaks, bs_peak_idx;
-  int bs_order[AD_COUNT], bs_cand;    //decoders to try on the carrier, current one
-  double bs_cand_t, bs_gone_since;
+  int bs_find;                        //protocol the sync detector heard on the carrier, -1 none yet
+  double bs_find_listen, bs_find_t;  //its listening time then, and when
+  unsigned bs_reject;                 //protocols whose sync didn't hold on the carrier (a bit each)
+  double bs_quiet, bs_quiet_t;        //listening time and clock when the listening for a (next) find began
+  double bs_gone_since;
   sync_hold bs_hold;
   int bs_lock_sync;                   //sync type that locked
   int bs_analog;                      //the find is analog FM (a CTCSS tone or DCS code)
@@ -378,20 +377,6 @@ static const char * mode_key (dsd_opts * opts, dsd_state * state)
   return "";
 }
 
-static const char * ad_mode_name (int i)
-{
-  switch (i)
-  {
-    case AD_AUTO: return "auto";
-    case AD_NXDN48: return "nxdn48";
-    case AD_NXDN96: return "nxdn96";
-    case AD_DPMR: return "dpmr";
-    case AD_M17: return "m17";
-    case AD_PROVOICE: return "provoice";
-  }
-  return "auto";
-}
-
 //----------------------------------------------------------------------------
 // Audio devices and the analog (non digital) passthrough
 //----------------------------------------------------------------------------
@@ -530,28 +515,34 @@ static void set_modulation (dsd_opts * opts, dsd_state * state, const char * m)
 // Auto decode control, channel changes and bookmarks
 //----------------------------------------------------------------------------
 
-//index of the current decoder among the auto-decode candidates, -1 if it is not one
-static int ad_current (dsd_opts * opts, dsd_state * state)
+//the sync detector heard a protocol: 1 the decoder was switched to one that takes it, 0 the decoder
+//as set takes it already, -1 no decoder takes it as set (its polarity, logged)
+static int follow_find (dsd_opts * opts, dsd_state * state, const web_detect_info * d, const char * who)
 {
-  const char * k = mode_key (opts, state);
-  for (int i = 0; i < AD_COUNT; i++)
-    if (!strcmp (k, ad_mode_name (i))) return i;
-  return -1;
+  if (!web_detect_polarity_ok (opts, d))
+  {
+    if (!strcmp (d->key, "m17")) web_log ("%s: M17 heard inverted, which DSD-FME doesn't decode.", who);
+    else web_log ("%s: %s heard %s; switch Inverted %s (Decode) to decode it.", who, d->name,
+                  d->inverted ? "inverted" : "upright", d->inverted ? "on" : "off");
+    return -1;
+  }
+  if (web_detect_covered (opts, state, d->fam)) return 0;
+  apply_mode (opts, state, d->key);
+  web_log ("%s: %s sync heard, switching to %s.", who, d->name, opts->output_name);
+  return 1;
 }
 
-//probe again from scratch; a new channel always starts at AUTO since it covers the common modes
+//listen again from scratch; a new channel always starts at AUTO since it covers the common modes
 static void ad_restart (dsd_opts * opts, dsd_state * state, int from_auto)
 {
-  W.ad_tried = 0;
   W.ad_analog = 0;
   W.ad_locked = 0;
-  W.ad_last_switch = spectrum_now ();
-  W.ad_last_sync = 0;
-  W.ad_last_active = 0;
+  W.ad_quiet = 0;
+  W.ad_try = -1;
+  W.ad_reject = 0;
   W.ad_hold.since = 0;
-  int cur = ad_current (opts, state);
-  W.ad_idx = (from_auto || cur < 0) ? AD_AUTO : cur;
-  if (W.ad_idx != cur) apply_mode (opts, state, ad_mode_name (W.ad_idx));
+  web_detect_reset ();
+  if (from_auto && !mode_is_auto (opts)) apply_mode (opts, state, "auto");
 }
 
 static void ad_enable (dsd_opts * opts, dsd_state * state, int on)
@@ -966,22 +957,23 @@ static void bs_next_window (dsd_opts * opts, dsd_state * state)
   bs_tune_window (opts, state);
 }
 
-//tune a queued carrier and start on the decoders most likely to fit its occupied width
+//tune a queued carrier and listen there for every protocol's sync, the decoder waiting on AUTO
+//(which takes P25p1, DMR, YSF, D-STAR and X2-TDMA itself)
 static void bs_probe (dsd_opts * opts, dsd_state * state)
 {
-  static const int narrow[AD_COUNT] = { AD_NXDN48, AD_DPMR, AD_AUTO, AD_NXDN96, AD_M17, AD_PROVOICE };
-  static const int mid[AD_COUNT]    = { AD_AUTO, AD_NXDN96, AD_NXDN48, AD_DPMR, AD_M17, AD_PROVOICE };
-  static const int wide[AD_COUNT]   = { AD_PROVOICE, AD_AUTO, AD_NXDN96, AD_NXDN48, AD_DPMR, AD_M17 };
   bs_peak * pk = &W.bs_peaks[W.bs_peak_idx];
-  memcpy (W.bs_order, pk->width < 5000 ? narrow : (pk->width > 14000 ? wide : mid), sizeof(W.bs_order));
-  W.bs_cand = 0;
   do_tune (opts, state, (long)pk->freq);
+  web_detect_reset (); //also for a carrier within 3 kHz of the window's tuned spot, which do_tune leaves alone
   bs_forget_ids (state);
-  //NXDN/dPMR/M17 only look for sync above the RMS squelch: just over the noise lets weak
-  //carriers through but keeps noise from feeding their short sync words
+  //NXDN/dPMR/M17 only look for sync above the RMS squelch, and so does the sync detector: just over
+  //the noise lets weak carriers through but keeps noise from feeding their short sync words
   opts->rtl_squelch_level = (int)(W.bs_noise * 1.6f) + 1;
-  apply_mode (opts, state, ad_mode_name (W.bs_order[0]));
-  W.bs_t = W.bs_cand_t = spectrum_now ();
+  apply_mode (opts, state, "auto");
+  W.bs_t = spectrum_now ();
+  W.bs_find = -1;
+  W.bs_reject = 0;
+  W.bs_quiet = 0;
+  W.bs_quiet_t = W.bs_t;
   W.bs_hold.since = 0;
   W.bs_gone_since = 0;
   W.bs_desc[0] = 0;
@@ -1303,7 +1295,7 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
         W.bs_state = BS_FOUND;
         return;
       }
-      if (!hold_stale (&W.bs_hold, now)) return; //give it its windows; a false chain gets the decoder's turn
+      if (!hold_stale (&W.bs_hold, now)) return; //give it its windows; a false chain doesn't stop the listening
     }
     else W.bs_hold.since = 0;
     if (W.bs_gone_since && now - W.bs_gone_since > 1.0)
@@ -1311,15 +1303,35 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
       bs_next_peak (opts, state); //the transmission ended, it gets another look on a later pass
       return;
     }
-    if (now - W.bs_cand_t < 2.0) return; //this decoder's turn (the first one also covers the retune)
-    if (++W.bs_cand >= AD_COUNT)
+    //the sync detector: a protocol it hears gets its decoder (AUTO may take it as it is), whose
+    //sync then has 4 s of signal to hold, or else the next protocol heard gets its turn; with
+    //nothing (more) heard in 3 s of signal the carrier is left alone (the tone detectors are done
+    //by then too). The clock limits are for a carrier that keeps the squelch shut (no listening
+    //time) and a decoder holding false syncs (the decoder reads that audio as frames)
+    web_detect_info d;
+    web_detect_get (&d);
+    if (W.bs_find >= 0)
     {
-      bs_skip_add (pk->freq, now); //live carrier no decoder locks on: analog, paging, unsupported digital
-      bs_next_peak (opts, state);
+      if (d.listen - W.bs_find_listen < 4.0 && now - W.bs_find_t < 8.0) return;
+      web_log ("Band scan: %s heard on %.6f MHz, but its sync didn't hold.", web_detect_name (W.bs_find), pk->freq / 1e6);
+      W.bs_reject |= 1u << W.bs_find;
+      W.bs_find = -1;
+      W.bs_quiet = d.listen;
+      W.bs_quiet_t = now;
+      if (!mode_is_auto (opts)) apply_mode (opts, state, "auto");
       return;
     }
-    apply_mode (opts, state, ad_mode_name (W.bs_order[W.bs_cand]));
-    W.bs_cand_t = now;
+    if (d.fam >= 0 && !(W.bs_reject >> d.fam & 1))
+    {
+      if (follow_find (opts, state, &d, "Band scan") < 0) { W.bs_reject |= 1u << d.fam; return; }
+      W.bs_find = d.fam;
+      W.bs_find_listen = d.listen;
+      W.bs_find_t = now;
+      return;
+    }
+    if (d.listen - W.bs_quiet < 3.0 && now - W.bs_quiet_t < 8.0) return;
+    bs_skip_add (pk->freq, now); //live carrier no decoder locks on: analog, paging, unsupported digital
+    bs_next_peak (opts, state);
     return;
   }
 
@@ -2120,7 +2132,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   else if (!strcmp (c, "auto_analog"))
   {
     W.auto_analog = jv_bool (cmd, "enable", 1);
-    if (!W.auto_analog) { W.ad_analog = 0; W.ad_tried = 0; } //resume probing digital decoders
+    if (!W.auto_analog) W.ad_analog = 0; //no analog verdict without the fallback
     update_analog (opts, state);
     web_log ("Analog fallback in AUTO / auto-decode %s", W.auto_analog ? "enabled" : "disabled");
   }
@@ -2312,19 +2324,21 @@ static void run_auto_tune (dsd_opts * opts, dsd_state * state)
 }
 
 //----------------------------------------------------------------------------
-// Auto decode: cycle candidate modes until a sync holds on a fixed frequency
+// Auto decode: switch the decoder to what the sync detector hears
 //
-// Candidates only advance while the squelch is open, so each one gets a fair
-// window on a live signal. A decoder only counts as locked once its sync holds
-// unbroken for a while: the short sync words (M17, dPMR, NXDN) false-trigger
-// on analog audio, but those syncs drop again within a second.
+// The sync detector (dsd_web_detect.c) listens for every protocol's sync at
+// once while the decoder waits on AUTO, which takes P25p1, DMR, YSF, D-STAR and
+// X2-TDMA itself. A protocol AUTO doesn't take gets its own decoder, which
+// only counts as locked once its sync holds unbroken for a while (hold_ok):
+// the short sync words (M17, dPMR, NXDN) false-trigger on noise and analog
+// audio. A decoder whose sync doesn't hold in 4 s of signal goes back to AUTO
+// and isn't tried again until the next retune.
 //
-// With the analog fallback on, the passthrough plays any unsynced signal right
-// away (no waiting for the probe), and once every candidate has failed on a
-// live signal the channel is called analog FM: the probe stops churning
-// decoders and parks on AUTO, which still picks up P25/DMR/YSF/D-STAR/X2
-// instantly, so mixed analog/digital repeaters keep the verdict. It lasts
-// until the next retune.
+// A CTCSS tone or DCS code, or (with the analog fallback on) 4 s of signal
+// with no sync of any protocol heard or held since the last one, calls the
+// channel analog FM; the passthrough plays any unsynced signal anyway. The
+// verdict lasts until the next retune, but a sync heard later still switches
+// the decoder, so a channel shared by analog and digital radios gets both.
 //----------------------------------------------------------------------------
 
 static void run_auto_decode (dsd_opts * opts, dsd_state * state)
@@ -2333,14 +2347,9 @@ static void run_auto_decode (dsd_opts * opts, dsd_state * state)
   if (opts->p25_trunk || opts->scanner_mode) return;
   double now = spectrum_now ();
 
-  //activity is an open squelch or a sync being held; when it starts after a quiet spell
-  //the current decoder gets a fresh window
-  int active = channel_active (opts) || state->carrier == 1;
-  if (active)
-  {
-    if (now - W.ad_last_active > 1.0) W.ad_last_switch = now;
-    W.ad_last_active = now;
-  }
+  web_detect_info d;
+  web_detect_get (&d);
+  if (state->carrier == 1 || d.fam >= 0) W.ad_quiet = d.listen; //something digital: no analog verdict yet
 
   W.ad_locked = 0;
   if (state->carrier == 1)
@@ -2349,45 +2358,60 @@ static void run_auto_decode (dsd_opts * opts, dsd_state * state)
     if (hold_ok (opts, &W.ad_hold, now))
     {
       W.ad_locked = 1;
-      W.ad_last_sync = now; //locked, hold this mode
-      W.ad_tried = 0;
+      W.ad_try = -1;
       return;
     }
     if (!hold_stale (&W.ad_hold, now)) return; //not trusted yet, but don't switch away mid-sync either
-    //a false chain: go on probing as if there were no sync
+    //a false chain: the decoder reads most of the audio as frames then, which the detector doesn't
+    //get, so listen on AUTO (long syncs only) until the detector hears what is there
+    if (W.ad_try < 0 && !mode_is_auto (opts))
+    {
+      web_log ("Auto-decode: no %s sync that holds, listening on AUTO.", opts->output_name);
+      apply_mode (opts, state, "auto");
+      return;
+    }
   }
   else W.ad_hold.since = 0;
 
-  if (!active) return; //nothing to probe without a signal
+  //a decoder switched to on a find gets 4 s of signal for its sync to hold, then it is AUTO again
+  //(the clock limit is for one that holds false syncs, which keep the audio from the detector)
+  if (W.ad_try >= 0 && (d.listen - W.ad_try_listen >= 4.0 || now - W.ad_try_t >= 8.0))
+  {
+    W.ad_reject |= 1u << W.ad_try;
+    web_log ("Auto-decode: %s heard, but its sync didn't hold; back to AUTO.", web_detect_name (W.ad_try));
+    W.ad_try = -1;
+    if (!mode_is_auto (opts)) apply_mode (opts, state, "auto");
+    return;
+  }
+  if (d.fam >= 0 && !(W.ad_reject >> d.fam & 1))
+  {
+    int r = follow_find (opts, state, &d, "Auto-decode");
+    if (r < 0) W.ad_reject |= 1u << d.fam; //told once per channel
+    else if (r > 0)
+    {
+      W.ad_try = d.fam;
+      W.ad_try_listen = d.listen;
+      W.ad_try_t = now;
+      return;
+    }
+  }
 
-  if (W.ad_analog) return;                  //analog FM: hold
+  if (W.ad_analog) return;
   web_analog_info an;
   web_analog_get (&an);
   if (an.tone[0])
   {
-    //a CTCSS tone or DCS code says analog FM right away, no need to go through the decoders
+    //a CTCSS tone or DCS code says analog FM right away
     W.ad_analog = 1;
-    W.ad_idx = AD_AUTO;
-    if (ad_current (opts, state) != AD_AUTO) apply_mode (opts, state, "auto");
+    if (W.ad_try < 0 && !mode_is_auto (opts)) apply_mode (opts, state, "auto");
     web_log ("Auto-decode: %s on the channel, treating it as analog FM.", an.tone);
     return;
   }
-  if (now - W.ad_last_sync < 6.0) return;   //recently had sync, wait a bit longer
-  if (now - W.ad_last_switch < 4.0) return; //give each candidate a few seconds
-
-  if (W.ad_tried < AD_COUNT) W.ad_tried++;
-  if (W.auto_analog && W.ad_tried >= AD_COUNT)
+  if (W.auto_analog && d.listen - W.ad_quiet >= 4.0)
   {
     W.ad_analog = 1;
-    W.ad_idx = AD_AUTO;
-    if (ad_current (opts, state) != AD_AUTO) apply_mode (opts, state, "auto");
-    web_log ("Auto-decode: no digital sync on an active channel, treating it as analog FM.");
-    return;
+    web_log ("Auto-decode: no digital sync in 4 s of signal, treating it as analog FM.");
   }
-  W.ad_idx = (W.ad_idx + 1) % AD_COUNT;
-  apply_mode (opts, state, ad_mode_name (W.ad_idx));
-  W.ad_last_switch = now;
-  web_log ("Auto-decode: trying %s", opts->output_name);
 }
 
 //----------------------------------------------------------------------------
@@ -2573,20 +2597,23 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_bool (b, "rec_wav", opts->dmr_stereo_wav);
   jb_obj_end (b);
 
-  //auto-decode progress
+  //auto-decode progress, and what the sync detector hears (both it and the band scan use it)
+  web_detect_info di;
+  web_detect_get (&di);
   jb_obj (b, "auto");
   const char * ad = "off";
   if (W.auto_decode)
   {
     if (opts->p25_trunk || opts->scanner_mode) ad = "paused";
     else if (W.ad_locked && state->carrier) ad = "sync";
+    else if (W.ad_try >= 0) ad = "heard";
     else if (W.ad_analog) ad = "analog";
     else if (!channel_active (opts)) ad = "idle";
     else ad = "probe";
   }
   jb_str (b, "state", ad);
-  jb_int (b, "tried", W.ad_tried);
-  jb_int (b, "total", AD_COUNT);
+  jb_str (b, "heard", W.ad_try >= 0 ? web_detect_name (W.ad_try) : di.name);
+  jb_dbl (b, "listen", di.listen, 1);
   jb_obj_end (b);
 
   //band scan progress
@@ -2601,8 +2628,8 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
     jb_int (b, "wins", W.bs_win_total);
     jb_int (b, "pass", W.bs_pass);
     jb_int (b, "left", probing ? W.bs_npeaks - W.bs_peak_idx - 1 : 0);
-    jb_int (b, "cand", W.bs_cand + 1);
-    jb_int (b, "ncand", AD_COUNT);
+    jb_str (b, "heard", W.bs_state == BS_PROBE && W.bs_find >= 0 ? web_detect_name (W.bs_find) : "");
+    jb_dbl (b, "listen", W.bs_state == BS_PROBE ? di.listen : 0, 1);
     jb_str (b, "desc", W.bs_desc);
   }
   int skipping = 0;
@@ -2703,6 +2730,7 @@ void web_init (dsd_opts * opts, dsd_state * state)
   W.auto_analog = 1;
   W.bs_thr_db = 10;
   W.bs_skip_known = 1;
+  W.ad_try = W.bs_find = -1; //no find being tried
   W.cosine_default = opts->frame_m17 ? 1 : opts->use_cosine_filter; //-fz turns it off for M17 only
   W.user_monitor = opts->monitor_input_audio && !mode_is_analog (opts);
   W.gain_manual = opts->rtl_gain_value > 0 ? opts->rtl_gain_value : 0; //0: started on AGC, the page keeps its own
@@ -2803,6 +2831,12 @@ void web_audio_push (dsd_opts * opts, const void * data, size_t nbytes, int anal
 void web_frame_tap (dsd_state * state)
 {
   if (W.inited && state->carrier == 1) W.frames++;
+}
+
+//frames counted so far: the sync detector's audio has a gap where they were read
+unsigned long web_frames_accepted (void)
+{
+  return W.frames;
 }
 
 //a decoder found a frame whose FEC checked out (M17 LICH)

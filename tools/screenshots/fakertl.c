@@ -8,7 +8,10 @@
 // FAKERTL_STATIONS lists freq:type:amp[:option...], the frequency in Hz and the carrier amplitude in
 // 8-bit steps (the noise sigma is 3). Types: m17 (4FSK at 4800 Bd: M17 stream frames whose LICH
 // decodes, carrying a demo LSF from DEMO to @ALL; the voice payload is random), m17burst (the same,
-// on for 6 s of every 20), fm (voice-like analog FM), cw (bare carrier) and wide (broadcast-like FM).
+// on for 6 s of every 20), fm (voice-like analog FM), cw (bare carrier), wide (broadcast-like FM), and
+// dmr, dpmr, nxdn48 and nxdn96: the protocol's frame sync at its frame period with random symbols
+// in between (NXDN with a voice frame's LICH after the sync, so the decoder keeps the carrier). Those
+// decode to nothing but hold the decoders' sync.
 // Options: key=ON/PERIOD[/OFFSET] keys the station on for ON s of every PERIOD s (starting OFFSET s
 // into each period); ct=100.0 adds a CTCSS tone, dcs=023 a DCS code (normal polarity) and dtmf=1234
 // a DTMF ANI 0.3 s after each key-up (fm only), e.g. 433450000:fm:24:dcs=023:dtmf=1234:key=4/12.
@@ -34,7 +37,7 @@ typedef void (*rtlsdr_read_async_cb_t) (unsigned char * buf, uint32_t len, void 
 struct rtlsdr_dev { volatile uint32_t freq; volatile uint32_t rate; volatile int cancel; };
 static struct rtlsdr_dev dev0 = { 100000000, 1008000, 0 };
 
-enum { T_M17, T_M17B, T_FM, T_CW, T_WIDE };
+enum { T_M17, T_M17B, T_FM, T_CW, T_WIDE, T_DMR, T_DPMR, T_NXDN48, T_NXDN96 };
 typedef struct
 {
   double freq, amp, phase; int type; uint32_t seed;
@@ -77,7 +80,8 @@ static void load_stations (void)
     double f = 0, a = 20;
     if (sscanf (tok, "%lf:%15[^:]:%lf", &f, type, &a) < 2) continue;
     int t = !strcmp (type, "m17") ? T_M17 : !strcmp (type, "m17burst") ? T_M17B : !strcmp (type, "fm") ? T_FM
-          : !strcmp (type, "cw") ? T_CW : !strcmp (type, "wide") ? T_WIDE : -1;
+          : !strcmp (type, "cw") ? T_CW : !strcmp (type, "wide") ? T_WIDE : !strcmp (type, "dmr") ? T_DMR
+          : !strcmp (type, "dpmr") ? T_DPMR : !strcmp (type, "nxdn48") ? T_NXDN48 : !strcmp (type, "nxdn96") ? T_NXDN96 : -1;
     if (t < 0) { fprintf (stderr, "fakertl: unknown station type %s\n", type); continue; }
     station * s = &st[nst++];
     memset (s, 0, sizeof(*s));
@@ -164,6 +168,54 @@ static double m17_dev (station * s, double t)
   return map[s->m17_d[pos - 8]] * 800.0;
 }
 
+// Other protocols' frames: the sync word every period symbols ('1' = +3, '3' = -3, as DSD-FME writes
+// them, and 'a' = +1, 'b' = -1 for the inner symbols some words have), then random 4FSK symbols; dev
+// is Hz per level step (the outer level is 3 dev)
+typedef struct { int baud, period; const char * sync; double dev; int lich; } syn_def;
+static const syn_def syn[] = {
+  { 4800, 144, "313333111331131131331131", 648, 0 }, // dmr: a repeater's data sync in every 30 ms burst
+  { 2400, 384, "113333131331", 350, 0 },             // dpmr: FS2 every other 80 ms frame
+  { 2400, 192, "3a313311b1", 350, 1 },               // nxdn48: FSW (0xCDF59) and LICH every 80 ms
+  { 4800, 192, "3a313311b1", 800, 1 },               // nxdn96: every 40 ms
+};
+
+// NXDN: a voice frame's LICH (0x56, RTCH with voice in both halves, parity 0) the way DSD-FME reads
+// it: the bits on the dibits' high bits, the low bits 1, and the dibits scrambled by the PN9 sequence
+// (seed 228): a scrambled dibit is inverted
+static int nxdn_lich_level (int i)
+{
+  static const int map[4] = { 1, 3, -1, -3 };
+  int lich_full = 0x56 << 1;
+  uint16_t lfsr = 228;
+  int d = 0;
+  for (int k = 0; k <= i; k++)
+  {
+    d = (lich_full >> (7 - k) & 1) << 1 | 1;
+    if (lfsr & 1) d ^= 2;
+    int bit = ((lfsr >> 4) ^ lfsr) & 1;
+    lfsr = (uint16_t)(lfsr >> 1 | bit << 8);
+  }
+  return map[d];
+}
+
+static double syn_dev (station * s, double t)
+{
+  static const int lev[4] = { -3, -1, 1, 3 };
+  const syn_def * d = &syn[s->type - T_DMR];
+  uint64_t sym = (uint64_t)(t * d->baud);
+  int pos = (int)(sym % (uint64_t)d->period), len = (int)strlen (d->sync);
+  if (pos < len)
+  {
+    char c = d->sync[pos];
+    return (c == '1' ? 3 : c == '3' ? -3 : c == 'a' ? 1 : -1) * d->dev;
+  }
+  if (d->lich && pos < len + 8) return nxdn_lich_level (pos - len) * d->dev;
+  uint32_t h = s->seed ^ (uint32_t)(sym * 2654435761u);
+  if (!h) h = 1;
+  xs (&h);
+  return lev[xs (&h) & 3] * d->dev;
+}
+
 static void dtmf_tones (char c, double * lo, double * hi)
 {
   static const char keys[] = "123A456B789C*0#D";
@@ -216,6 +268,7 @@ static double station_dev (station * s, double t)
   switch (s->type)
   {
     case T_M17: case T_M17B: return m17_dev (s, t);
+    case T_DMR: case T_DPMR: case T_NXDN48: case T_NXDN96: return syn_dev (s, t);
     case T_FM: return fm_dev (s, t);
     case T_WIDE: return 60000.0 * (0.4 * sin (2 * M_PI * 1000 * t) + 0.3 * sin (2 * M_PI * 4700 * t) + 0.3 * sin (2 * M_PI * 13000 * t));
   }

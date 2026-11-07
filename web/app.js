@@ -311,9 +311,12 @@ function renderStatus(m){
   $('d-rmsv').textContent = rms+' / '+sq;
 
   // auto-decode progress (the click hint shows when it is off)
+  // probing listens for every protocol's sync at once; after 4 s of signal with none it calls the channel analog
+  const listen = (au.listen||0) < 4 ? ', '+(au.listen||0).toFixed(1)+' of 4 s' : '';
   const adText = {off:'Click the spectrum to tune.', paused:'Auto-decode paused while trunking or scanning', sync:'Locked on '+esc(d.name),
-    analog:'Analog FM, AUTO still watching', idle:'Waiting for a signal ('+esc(d.name)+')',
-    probe:'Trying '+esc(d.name)+', '+Math.min(au.tried||0, au.total||0)+' of '+(au.total||0)};
+    heard:esc(au.heard)+' heard, waiting for '+esc(d.name)+' to hold its sync',
+    analog:'Analog FM, still listening for digital syncs', idle:'Waiting for a signal ('+esc(d.name)+')',
+    probe:'Listening for every digital sync'+listen};
   $('ad-stat').textContent = adText[au.state] || adText.off;
   renderBscan(m.bscan, d);
 
@@ -1395,13 +1398,15 @@ function renderBscan(bs, d){
   let t, short = '';
   if (bs.state === 'sweep'){ t = 'Sweeping '+mhz(bs.freq)+tail; short = 'Band scan: sweeping '+mhz(bs.freq); }
   else if (bs.state === 'probe'){
-    t = 'Signal at '+mhz(bs.freq)+': trying '+esc(d.name)+' ('+bs.cand+' of '+bs.ncand+')'+(bs.left ? ', '+bs.left+' more in this window' : '')+tail;
-    short = 'Band scan: trying '+esc(d.name)+' on '+mhz(bs.freq);
+    const what = bs.heard ? esc(bs.heard)+' heard, waiting for '+esc(d.name)+' to hold its sync'
+      : 'listening for every digital sync, '+Math.min(bs.listen||0, 3).toFixed(1)+' of 3 s';
+    t = 'Signal at '+mhz(bs.freq)+': '+what+(bs.left ? ', '+bs.left+' more in this window' : '')+tail;
+    short = 'Band scan: '+(bs.heard ? esc(bs.heard)+' on ' : 'listening on ')+mhz(bs.freq);
   }
   else if (bs.state === 'found'){ t = 'Decoding '+(bs.desc || esc(d.name))+' on '+mhz(bs.freq)+', collecting ids for the bookmark…'; short = 'Band scan: locked on '+mhz(bs.freq); }
   else if (bs.state === 'fixed'){ t = 'Found '+bs.last_name+' on '+mhz(bs.last_freq)+' and bookmarked it (group "Band scan"). Continue keeps looking.'; short = 'Band scan: found '+bs.last_name; }
   else if (bs.msg) t = 'Band scan '+bs.msg;
-  else t = 'Sweeps the bands with the RTL-SDR, tries every signal it sees with the digital decoders, and stops on the first one that decodes, or that is analog FM with a CTCSS tone or DCS code, saving it as a bookmark.'
+  else t = 'Sweeps the bands with the RTL-SDR, listens on every signal it sees for every digital sync at once, and stops on the first one that decodes, or that is analog FM with a CTCSS tone or DCS code, saving it as a bookmark.'
     + (bs.found ? ' Last find: '+bs.last_name+' on '+mhz(bs.last_freq)+'.' : '');
   $('bs-stat').textContent = t;
   $('bs-stat').style.color = !on && bs.msg ? 'var(--fail)' : '';

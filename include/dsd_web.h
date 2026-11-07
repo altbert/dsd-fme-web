@@ -215,6 +215,28 @@ void web_analog_get (web_analog_info * out);
 int  web_analog_playing (void); //analog audio went out in the last 0.6 s (dsd_web.c)
 
 //----------------------------------------------------------------------------
+// Every protocol's frame sync at once (dsd_web_detect.c), decoder thread
+//----------------------------------------------------------------------------
+
+typedef struct
+{
+  int fam;             //protocol heard now (its last sync within 1.5 s of audio), -1 none
+  char key[12];        //decoder it goes to: "nxdn48", "nxdn96", "dpmr", "m17", "provoice", "p25p2", or "auto"
+  char name[12];       //"NXDN48", "DMR"...
+  int inverted;        //heard inverted (told apart for the protocols that have upright and inverted syncs)
+  int syncs;           //its syncs since the reset
+  double listen;       //seconds of open-channel audio examined since the reset
+} web_detect_info;
+
+void web_detect_audio (dsd_opts * opts, dsd_state * state, const short * in, int n, int settling); //web_analog_tap's audio
+void web_detect_reset (void); //a new channel: forget what was heard
+void web_detect_get (web_detect_info * out);
+const char * web_detect_name (int fam);
+int  web_detect_covered (dsd_opts * opts, dsd_state * state, int fam); //the decoder as set syncs on it
+int  web_detect_polarity_ok (dsd_opts * opts, const web_detect_info * d); //...with the Inverted setting as it is
+unsigned long web_frames_accepted (void); //decoder frames counted by web_frame_tap (dsd_web.c)
+
+//----------------------------------------------------------------------------
 // Main thread interface (dsd_web.c)
 //----------------------------------------------------------------------------
 

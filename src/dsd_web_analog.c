@@ -6,7 +6,8 @@
  * dsd_symbol.c before any filtering) goes through three detectors: the CTCSS
  * tone, the DCS code and the DTMF ANI some radios send at key-up. A tone or code
  * is a positive sign of analog FM, which the auto-decode and the band scan use;
- * the activity log lists the transmissions with them. All on the decoder thread.
+ * the activity log lists the transmissions with them. The same audio goes to the
+ * digital sync detector (dsd_web_detect.c). All on the decoder thread.
  *
  * 48 kHz in (the RTL demod's own rate repeated up to it), 8 kHz for DTMF, 1 kHz
  * for the sub-audio band.
@@ -404,6 +405,7 @@ void web_analog_retuned (dsd_opts * opts)
   double settle = AN.freq ? settle_time (opts) : 0; //the first channel has no old audio before it
   AN.freq = freq;
   an_restart (settle);
+  web_detect_reset (); //the sync detector waits out the same settle (web_analog_tap)
 }
 
 void web_analog_tap (dsd_opts * opts, dsd_state * state, const short * in, int n)
@@ -411,6 +413,8 @@ void web_analog_tap (dsd_opts * opts, dsd_state * state, const short * in, int n
   if (!AN.ready) an_init ();
   if (opts->rtlsdr_center_freq != AN.freq) web_analog_retuned (opts); //by the scanner or trunking
   double now = mono_now ();
+  //every protocol's sync, also between the frames of a sync the decoder holds
+  web_detect_audio (opts, state, in, n, now < AN.settle_until);
   if (state->carrier)
   {
     //only what the analog monitor would play; a digital transmission ends what was heard before it
