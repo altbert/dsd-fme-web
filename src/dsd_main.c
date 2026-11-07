@@ -754,11 +754,9 @@
  
    opts->monitor_input_audio = 0; //enable with -8
    opts->analog_only = 0; //only turned on with -fA
-
-   //pulse output streams, NULL until opened (the analog one only opens for -8, ProVoice or the web UI)
-   opts->pulse_raw_dev_out = NULL;
+   opts->pulse_raw_dev_out = NULL; //pulse output streams stay NULL until openPulseOutput opens them
    opts->pulse_digi_dev_out = NULL;
-
+ 
    opts->inverted_p2 = 0;
    opts->p2counter = 0;
  

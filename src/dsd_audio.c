@@ -28,7 +28,8 @@ pa_buffer_attr lt;
 
 void closePulseOutput (dsd_opts * opts)
 {
-  //check the streams themselves, the web UI can switch analog monitoring or decoders at runtime
+  //free the streams that are open, not the ones the current settings would open:
+  //-fA never opens the digital one, and the ncurses menu changes those settings
   if (opts->pulse_digi_dev_out != NULL)
     pa_simple_free (opts->pulse_digi_dev_out);
   opts->pulse_digi_dev_out = NULL;
