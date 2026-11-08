@@ -57,20 +57,25 @@ section pre{margin:10px 0 12px}
 figure{margin:0 0 30px}
 figure img{display:block;width:100%;height:auto;border:1px solid var(--glass-edge);border-radius:6px;background:var(--glass)}
 figcaption{margin-top:6px;color:var(--silk-3);font-size:14px}
+.shot{display:block;border-radius:6px;cursor:zoom-in}
+.shot:hover img{border-color:#4b5158}
+.shot:focus-visible{outline:2px solid var(--link);outline-offset:3px}
 h2{margin:0 0 12px;font-weight:600;font-size:22px}
 section{background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;padding:18px 20px;margin-bottom:22px;scroll-margin-top:12px}
 ul{margin:0;padding-left:20px}
 li{margin:4px 0}
 li b{font-weight:600}
-code{white-space:nowrap}
+code{font-family:var(--mono);font-size:.875em;white-space:nowrap}
 .protocols{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 26px;padding:0;list-style:none}
 .protocols li{margin:0;padding:2px 10px;border:1px solid var(--plate-edge);border-radius:999px;color:var(--silk-2);font-size:15px}
 .pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:30px}
 .pair figure{margin:0}
-.intro{display:grid;grid-template-columns:1fr 240px;gap:22px;align-items:start;margin-bottom:22px}
+/* the phone shot is as tall as the card beside it: the script at the end sets --shot-w and --shot-h */
+.intro{display:grid;grid-template-columns:minmax(0,1fr) var(--shot-w,240px);gap:22px;align-items:start;margin-bottom:22px}
 .intro section{margin:0}
 .intro figure{margin:0}
-@media (max-width:760px){.intro{grid-template-columns:1fr}.intro figure{max-width:240px;margin:0 auto}}
+.intro figure img{height:var(--shot-h,auto);object-fit:contain}
+@media (max-width:879px){.intro{grid-template-columns:1fr}.intro figure{width:240px;max-width:100%;margin:0 auto}.intro figure img{height:auto}}
 @media (max-width:640px){.pair{grid-template-columns:1fr}}
 footer{color:var(--silk-3);font-size:14px}
 nav.toc{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 22px;font-size:15px}
@@ -78,30 +83,72 @@ h3{margin:18px 0 6px;font-weight:600;font-size:18px;color:var(--silk)}
 h3:first-of-type{margin-top:4px}
 section p{margin:6px 0}
 .k{display:inline-block;padding:0 7px;border:1px solid #43494f;border-bottom-width:2px;border-radius:4px;
-  background:#2e3237;font-weight:500;font-size:15px;line-height:1.45;white-space:nowrap}
+  background:#2e3237;font-weight:500;font-size:15px;line-height:1.3;white-space:nowrap}
 .note{color:var(--silk-2);font-size:15px}
 .tbl{width:100%;border-collapse:collapse;font-size:16px}
 .tbl th,.tbl td{text-align:left;vertical-align:top;padding:7px 10px 7px 0;border-top:1px solid var(--plate-edge)}
 .tbl th{font-weight:600;color:var(--silk-2);border-top:0}
-.tbl td:first-child{white-space:nowrap;padding-right:16px}
+.tbl td:first-child{width:19em;white-space:nowrap;padding-right:16px}
 .tbl code{color:var(--amber)}
 .tbl-wrap{overflow-x:auto}
 @media (max-width:640px){
   .tbl tr:has(th){display:none}
   .tbl tr{display:block;border-top:1px solid var(--plate-edge);padding:8px 0}
   .tbl td{display:block;border:0;padding:0}
-  .tbl td:first-child{white-space:normal;padding:0 0 2px}
-  .tbl td code{white-space:normal;overflow-wrap:anywhere}
+  .tbl td:first-child{width:auto;white-space:normal;padding:0 0 2px}
+  code{white-space:normal;overflow-wrap:anywhere}
 }
-.panels{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.panels{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:690px){.panels{grid-template-columns:1fr 1fr}}
 .panel{background:var(--chassis);border:1px solid var(--plate-edge);border-radius:6px;padding:12px 14px}
 .panel h3{margin-top:0}
 .panel ul{padding-left:18px}
-@media (max-width:420px){.panels{grid-template-columns:1fr}}
 dl.qa{margin:0}
 dl.qa dt{font-weight:600;margin-top:12px}
 dl.qa dt:first-child{margin-top:0}
 dl.qa dd{margin:2px 0 0}
+
+/* screenshot viewer */
+html.viewer-open{overflow:hidden}
+.viewer{position:fixed;inset:0;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;
+  background:rgb(14,15,14);color:var(--silk);overflow:hidden;overscroll-behavior:contain}
+.viewer[open]{display:grid;grid-template-rows:auto minmax(0,1fr) auto auto}
+.viewer::backdrop{background:none}
+.v-bar{display:flex;align-items:center;gap:6px;padding:10px 16px}
+.v-count{margin-right:auto;color:var(--silk-2);font-variant-numeric:tabular-nums}
+.v-zoom{min-width:3.4em;text-align:center;color:var(--silk-2);font-variant-numeric:tabular-nums}
+.v-btn{display:inline-grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid var(--plate-edge);border-radius:6px;
+  background:var(--plate);color:var(--silk);font:inherit;cursor:pointer}
+.v-btn:hover{background:#2e3237}
+.v-btn[aria-disabled="true"]{color:var(--silk-3);background:var(--plate);cursor:default}
+.v-btn svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.v-btn.v-text{width:auto;padding:0 12px;font-weight:500}
+.v-btn:focus-visible,.v-thumb:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.v-close{margin-left:6px}
+.v-stage{position:relative;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+.v-frame{position:absolute;left:0;top:0;transform-origin:0 0;cursor:zoom-in}
+.v-frame img{display:block;width:100%;height:100%;border:1px solid var(--glass-edge);border-radius:6px;background:var(--glass);-webkit-user-drag:none}
+.v-stage.zoomed .v-frame{cursor:grab}
+.v-stage.dragging .v-frame{cursor:grabbing}
+.v-nav{position:absolute;top:50%;width:44px;height:44px;margin-top:-22px;background:rgba(35,38,42,.88)}
+.v-prev{left:16px}
+.v-next{right:16px}
+.v-cap{margin:0;padding:8px 16px 0;min-height:calc(1.45em + 8px);color:var(--silk-2);font-size:15px;line-height:1.45;text-align:center}
+.v-thumbs{display:flex;justify-content:center;gap:8px;padding:10px 16px 14px}
+.v-thumb{padding:0;border:2px solid transparent;border-radius:6px;background:none;cursor:pointer;opacity:.55}
+.v-thumb:hover{opacity:.85}
+.v-thumb[aria-current="true"]{border-color:var(--link);opacity:1}
+.v-thumb img{display:block;width:auto;height:44px;border-radius:4px}
+@media (max-width:640px){
+  .v-bar{gap:4px}
+  .v-btn{width:36px;height:36px}
+  .v-close{margin-left:4px}
+  .v-nav{width:40px;height:40px;margin-top:-20px}
+  .v-prev{left:8px}
+  .v-next{right:8px}
+  .v-cap{min-height:calc(2.9em + 8px)}
+}
+@media (max-height:500px){.v-thumbs{display:none}}
 </style>
 </head>
 <body>
@@ -126,7 +173,7 @@ dl.qa dd{margin:2px 0 0}
 dsd-fme -i rtl --web 8080</pre>
 
 <figure>
-  <img src="screenshots/web-desktop.webp" width="1440" height="900" alt="Spectrum with the demodulator's channel shaded, waterfall, bookmarks and a DMR call on both slots">
+  <a class="shot" href="screenshots/web-desktop.webp"><img src="screenshots/web-desktop.webp" width="1440" height="900" alt="Spectrum with the demodulator's channel shaded, waterfall, bookmarks and a DMR call on both slots"></a>
   <figcaption>Spectrum and waterfall, the receiver readout and a DMR call on both slots.</figcaption>
 </figure>
 
@@ -146,14 +193,14 @@ dsd-fme -i rtl --web 8080</pre>
     <p class="note">Without <code>--web</code> it is the regular DSD-FME.</p>
   </section>
   <figure>
-    <img src="screenshots/web-phone.webp" width="780" height="1688" alt="The page on a phone" loading="lazy">
+    <a class="shot" href="screenshots/web-phone.webp"><img src="screenshots/web-phone.webp" width="780" height="1688" alt="The page on a phone" loading="lazy"></a>
     <figcaption>The same page on a phone.</figcaption>
   </figure>
 </div>
 
 <div class="pair">
-  <figure><img src="screenshots/web-activity.webp" width="1440" height="900" alt="Activity log and radios table" loading="lazy"></figure>
-  <figure><img src="screenshots/web-map.webp" width="1440" height="900" alt="Radio map" loading="lazy"></figure>
+  <figure><a class="shot" href="screenshots/web-activity.webp"><img src="screenshots/web-activity.webp" width="1440" height="900" alt="Activity log and radios table" loading="lazy"></a></figure>
+  <figure><a class="shot" href="screenshots/web-map.webp"><img src="screenshots/web-map.webp" width="1440" height="900" alt="Radio map" loading="lazy"></a></figure>
 </div>
 
 <nav class="toc" aria-label="Guide">
@@ -363,5 +410,350 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   <p>A fork of <a href="https://github.com/lwvmobile/dsd-fme">DSD-FME</a> by lwvmobile, kept merged with its <code>audio_work</code> branch. License and credits: see the <a href="https://github.com/altbert/dsd-fme-web#license">README</a>. Screenshots use a simulated receiver and made-up demo data.</p>
 </footer>
 </main>
+
+<dialog class="viewer" id="viewer" aria-label="Screenshot viewer">
+  <div class="v-bar">
+    <span class="v-count" id="v-count"></span>
+    <button type="button" class="v-btn" data-act="out" aria-label="Zoom out" title="Zoom out (-)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    <span class="v-zoom" id="v-zoom"></span>
+    <button type="button" class="v-btn" data-act="in" aria-label="Zoom in" title="Zoom in (+)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    <button type="button" class="v-btn v-text" data-act="fit" aria-label="Fit to screen" title="Fit to screen (0)">Fit</button>
+    <button type="button" class="v-btn v-close" data-act="close" aria-label="Close" title="Close (Esc)" autofocus><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="v-stage" id="v-stage">
+    <div class="v-frame" id="v-frame"><img id="v-img" alt="" draggable="false"></div>
+    <button type="button" class="v-btn v-nav v-prev" data-act="prev" aria-label="Previous screenshot" title="Previous (←)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button type="button" class="v-btn v-nav v-next" data-act="next" aria-label="Next screenshot" title="Next (→)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  </div>
+  <p class="v-cap" id="v-cap" aria-live="polite"></p>
+  <div class="v-thumbs" id="v-thumbs"></div>
+</dialog>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (sel, root = document) => root.querySelector(sel);
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+
+  // The phone screenshot is exactly as tall as the card beside it. Its width follows from the card's
+  // height, and that width changes how the card's text wraps, so repeat until the two settle.
+  const intro = $('.intro'), card = intro && $('section', intro), phone = intro && $('img', intro);
+  function fitIntro() {
+    if (!card || !phone) return;
+    const st = intro.style;
+    st.removeProperty('--shot-w'); // start from the CSS width each time, so a resize ends where a fresh load does
+    st.removeProperty('--shot-h');
+    if (getComputedStyle(intro).gridTemplateColumns.trim().split(/\s+/).length < 2) return; // stacked on narrow screens
+    const border = parseFloat(getComputedStyle(phone).borderTopWidth) || 0;
+    const ratio = phone.getAttribute('width') / phone.getAttribute('height');
+    for (let i = 0, w = -1; i < 8; i++) { // the clamp only guards against odd fonts; CSS stacks it before that
+      const nw = Math.min(280, Math.max(150, Math.round((card.getBoundingClientRect().height - 2 * border) * ratio + 2 * border)));
+      if (nw === w) break;
+      st.setProperty('--shot-w', (w = nw) + 'px');
+    }
+    st.setProperty('--shot-h', card.getBoundingClientRect().height + 'px');
+  }
+  let fitQueued = 0;
+  const queueFit = () => { cancelAnimationFrame(fitQueued); fitQueued = requestAnimationFrame(fitIntro); };
+  fitIntro();
+  addEventListener('resize', queueFit);
+  addEventListener('load', queueFit);
+  if (document.fonts) {
+    document.fonts.addEventListener('loadingdone', queueFit);
+    document.fonts.ready.then(queueFit);
+  }
+
+  // Screenshot viewer: a screenshot opens large, zooms (wheel, pinch, double tap, click, + and -),
+  // pans by dragging, and steps through all of them (arrows, swipe, thumbnails)
+  const dlg = $('#viewer'), links = [...document.querySelectorAll('a.shot')];
+  if (!dlg || typeof dlg.showModal !== 'function' || !links.length) return;
+  const stage = $('#v-stage'), frame = $('#v-frame'), img = $('#v-img');
+  const countEl = $('#v-count'), zoomEl = $('#v-zoom'), capEl = $('#v-cap'), thumbsEl = $('#v-thumbs');
+  const act = (name) => $(`[data-act="${name}"]`, dlg);
+  const btnOut = act('out'), btnIn = act('in'), btnFit = act('fit');
+  const chrome = [$('.v-bar', dlg), capEl, thumbsEl, act('prev'), act('next')];
+  const EASE = 'cubic-bezier(.2,.7,.3,1)';
+  const shots = links.map((a) => {
+    const im = $('img', a), fig = a.closest('figure'), fc = fig && $('figcaption', fig);
+    return { im, src: a.getAttribute('href'), w: +im.getAttribute('width'), h: +im.getAttribute('height'),
+      alt: im.alt, cap: (fc ? fc.textContent : im.alt).trim() };
+  });
+
+  let idx = 0, fit = { x: 0, y: 0, w: 1, h: 1 }, view = { ...fit }, goal = null, raf = 0, opener = null, closing = false;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const scaleOf = (v) => v.w / fit.w;                       // 1 = fits the stage
+  const maxScale = () => Math.max(3, 2 * shots[idx].w / fit.w); // at least twice the screenshot's own pixels
+  const isZoomed = () => scaleOf(view) > 1.001;
+
+  const thumbs = shots.map((s, i) => {
+    const b = document.createElement('button'), t = new Image(s.w, s.h);
+    b.type = 'button';
+    b.className = 'v-thumb';
+    b.setAttribute('aria-label', s.cap);
+    t.alt = '';
+    t.draggable = false;
+    t.loading = 'lazy';
+    t.src = s.src;
+    b.append(t);
+    b.addEventListener('click', () => show(i, Math.sign(i - idx)));
+    thumbsEl.append(b);
+    return b;
+  });
+
+  // the largest size that fits the stage with a margin, never above the screenshot's own pixels
+  function fitView() {
+    const s = shots[idx], sw = stage.clientWidth, sh = stage.clientHeight, pad = sw < 640 ? 8 : 24;
+    const k = Math.max(0.05, Math.min(1, (sw - 2 * pad) / s.w, (sh - 2 * pad) / s.h));
+    return { x: (sw - s.w * k) / 2, y: (sh - s.h * k) / 2, w: s.w * k, h: s.h * k };
+  }
+  // centered while smaller than the stage, otherwise no gap at its edges
+  function bound(v) {
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    v.x = v.w <= sw ? (sw - v.w) / 2 : clamp(v.x, sw - v.w, 0);
+    v.y = v.h <= sh ? (sh - v.h) / 2 : clamp(v.y, sh - v.h, 0);
+    return v;
+  }
+  // the view at scale s that keeps the point of the image under (px, py) where it is
+  function zoomView(s, px, py, from = view) {
+    s = clamp(s, 1, maxScale());
+    const k = (fit.w * s) / from.w;
+    return bound({ x: px - (px - from.x) * k, y: py - (py - from.y) * k, w: fit.w * s, h: fit.h * s });
+  }
+  function apply() {
+    frame.style.width = view.w + 'px';
+    frame.style.height = view.h + 'px';
+    frame.style.transform = `translate(${view.x}px, ${view.y}px)`;
+    const z = isZoomed();
+    stage.classList.toggle('zoomed', z);
+    btnOut.setAttribute('aria-disabled', String(!z));
+    btnFit.setAttribute('aria-disabled', String(!z));
+    btnIn.setAttribute('aria-disabled', String(scaleOf(view) >= maxScale() - 0.001));
+    zoomEl.textContent = Math.round((view.w / shots[idx].w) * 100) + '%';
+  }
+  function stop() { cancelAnimationFrame(raf); goal = null; }
+  function animateView(to, ms = 220) {
+    stop();
+    if (reduced.matches) { view = to; apply(); return; }
+    goal = to;
+    const from = view, t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / ms), e = 1 - (1 - k) ** 3;
+      view = { x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e,
+        w: from.w + (to.w - from.w) * e, h: from.h + (to.h - from.h) * e };
+      apply();
+      if (k < 1) raf = requestAnimationFrame(step); else goal = null;
+    };
+    raf = requestAnimationFrame(step);
+  }
+  function zoomBy(f) {
+    const base = goal || view;
+    animateView(zoomView(scaleOf(base) * f, stage.clientWidth / 2, stage.clientHeight / 2, base));
+  }
+  const toFit = () => animateView({ ...fit });
+  function toggleZoom(p) {
+    if (isZoomed()) toFit();
+    else animateView(zoomView(Math.max(2, shots[idx].w / fit.w), p.x, p.y)); // its own pixels, or twice the fit
+  }
+
+  function show(i, dir = 0) {
+    stop();
+    idx = (i + shots.length) % shots.length;
+    const s = shots[idx];
+    img.src = s.src;
+    img.alt = s.alt;
+    fit = fitView();
+    view = { ...fit };
+    apply();
+    countEl.textContent = `${idx + 1} of ${shots.length}`;
+    capEl.textContent = s.cap;
+    thumbs.forEach((t, j) => t.setAttribute('aria-current', String(j === idx)));
+    if (dir && !reduced.matches) {
+      frame.animate([{ opacity: 0, translate: `${dir * 48}px 0` }, { opacity: 1, translate: '0 0' }], { duration: 220, easing: EASE });
+    }
+  }
+
+  // the transform that lays the frame over the screenshot on the page, for the open and close motion
+  function overShot() {
+    const t = shots[idx].im.getBoundingClientRect(), st = stage.getBoundingClientRect();
+    if (!t.width || t.bottom < 0 || t.top > innerHeight) return null;
+    return `translate(${t.left - st.left}px, ${t.top - st.top}px) scale(${t.width / view.w})`;
+  }
+  async function open(i, link) {
+    opener = link;
+    closing = false;
+    const bar = innerWidth - document.documentElement.clientWidth; // the page keeps its place without its scrollbar
+    if (bar > 0) document.body.style.paddingRight = bar + 'px';
+    document.documentElement.classList.add('viewer-open');
+    dlg.style.opacity = '0';
+    dlg.showModal();
+    show(i);
+    if (!reduced.matches) await Promise.race([img.decode().catch(() => {}), new Promise((r) => setTimeout(r, 150))]);
+    dlg.style.opacity = '';
+    if (reduced.matches || closing || !dlg.open) return;
+    const from = overShot(), o = { duration: 260, easing: EASE };
+    if (from) frame.animate([{ transform: from }, { transform: frame.style.transform }], o);
+    else frame.animate([{ opacity: 0 }, { opacity: 1 }], o);
+    dlg.animate([{ backgroundColor: 'rgba(14,15,14,0)', offset: 0 }], o);
+    for (const el of chrome) el.animate([{ opacity: 0, offset: 0 }], o);
+  }
+  async function close() {
+    if (closing || !dlg.open) return;
+    closing = true;
+    stop();
+    if (!reduced.matches) {
+      const to = overShot(), o = { duration: 220, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'forwards' };
+      const anims = [dlg.animate([{ backgroundColor: 'rgba(14,15,14,0)' }], o), ...chrome.map((el) => el.animate([{ opacity: 0 }], o)),
+        to ? frame.animate([{ transform: to }], o) : frame.animate([{ opacity: 0 }], o)];
+      await Promise.all(anims.map((a) => a.finished.catch(() => {})));
+    }
+    dlg.close();
+  }
+  dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+  dlg.addEventListener('close', () => {
+    closing = false;
+    stop();
+    for (const a of dlg.getAnimations({ subtree: true })) a.cancel();
+    document.documentElement.classList.remove('viewer-open');
+    document.body.style.paddingRight = '';
+    if (opener) opener.focus({ preventScroll: true });
+  });
+
+  links.forEach((a, i) => {
+    a.setAttribute('aria-haspopup', 'dialog');
+    a.addEventListener('click', (e) => {
+      if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return; // new tab, download…
+      e.preventDefault();
+      open(i, a);
+    });
+  });
+  dlg.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]');
+    if (!b || b.getAttribute('aria-disabled') === 'true') return;
+    switch (b.dataset.act) {
+      case 'close': close(); break;
+      case 'prev': show(idx - 1, -1); break;
+      case 'next': show(idx + 1, 1); break;
+      case 'in': zoomBy(1.5); break;
+      case 'out': zoomBy(1 / 1.5); break;
+      case 'fit': toFit(); break;
+    }
+  });
+
+  // pointer gestures on the stage: drag pans a zoomed image and swipes between screenshots otherwise,
+  // two fingers pinch, a click or a double tap zooms, a tap beside the screenshot closes
+  const pts = new Map();
+  let g = null, lastTap = null;
+  const local = (e) => { const r = stage.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  function startGesture(afterPinch) {
+    const p = [...pts.values()];
+    if (p.length >= 2) {
+      const [a, b] = p;
+      g = { pinch: true, d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, m0: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, v0: { ...view }, moved: true };
+    } else if (p.length === 1) {
+      g = { pinch: false, p0: p[0], v0: { ...view }, moved: afterPinch, noSwipe: afterPinch, swipe: null };
+    }
+  }
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button') || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    stop();
+    stage.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, local(e));
+    startGesture(pts.size > 1);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!g || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, local(e));
+    const p = [...pts.values()];
+    if (g.pinch) {
+      if (p.length < 2) return;
+      const [a, b] = p, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const s = clamp((scaleOf(g.v0) * Math.hypot(a.x - b.x, a.y - b.y)) / g.d0, 1, maxScale());
+      const k = (fit.w * s) / g.v0.w;
+      view = bound({ x: m.x - (g.m0.x - g.v0.x) * k, y: m.y - (g.m0.y - g.v0.y) * k, w: fit.w * s, h: fit.h * s });
+      apply();
+      return;
+    }
+    const dx = p[0].x - g.p0.x, dy = p[0].y - g.p0.y;
+    if (!g.moved && Math.hypot(dx, dy) < (e.pointerType === 'mouse' ? 4 : 10)) return;
+    g.moved = true;
+    if (scaleOf(g.v0) > 1.001) {
+      stage.classList.add('dragging');
+      view = bound({ ...g.v0, x: g.v0.x + dx, y: g.v0.y + dy });
+      apply();
+    } else if (!g.noSwipe) {
+      g.swipe = dx;
+      view = { ...fit, x: fit.x + dx };
+      apply();
+    }
+  });
+  function endPointer(e) {
+    if (!pts.has(e.pointerId)) return;
+    const at = pts.get(e.pointerId);
+    pts.delete(e.pointerId);
+    stage.classList.remove('dragging');
+    if (pts.size) { startGesture(true); return; } // a finger stays down after a pinch: keep panning
+    const done = g;
+    g = null;
+    if (!done) return;
+    if (done.swipe !== null && done.swipe !== undefined) {
+      if (e.type === 'pointerup' && Math.abs(done.swipe) > Math.min(80, stage.clientWidth * 0.2)) {
+        show(idx + (done.swipe < 0 ? 1 : -1), done.swipe < 0 ? 1 : -1);
+      } else toFit();
+    } else if (!done.moved && e.type === 'pointerup') tap(at, e.pointerType);
+  }
+  stage.addEventListener('pointerup', endPointer);
+  stage.addEventListener('pointercancel', endPointer);
+  function tap(p, type) {
+    const inside = p.x >= view.x && p.x <= view.x + view.w && p.y >= view.y && p.y <= view.y + view.h;
+    if (type === 'mouse') {
+      if (inside) toggleZoom(p);
+      else if (!isZoomed()) close();
+      return;
+    }
+    const now = performance.now();
+    if (lastTap && now - lastTap.t < 320 && Math.hypot(p.x - lastTap.x, p.y - lastTap.y) < 32) {
+      lastTap = null;
+      toggleZoom(p);
+      return;
+    }
+    lastTap = { t: now, x: p.x, y: p.y };
+    if (!inside && !isZoomed()) close();
+  }
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    stop();
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? stage.clientHeight : 1);
+    const p = local(e);
+    view = zoomView(scaleOf(view) * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.002)), p.x, p.y); // ctrl: trackpad pinch
+    apply();
+  }, { passive: false });
+
+  dlg.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const z = isZoomed(), sw = stage.clientWidth, sh = stage.clientHeight;
+    const pan = (dx, dy) => { stop(); view = bound({ ...view, x: view.x + dx, y: view.y + dy }); apply(); };
+    switch (e.key) {
+      case 'ArrowLeft': if (z) pan(sw * 0.2, 0); else show(idx - 1, -1); break;
+      case 'ArrowRight': if (z) pan(-sw * 0.2, 0); else show(idx + 1, 1); break;
+      case 'ArrowUp': if (!z) return; pan(0, sh * 0.2); break;
+      case 'ArrowDown': if (!z) return; pan(0, -sh * 0.2); break;
+      case '+': case '=': zoomBy(1.5); break;
+      case '-': case '_': zoomBy(1 / 1.5); break;
+      case '0': toFit(); break;
+      case 'Home': show(0, -1); break;
+      case 'End': show(shots.length - 1, 1); break;
+      default: return;
+    }
+    e.preventDefault();
+  });
+  addEventListener('resize', () => {
+    if (!dlg.open) return;
+    stop();
+    fit = fitView();
+    view = { ...fit };
+    apply();
+  });
+})();
+</script>
 </body>
 </html>
