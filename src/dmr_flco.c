@@ -84,28 +84,28 @@ void dmr_flco (dsd_opts * opts, dsd_state * state, uint8_t lc_bits[], uint32_t C
 
   //Hytera OTA Check Enabled, Set SRC from VLC (TLC and ELC differ)
   //NOTE: VLC will always be same for each radio if its a group call
-  //while this is not the true src, it should be unique
-  //TGT will also be random between calls in each VLC,
-  //so assign static value
+  //while this is not the true src, it should be unique and static
+  //TGT will also be random between calls in each VLC, so assign hard value
   if (state->hota_enc_check)
   {
+    uint32_t t_target = 8686868;
     if (type == 1)
     {
       if (slot == 0)
       {
         state->lastsrc = source;
-        state->lasttg = 8686868;
+        state->lasttg = t_target;
       }
       else
       {
         state->lastsrcR = source;
-        state->lasttgR = 8686868;
+        state->lasttgR = t_target;
       }
 
       fprintf (stderr, "\n%s", KYEL);
       fprintf (stderr, " SLOT %d ", slot+1);
-      fprintf(stderr, "TGT=%u SRC=%u ", state->lasttg, source);
-      fprintf (stderr, "Forced Pseudo Call Information");
+      fprintf(stderr, "TGT=%u SRC=%u ", t_target, source);
+      fprintf (stderr, "Encrypted Pseudo Call Information");
       fprintf (stderr, "%s", KNRM);
 
       return;
@@ -114,7 +114,7 @@ void dmr_flco (dsd_opts * opts, dsd_state * state, uint8_t lc_bits[], uint32_t C
     {
       fprintf (stderr, "\n%s", KRED);
       fprintf (stderr, " SLOT %d", slot+1);
-      fprintf (stderr, " TLC Undecryptable;");
+      fprintf (stderr, " TLC Encrypted;");
       fprintf (stderr, "%s", KNRM);
       return;
     }
@@ -122,7 +122,7 @@ void dmr_flco (dsd_opts * opts, dsd_state * state, uint8_t lc_bits[], uint32_t C
     {
       fprintf (stderr, "%s", KRED);
       fprintf (stderr, " SLOT %d", slot+1);
-      fprintf (stderr, " EMB LC Undecryptable;");
+      fprintf (stderr, " EMB LC Encrypted;");
       fprintf (stderr, "%s", KNRM);
       return;
     }
@@ -132,7 +132,15 @@ void dmr_flco (dsd_opts * opts, dsd_state * state, uint8_t lc_bits[], uint32_t C
   {
     fprintf (stderr, "%s", KRED);
     fprintf (stderr, " SLOT %d", slot+1);
-    fprintf (stderr, " EMB LC Missing CTX; Undecryptable;");
+    fprintf (stderr, " EMB LC Missing CTX; Encrypted;");
+    fprintf (stderr, "%s", KNRM);
+    return;
+  }
+  else if (state->hota_key_loaded && *IrrecoverableErrors != 0 && type != 3)
+  {
+    fprintf (stderr, "\n%s", KRED);
+    fprintf (stderr, " SLOT %d", slot+1);
+    fprintf (stderr, " BPTC Irrecoverable Errors; Encrypted;");
     fprintf (stderr, "%s", KNRM);
     return;
   }
@@ -628,7 +636,7 @@ void dmr_flco (dsd_opts * opts, dsd_state * state, uint8_t lc_bits[], uint32_t C
         state->gi[slot] = 1;
       }
     }
-    else if (flco == 0x3 || flco == 0x23) //UU_V_Ch_Usr
+    else if (flco == 0x3 || flco == 0x13 || flco == 0x23) //UU_V_Ch_Usr
     {
       sprintf (state->call_string[slot], " Private ");
       fprintf (stderr, "Private ");

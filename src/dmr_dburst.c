@@ -14,6 +14,24 @@
 
 #include "dsd.h"
 
+uint32_t dmr_flc_rs_calc(uint8_t * input)
+{
+  uint8_t tmp_bytes[12];
+  memset(tmp_bytes, 0, sizeof(tmp_bytes));
+  memcpy (tmp_bytes, input, 9);
+
+  uint32_t rs_clc = 0;
+  rs_12_9_encode(tmp_bytes);
+
+  rs_clc |= tmp_bytes[9];
+  rs_clc <<= 8;
+  rs_clc |= tmp_bytes[10];
+  rs_clc <<= 8;
+  rs_clc |= tmp_bytes[11];
+
+  return rs_clc;
+}
+
 void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196], uint8_t databurst)
 {
 
@@ -60,6 +78,10 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
   uint8_t bptc_res_bits[3];
   memset (bptc_res_bits, 0, sizeof(bptc_res_bits));
   uint8_t crc_original_validity = 0;
+  static uint8_t ras_confirm_count = 0;
+  static uint8_t prev_dmr_is_ras = 0;
+  if (prev_dmr_is_ras == 1 && state->dmr_is_ras == 0)
+    ras_confirm_count = 0;
 
   uint32_t crcmask = 0;
   uint8_t  crclen = 0;
@@ -263,11 +285,13 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
       fprintf (stderr, " BPTC R BITS: %d %d %d", bptc_res_bits[0], bptc_res_bits[1], bptc_res_bits[2]);
     #endif
 
-    //TODO: Checkdown no irrecoverable errors prior to OTA Decryption?
-
     //Hytera OTA Encryption
-    if (state->hota_key_loaded && hota_enc)
+    if (state->hota_key_loaded && hota_enc && IrrecoverableErrors == 0)
       hytera_ota_decrypt_bptc_96(state, BPTCDmrDataBit, databurst);
+    else if (state->hota_key_loaded && hota_enc && IrrecoverableErrors != 0)
+      memset(BPTCDmrDataBit, 1, sizeof(BPTCDmrDataBit));
+    else if (state->hota_enc_check && hota_enc && databurst != 1)
+      memset(BPTCDmrDataBit, 1, sizeof(BPTCDmrDataBit));
 
     //Hytera Data Block Level Decryption
     if (databurst == 0x7) //Rate 1_2 Data Only
@@ -300,20 +324,46 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
     /* Apply the CRC mask (see DMR standard B.3.12 Data Type CRC Mask) */
     CRCExtracted = CRCExtracted ^ crcmask;
 
-    /* Check/correct the BPTC data and compute the Reed-Solomon (12,9) CRC */
+    /* Check the 9 byte Full Link Control for Correct RS (or RAS MAC) Encoding*/
     if (is_lc)
     {
       if (is_ras)
       {
-        CRCComputed = ras_mac_calculator(state, BPTCDmrDataByte, 9, 1);
+        uint32_t std_crc = dmr_flc_rs_calc(BPTCDmrDataByte);
+        if (std_crc == CRCExtracted)
+        {
+          CRCComputed = std_crc;
+          CRCCorrect = 1;
+          is_ras = 0;
+
+          #ifdef DEBUG_RAS
+          fprintf (stderr, " EXT: %06X; CRC: %06X;", CRCExtracted, CRCComputed);
+          #endif
+        }
+        else
+        {
+          CRCComputed = ras_mac_calculator(state, BPTCDmrDataByte, 9, 1);
+          if (CRCComputed == CRCExtracted)
+            CRCCorrect = 1;
+
+          #ifdef DEBUG_RAS
+          fprintf (stderr, " EXT: %06X; MAC: %06X;", CRCExtracted, CRCComputed);
+          #endif
+        }
+      }
+      else
+      {
+        CRCComputed = dmr_flc_rs_calc(BPTCDmrDataByte);
         if (CRCComputed == CRCExtracted)
           CRCCorrect = 1;
 
+        /* Check/correct the BPTC data and compute the Reed-Solomon (12,9) CRC */
+        else CRCCorrect = ComputeAndCorrectFullLinkControlCrc(BPTCDmrDataByte, &CRCComputed, crcmask);
+
         #ifdef DEBUG_RAS
-        fprintf (stderr, " EXT: %06X; MAC: %06X;", CRCExtracted, CRCComputed);
+        fprintf (stderr, " EXT: %06X; CRC: %06X;", CRCExtracted, CRCComputed);
         #endif
       }
-      else CRCCorrect = ComputeAndCorrectFullLinkControlCrc(BPTCDmrDataByte, &CRCComputed, crcmask);
 
       //Hytera OTA Encryption LC Context Creation for VLC Header
       if (state->hota_key_loaded && CRCCorrect && databurst == 0x01)
@@ -354,18 +404,28 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
     //run CCITT on other data forms
     else
     {
-      if (is_ras == 1)
+      uint32_t std_crc = ComputeCrcCCITT(BPTCDmrDataBit);
+      if (std_crc == CRCExtracted)
+      {
+        is_ras = 0;
+        CRCComputed = std_crc;
+        CRCCorrect = 1;
+      }
+      else if (is_ras == 1)
       {
         CRCComputed = ras_mac_calculator(state, BPTCDmrDataByte, 10, 0);
+        if (CRCComputed == CRCExtracted) CRCCorrect = 1;
+        else CRCCorrect = 0;
 
         #ifdef DEBUG_RAS
         fprintf (stderr, " EXT: %04X; MAC: %04X;", CRCExtracted, CRCComputed);
         #endif
       }
-      else CRCComputed = ComputeCrcCCITT(BPTCDmrDataBit);
-
-      if (CRCComputed == CRCExtracted) CRCCorrect = 1;
-      else CRCCorrect = 0;
+      else
+      {
+        CRCComputed = std_crc;
+        CRCCorrect = 0;
+      }
     }
 
     //if this is a RAS system, set the CRC to okay if irrecoverable errors are okay
@@ -442,14 +502,6 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
       //just fill with all ones, would be garbage from FEC anyways
       memset(LC_DataBit, 1, sizeof(LC_DataBit));
       IrrecoverableErrors = 1;
-
-      //TODO: columns instead of rows to match application of keystream
-      #ifdef DEBUG_HOTA
-      fprintf(stderr, "\n BPTC 128: ");
-      for (int i = 0; i < 8; i++)
-        fprintf (stderr, "%04X", (uint16_t)convert_bits_into_output(BptcDataMatrix[i], 16));
-      fprintf (stderr, "\n");
-      #endif
     }
     else if (state->hota_enc_check == 1)
     {
@@ -473,9 +525,11 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
     /* Compute the 5 bit CRC */
     CRCComputed = ComputeCrc5Bit(LC_DataBit);
 
-    //read ahead first two bytes, look for 1X10 or 2X10 pattern
+    //read ahead first two bytes, look for 1X10 or 2X10 pattern (with PF/R bits 0)
     uint16_t ras_test = (uint16_t)(ConvertBitIntoBytes(&LC_DataBit[0], 16) & 0x30FF);
-    if ((IrrecoverableErrors == 0) && (ras_test == 0x2010 || ras_test == 0x1010))
+    if ((IrrecoverableErrors == 0) &&
+        (LC_DataBit[0] == 0) && (LC_DataBit[1] == 0) &&
+        (ras_test == 0x2010 || ras_test == 0x1010))
     {
       is_ras = 1;
       if (state->ras_effective_key != 0)
@@ -702,9 +756,28 @@ void dmr_data_burst_handler(dsd_opts * opts, dsd_state * state, uint8_t info[196
     fprintf (stderr, "%s", KNRM);
   }
 
-  //might flicker the terminal on partially enabled systems, may need to find a better placement
-  if (IrrecoverableErrors == 0 && (is_bptc || is_emb) && databurst != 0x05 && databurst != 0x07 && databurst != 0x09)
-    state->dmr_is_ras = is_ras;
+  //require a key-verified RAS burst or 2 RAS bursts to latch [RAS]; clear on valid non-PI non-RAS BPTC burst
+  if (IrrecoverableErrors == 0 && is_ras == 1 && (is_bptc || is_emb) && databurst != 0x05 && databurst != 0x07 && databurst != 0x09)
+  {
+    if (state->ras_effective_key != 0 && CRCCorrect == 1)
+    {
+      ras_confirm_count = 2;
+      state->dmr_is_ras = 1;
+    }
+    else if ((is_bptc || is_emb) && databurst != 0x00)
+    {
+      if (ras_confirm_count < 2)
+        ras_confirm_count++;
+      if (ras_confirm_count >= 2)
+        state->dmr_is_ras = 1;
+    }
+  }
+  else if (IrrecoverableErrors == 0 && is_ras == 0 && is_bptc && CRCCorrect == 1 && databurst != 0x00 && databurst != 0x05 && databurst != 0x07 && databurst != 0x09)
+  {
+    ras_confirm_count = 0;
+    state->dmr_is_ras = 0;
+  }
+  prev_dmr_is_ras = state->dmr_is_ras;
 
   if (IrrecoverableErrors == 0 && CRCCorrect == 0 && is_ras == 0 && databurst != 0x09 && databurst != 0x05)
   {

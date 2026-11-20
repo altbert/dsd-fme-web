@@ -120,6 +120,8 @@ void dmr_late_entry_mi (dsd_opts * opts, dsd_state * state)
         if (slot == 0 && state->payload_mi == 0)
         {
           fprintf (stderr, "\n");
+          state->payload_algid = 0x25;
+          state->payload_keyid = 0xFF;
           state->payload_mi = mi_final;
           state->dmr_so = 0x40;
           LFSR128d(state);
@@ -128,6 +130,8 @@ void dmr_late_entry_mi (dsd_opts * opts, dsd_state * state)
         else if (slot == 1 && state->payload_miR == 0)
         {
           fprintf (stderr, "\n");
+          state->payload_algidR = 0x25;
+          state->payload_keyidR = 0xFF;
           state->payload_miR = mi_final;
           state->dmr_soR = 0x40;
           LFSR128d(state);
@@ -142,6 +146,8 @@ void dmr_late_entry_mi (dsd_opts * opts, dsd_state * state)
         if (slot == 0 && state->payload_mi == 0)
         {
           fprintf (stderr, "\n");
+          state->payload_algid = 0x21;
+          state->payload_keyid = 0xFF;
           state->payload_mi = mi_final;
           state->dmr_so = 0x40;
           LFSR(state);
@@ -150,6 +156,8 @@ void dmr_late_entry_mi (dsd_opts * opts, dsd_state * state)
         else if (slot == 1 && state->payload_miR == 0)
         {
           fprintf (stderr, "\n");
+          state->payload_algidR = 0x21;
+          state->payload_keyidR = 0xFF;
           state->payload_miR = mi_final;
           state->dmr_soR = 0x40;
           LFSR(state);
@@ -478,7 +486,7 @@ void dmr_sbrc (dsd_opts * opts, dsd_state * state, uint8_t power)
     state->hota_sbrc_idx2[state->currentslot] = -1;
     fprintf (stderr, "%s \n", KRED);
     fprintf (stderr, " SLOT %d ", slot+1);
-    fprintf (stderr, "SB_RC Missing IDX; Undecryptable;");
+    fprintf (stderr, "SB_RC Missing IDX; Encrypted;");
     fprintf (stderr, "%s\n", KNRM);
     goto SBRC_END;
   }
@@ -488,7 +496,7 @@ void dmr_sbrc (dsd_opts * opts, dsd_state * state, uint8_t power)
     state->hota_sbrc_idx2[state->currentslot] = -1;
     fprintf (stderr, "%s \n", KRED);
     fprintf (stderr, " SLOT %d ", slot+1);
-    fprintf (stderr, "SB_RC Incorrect IDX or FEC Errors; Undecryptable;");
+    fprintf (stderr, "SB_RC Incorrect IDX or FEC Errors; Encrypted;");
     fprintf (stderr, "%s\n", KNRM);
     goto SBRC_END;
   }
@@ -496,7 +504,7 @@ void dmr_sbrc (dsd_opts * opts, dsd_state * state, uint8_t power)
   {
     fprintf (stderr, "%s \n", KRED);
     fprintf (stderr, " SLOT %d ", slot+1);
-    fprintf (stderr, "SB_RC Undecryptable;");
+    fprintf (stderr, "SB_RC Encrypted;");
     fprintf (stderr, "%s\n", KNRM);
     goto SBRC_END;
   }
