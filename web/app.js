@@ -1157,11 +1157,13 @@ setInterval(()=>{ if (radios.size) renderRadios(); }, 5000);
 //---------------------------------------------------------------- system picture
 function renderSystem(m){
   const kv=rows=>'<div class="kv">'+rows.filter(r=>r[1]!==undefined && r[1]!=='' && r[1]!==null)
-    .map(([k,v])=>'<span class="k">'+escH(k)+'</span><span class="v">'+escH(v)+'</span>').join('')+'</div>';
+    .map(([k,v,c])=>'<span class="k">'+escH(k)+'</span><span class="v'+(c?' '+c:'')+'">'+escH(v)+'</span>').join('')+'</div>';
   const mhz=f=>(f/1e6).toFixed(5)+' MHz';
   let h='';
   if (m.dmr){ const d=m.dmr;
-    h+='<div><h4>DMR '+(d.ms?'direct mode':'repeater')+'</h4>'+kv([['Color code',d.cc],['System code',d.syscode],['Vendor',[d.brand,d.sub].filter(x=>x).join(' ')],['Site',d.site],['Rest channel',d.rest]])+'</div>'; }
+    h+='<div><h4>DMR '+(d.ms?'direct mode':'repeater')+'</h4>'+kv([['Color code',d.cc],['System code',d.syscode],['Vendor',[d.brand,d.sub].filter(x=>x).join(' ')],['Site',d.site],['Rest channel',d.rest],
+      ['Access',d.ras?'Restricted (RAS)':undefined,'cipher'],
+      ['Signalling',d.ota==='key'?'Hytera OTA encrypted, decrypted with the key':d.ota==='check'?'Hytera OTA encrypted (check only, no key)':undefined,'cipher']])+'</div>'; }
   if (m.p25){ const p=m.p25;
     h+='<div><h4>P25 site</h4>'+kv([['WACN',p.wacn],['System',p.sys],['NAC',p.nac],['RFSS / site',p.rfss!=null?p.rfss+' / '+(p.site!=null?p.site:'?'):undefined],
       ['Control channel',p.cc?mhz(p.cc)+(p.cc_ch?' (ch '+p.cc_ch+')':''):undefined],['Services',p.ssc?'0x'+p.ssc:undefined],['Network time',p.time]])+'</div>';

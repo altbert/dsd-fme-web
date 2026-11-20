@@ -814,6 +814,7 @@ static void bs_trim (char * out, size_t n, const char * in)
 static void bs_forget_ids (dsd_state * state)
 {
   state->dmr_color_code = 16;
+  state->dmr_is_ras = 0;
   state->nxdn_last_ran = -1;
   state->dpmr_color_code = -1;
   state->edacs_site_id = 0;

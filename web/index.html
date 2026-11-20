@@ -174,6 +174,7 @@ canvas{display:block;width:100%}
 .kv{display:grid;grid-template-columns:auto minmax(0,1fr);gap:1px 12px;font-size:13px}
 .kv .k{color:var(--silk-3)}
 .kv .v{color:var(--silk);word-break:break-word}
+.kv .v.cipher{color:var(--cipher)}
 #d-info .kv{margin-top:6px;grid-template-columns:76px minmax(0,1fr)}
 #d-info .kv .v{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #slots{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;min-width:0}
@@ -866,6 +867,7 @@ canvas{display:block;width:100%}
         <div class="row">
           <select id="kcsvkind" aria-label="Key list format"><option value="keys_hex">Hex key list</option><option value="keys_dec">Decimal key list</option></select>
         </div>
+        <div class="hint">The first line is a header and is skipped. Hex list: <code>keyid,key</code>, a longer key as up to four 16-digit columns. Hytera Basic and Enhanced encrypted data packets use the key whose id their data header names, before a key entered above.</div>
         <textarea id="csv-keys" placeholder="keyid,keyvalue"></textarea>
         <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
       </div>
