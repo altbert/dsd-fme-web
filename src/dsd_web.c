@@ -1563,8 +1563,8 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     state->lasttg = state->lasttgR = 0;
     hytera_ota_keystream_setup (state, buf);
     if (state->hota_key_loaded) web_log ("Key set: Hytera OTA signalling.");
-    else if (state->hota_enc_check) web_log ("Hytera OTA check on: encrypted signalling is reported, calls show under pseudo TG 8686868.");
-    else web_log ("Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 to only detect it.");
+    else if (state->hota_enc_check) web_log ("Hytera OTA check on: signalling is treated as encrypted (CSBKs, PI and data headers are dropped, so control channels don't trunk), calls show under pseudo TG 8686868.");
+    else web_log ("Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 for a check without a key.");
     return;
   }
 
