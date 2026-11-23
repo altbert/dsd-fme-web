@@ -1163,7 +1163,7 @@ function renderSystem(m){
   if (m.dmr){ const d=m.dmr;
     h+='<div><h4>DMR '+(d.ms?'direct mode':'repeater')+'</h4>'+kv([['Color code',d.cc],['System code',d.syscode],['Vendor',[d.brand,d.sub].filter(x=>x).join(' ')],['Site',d.site],['Rest channel',d.rest],
       ['Access',d.ras?'Restricted (RAS)':undefined,'cipher'],
-      ['Signalling',d.ota==='key'?'Hytera OTA encrypted, decrypted with the key':d.ota==='check'?'Hytera OTA encrypted (check only, no key)':undefined,'cipher']])+'</div>'; }
+      ['Signalling',d.ota==='key'?'Hytera OTA encrypted, decrypted with the key':d.ota==='check'?'Treated as Hytera OTA encrypted (0:0, no key)':undefined,'cipher']])+'</div>'; }
   if (m.p25){ const p=m.p25;
     h+='<div><h4>P25 site</h4>'+kv([['WACN',p.wacn],['System',p.sys],['NAC',p.nac],['RFSS / site',p.rfss!=null?p.rfss+' / '+(p.site!=null?p.site:'?'):undefined],
       ['Control channel',p.cc?mhz(p.cc)+(p.cc_ch?' (ch '+p.cc_ch+')':''):undefined],['Services',p.ssc?'0x'+p.ssc:undefined],['Network time',p.time]])+'</div>';
@@ -1501,7 +1501,7 @@ $('tg-autodec').onclick=()=>{ const on=!$('tg-autodec').classList.contains('on')
 $('tg-autoana').onclick=()=>{ const on=!$('tg-autoana').classList.contains('on'); send({cmd:'auto_analog', enable:on}); reflect('tg-autoana', on); };
 
 // keys
-const khints={bp:'Decimal key id (0-255)',scrambler:'Decimal (1-32767)',rc4:'Hex, e.g. 0102030405',des:'Hex 16 chars',aes:'Hex, space every 16 (128/256-bit)',hytera:'Hex 10/32/64 chars',tyt_bp:'Hex 4 chars',tyt_ap:'Hex 32/64 chars',tyt_ep:'Hex 32 chars',retevis:'Hex 32/64 chars',baofeng:'Hex 32/64 chars',anytone:'Hex 4 chars',kenwood:'Decimal (15-bit)',csi:'Hex 18 chars (72-bit)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 chars',straight:'len:hexbytes[:discard]',ras:'password (6-24 chars)',hytera_ota:'128:<32 hex chars>, or 0:0 to check without a key (drops CSBKs and headers)'};
+const khints={bp:'Decimal key id (0-255)',scrambler:'Decimal (1-32767)',rc4:'Hex, e.g. 0102030405',des:'Hex 16 chars',aes:'Hex, space every 16 (128/256-bit)',hytera:'Hex 10/32/64 chars',tyt_bp:'Hex 4 chars',tyt_ap:'Hex 32/64 chars',tyt_ep:'Hex 32 chars',retevis:'Hex 32/64 chars',baofeng:'Hex 32/64 chars',anytone:'Hex 4 chars',kenwood:'Decimal (15-bit)',csi:'Hex 18 chars (72-bit)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 chars',straight:'len:hexbytes[:discard]',ras:'password (6-24 chars)',hytera_ota:'128:<32 hex chars>, or 0:0 without a key, only for OTA-encrypted systems (drops CSBKs and headers)'};
 $('ktype').onchange=()=>{ $('khint').textContent=khints[$('ktype').value]||''; };
 $('ktype').onchange();
 $('btn-key').onclick=()=>send({cmd:'key', keytype:$('ktype').value, value:$('kval').value});

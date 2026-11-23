@@ -1550,9 +1550,9 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     return;
   }
 
-  //Hytera OTA signalling encryption, the value as -H O: takes it: 128:<32 hex>, or 0:0 to only detect
-  //it. Replaces the earlier setting and the call context built with it, and leaves the voice mute
-  //alone, as -H O: does
+  //Hytera OTA signalling encryption, the value as -H O: takes it: 128:<32 hex>, or 0:0 to treat the
+  //signalling as encrypted without a key (it doesn't detect it). Replaces the earlier setting and the
+  //call context built with it, and leaves the voice mute alone, as -H O: does
   if (!strcmp (type, "hytera_ota"))
   {
     hota_reset (state);
@@ -1563,7 +1563,7 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     state->lasttg = state->lasttgR = 0;
     hytera_ota_keystream_setup (state, buf);
     if (state->hota_key_loaded) web_log ("Key set: Hytera OTA signalling.");
-    else if (state->hota_enc_check) web_log ("Hytera OTA check on: signalling is treated as encrypted (CSBKs, PI and data headers are dropped, so control channels don't trunk), calls show under pseudo TG 8686868.");
+    else if (state->hota_enc_check) web_log ("Hytera OTA check on: it doesn't detect OTA encryption, it treats all signalling as encrypted (CSBKs, PI and data headers are dropped, so control channels don't trunk) and shows calls under pseudo TG 8686868. Use it only on systems known to be OTA-encrypted.");
     else web_log ("Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 for a check without a key.");
     return;
   }

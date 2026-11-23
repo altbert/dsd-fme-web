@@ -2822,7 +2822,7 @@ static char * build_system (dsd_opts * opts, dsd_state * state)
     jb_bool (&b, "ms", A.dmr_ms);
     //Restricted Access (Capacity Max / Hytera): set after a key-verified RAS burst or two RAS bursts
     jb_bool (&b, "ras", state->dmr_is_ras == 1);
-    //Hytera OTA signalling encryption: decrypted with the -H O: key, or (check only) reported as encrypted
+    //Hytera OTA signalling encryption: decrypted with the -H O: key, or (0:0, no key) treated as encrypted
     if (state->hota_key_loaded) jb_str (&b, "ota", "key");
     else if (state->hota_enc_check) jb_str (&b, "ota", "check");
     jb_obj_end (&b);

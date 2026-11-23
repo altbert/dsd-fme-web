@@ -150,9 +150,13 @@ Keys are applied to the running decoder; only decode traffic you are
 authorised to. The DMR box of the system picture shows *Access: Restricted
 (RAS)* once the repeater is seen using Restricted Access, and the Hytera OTA
 setting while it is on.
-The Hytera OTA check (`0:0`, no key) treats all signalling as encrypted:
-CSBKs, PI headers and data headers are dropped, so leave it off on systems
-that aren't OTA-encrypted, and on control channels you trunk from.
+The Hytera OTA check (`0:0`, no key) doesn't detect OTA encryption, which
+would look the same as a bad signal: it makes the decoder treat the system as
+OTA-encrypted. CSBKs, PI headers and data headers are dropped, calls show under
+pseudo TG 8686868 with a stand-in radio ID that stays the same for each radio,
+and late entry is searched for the IV of a DMRA RC4 or AES-256 call. Turn it on
+only for systems you know are OTA-encrypted, and not on control channels you
+trunk from.
 
 **Auto-find BP key** (key brute-force) — DMR Basic Privacy uses a 1-byte key
 number (a 256-entry space), so it can be searched. Enable *Auto-find BP key*
