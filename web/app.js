@@ -426,7 +426,7 @@ function dfStatus(inp){
   const can = DF.tuned > 0 && (inp.type === 'rtl' || !!inp.rigctl), el=$('d-freq');
   if (can !== DF.can){
     DF.can = can; el.tabIndex = can ? 0 : -1; el.classList.toggle('can', can);
-    el.title = can ? 'Click a digit, then type it or step it with the up and down arrow keys (the digits after it go to 0). Left and right pick another digit. It tunes once you stop; Enter tunes at once, Escape undoes.' : '';
+    el.title = can ? 'Click a digit, then type or ↑↓ (later digits reset). ←→ move, Enter tunes, Esc undoes' : '';
     if (!can){ clearTimeout(DF.timer); DF.pending=0; if (document.activeElement===el) el.blur(); }
   }
   dfRender();
@@ -585,11 +585,11 @@ function actRow(it){
   const who=idHTML(it.src, it.srcs, it.sn), to=idHTML(it.dst, it.dsts, it.dn, it.g===0 ? 'TG ' : '');
   let meta='';
   // a trunked grant: did the receiver go to the call?
-  if (it.trk===1) meta+='<span class="tag ok" title="DSD-FME followed this call to its channel">Followed</span>';
+  if (it.trk===1) meta+='<span class="tag ok" title="Followed to its channel">Followed</span>';
   else if (it.trk===0) meta+='<span class="tag why" title="Not followed: '+escH(it.why||'')+'">Not followed: '+escH(it.why||'')+'</span>';
   if (it.enc) meta+='<span class="tag enc" title="'+escH(it.enc)+'">'+icon('lock')+escH(it.enc)+'</span>';
   if (it.lat!=null) meta+='<button class="tag lnk" data-lat="'+it.lat+'" data-lon="'+it.lon+'" title="'+it.lat.toFixed(5)+', '+it.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
-  if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times (resent)">×'+it.rep+'</span>';
+  if (it.rep>1) meta+='<span class="tag" title="Heard '+it.rep+' times">×'+it.rep+'</span>';
   if (it.ack) meta+='<span class="tag'+(it.ack==='delivered'?' ok':'')+'" title="'+escH(it.ack)+'">'+icon(it.ack==='delivered'?'check':'x')+'</span>';
   if (it.k==='call') meta+='<span class="dur" data-t="'+it.t+'">'+fmtClock(it.live ? Date.now()/1000-it.t : it.dur)+'</span>';
   el.innerHTML='<div class="l1"><span class="t">'+hms(it.t)+'</span><span class="ty">'+escH(it.ty||it.k)+'</span>'+
@@ -955,9 +955,9 @@ function drawTalkgroups(){
     const what=(r.kind==='grp' ? 'TG ' : 'radio ')+r.id;
     h+='<tr data-id="'+r.id+'"'+(here||held ? ' class="'+(here?'live':'')+(held?' held':'')+'"' : '')+'>'+
       '<td><button class="tgl sm led'+(lit?' on':'')+'" data-act="led" aria-pressed="'+lit+'" aria-label="Follow '+what+'"'+(off ? ' aria-disabled="true"' : '')+' title="'+
-        (off ? typeName[r.kind]+' are off: switch them on under Follow to follow '+what : (lit ? 'Followed: click to stop following '+what : 'Not followed: click to follow '+what))+'"></button></td>'+
-      '<td><button class="num" data-act="find" title="Show everything about '+what+' in Activity">'+r.id+'</button><button class="nm'+(name?'':' add')+'" data-act="name" title="Name '+what+'">'+(name ? escH(name) : 'name')+'</button></td>'+
-      '<td class="opt"'+(r.kind==='data' ? ' title="Packet data for this radio: nothing to hear"' : '')+'>'+TG_WORD[r.kind]+'</td>'+
+        (off ? typeName[r.kind]+' are off under Follow' : (lit ? 'Followed: click to stop' : 'Not followed: click to follow'))+'"></button></td>'+
+      '<td><button class="num" data-act="find" title="Show '+what+' in Activity">'+r.id+'</button><button class="nm'+(name?'':' add')+'" data-act="name" title="Name '+what+'">'+(name ? escH(name) : 'name')+'</button></td>'+
+      '<td class="opt"'+(r.kind==='data' ? ' title="Data only: nothing to hear"' : '')+'>'+TG_WORD[r.kind]+'</td>'+
       '<td class="opt2">'+(r.live ? '<span class="air">On air</span>' : ago(now-r.end))+'</td>'+
       '<td class="opt">'+r.calls+'</td>'+
       '<td class="out" title="'+escH(tip)+'">'+out+'</td>'+
@@ -1129,7 +1129,7 @@ function mapSide(now){
   if (!air.length) h+='<div class="hint">Nobody is transmitting.</div>';
   for (const [id, c] of air){
     const r=radios.get(id), pos=r && r.lat!=null;
-    h+='<button class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position from this radio yet')+'"><span>'+escH(id)+'</span><span class="x">'+escH(airLabel(id))+', '+fmtClock(now-c.t)+(pos?'':', no position')+'</span></button>';
+    h+='<button class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position yet')+'"><span>'+escH(id)+'</span><span class="x">'+escH(airLabel(id))+', '+fmtClock(now-c.t)+(pos?'':', no position')+'</span></button>';
   }
   h+='<h4>Recently heard</h4>';
   const rec=mapPts().sort((a,b)=>b.last-a.last).slice(0,40);
@@ -1319,7 +1319,7 @@ function renderBookmarks(){
     const row=document.createElement('div'); row.className='bm'; row.dataset.id=b.id; row.title='Tune '+b.name+' ('+fmtMHz(b.freq)+' MHz)';
     row.tabIndex=0;
     const k=document.createElement('button'); k.className='tgl sm led'+(b.scan?' on':''); k.setAttribute('aria-pressed', String(!!b.scan));
-    k.setAttribute('aria-label', 'Scan '+b.name); k.title = b.scan ? 'Scanned: click to leave it out of the scan' : 'Not scanned: click to scan it';
+    k.setAttribute('aria-label', 'Scan '+b.name); k.title = b.scan ? 'In the scan: click to remove' : 'Not in the scan: click to add';
     k.onclick=(ev)=>{ ev.stopPropagation(); bmScanSet([b.id], !b.scan); };
     const n=document.createElement('span'); n.className='bm-n';
     const nm=document.createElement('span'); nm.className='bm-nm'; nm.textContent=b.name;
@@ -1690,7 +1690,7 @@ document.addEventListener('input', e=>{
 // Keep, or that it was kept, in a slot of its own width so the players line up
 function recKeep(id, name){
   return '<span class="rp-k">'+(name ? '<span class="tag ok" title="Kept as '+escH(name)+'">'+icon('check')+'Kept</span>'
-    : '<button class="sm rp-keep" data-id="'+id+'" title="Copy it into the WAV folder, where it stays after DSD-FME exits">Keep</button>')+'</span>';
+    : '<button class="sm rp-keep" data-id="'+id+'" title="Save to the WAV folder; it stays after DSD-FME exits">Keep</button>')+'</span>';
 }
 // the expanded call row: its recording, while it runs and after
 function actRec(it){
