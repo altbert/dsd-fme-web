@@ -143,7 +143,7 @@ or a scanner frequency list and apply it live.
 **Keys** — enter keys for the encryption schemes DSD-FME supports (DMR Basic
 Privacy, NXDN/dPMR scrambler, RC4/DES, AES-128/256, Hytera, the TYT/Retevis/
 Baofeng/Anytone/Kenwood/Connect-Systems/Vertex/Auctus vendor modes, straight
-XOR, Hytera RAS, Hytera over-the-air signalling encryption) or import a key-list
+XOR, MOTOTRBO RAS, Hytera over-the-air signalling encryption) or import a key-list
 CSV. In a hex key list, Hytera Basic and Enhanced encrypted data packets find
 their key by the key id in their data header, ahead of a key entered by hand.
 Keys are applied to the running decoder; only decode traffic you are

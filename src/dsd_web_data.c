@@ -2847,7 +2847,7 @@ static char * build_system (dsd_opts * opts, dsd_state * state)
     if (t[0]) jb_str (&b, "site", t);
     if (state->dmr_rest_channel > 0) jb_int (&b, "rest", state->dmr_rest_channel);
     jb_bool (&b, "ms", A.dmr_ms);
-    //Restricted Access (Capacity Max / Hytera): set after a key-verified RAS burst or two RAS bursts
+    //MOTOTRBO Restricted Access to System: set after a key-verified RAS burst or two RAS bursts
     jb_bool (&b, "ras", state->dmr_is_ras == 1);
     //Hytera OTA signalling encryption: decrypted with the -H O: key, or (0:0, no key) treated as encrypted
     if (state->hota_key_loaded) jb_str (&b, "ota", "key");
