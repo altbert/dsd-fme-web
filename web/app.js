@@ -23,7 +23,7 @@ function connect(){
 function send(obj){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function subscribe(){ send({cmd:'subscribe', fft:true, audio:audioOn, console:true, events:actKind==='log'}); }
-function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); send({cmd:'activity'}); }
+function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); send({cmd:'activity'}); send({cmd:'list_recordings'}); }
 
 function onMessage(ev){
   if (typeof ev.data === 'string'){
@@ -52,7 +52,8 @@ function handleJSON(m){
   else if (m.type === 'activity'){ handleActivity(m); }
   else if (m.type === 'system'){ renderSystem(m); }
   else if (m.type === 'groups'){ groupsSet(m); }
-  else if (m.type === 'files'){ renderFiles(m); }
+  else if (m.type === 'recordings'){ recsSet(m); }
+  else if (m.type === 'rec_kept'){ kept.set(m.id, m.name); const it=acts.get(m.id); if (it) actPut(it); }
   else if (m.type === 'bookmarks'){ bms = m.items || []; $('bm-path').textContent = m.path || '—'; renderBookmarks(); }
   else if (m.type === 'bm_saved'){ bmFormClose(); bmMsg(m.warn ? 'Saved, but '+m.warn+'.' : 'Saved.', !!m.warn); }
   else if (m.type === 'bm_error'){ bmMsg('Not saved: '+m.msg+'.', true); }
@@ -61,7 +62,7 @@ function handleJSON(m){
 
 function setConn(txt, cls){ const b=$('st-conn'); b.textContent=txt; b.className='badge '+cls; }
 // the password prompt (and the map) keep keyboard focus out of the page behind them
-function loginShow(on){ $('login').classList.toggle('hidden', !on); pageInert(on || MAP.open); if (on) $('pw').focus(); }
+function loginShow(on){ $('login').classList.toggle('hidden', !on); pageInert(on || MAP.open || REC.open); if (on) $('pw').focus(); }
 function pageInert(on){ $('top').inert = on; $('main').inert = on; }
 
 //---------------------------------------------------------------- spectrum
@@ -262,7 +263,7 @@ function audioStart(){
 }
 function audioStop(){ audioOn=false; $('btn-audio').innerHTML=icon('spk-off')+'Audio off'; reflect('btn-audio', false); subscribe(); }
 $('btn-audio').onclick = ()=> audioOn ? audioStop() : audioStart();
-$('vol').oninput = ()=>{ if (gain) gain.gain.value = +$('vol').value/100; };
+$('vol').oninput = ()=>{ if (gain) gain.gain.value = +$('vol').value/100; RP.a.volume = Math.min(1, +$('vol').value/100); };
 
 function handleAudio(dv, buf){
   if (!audioOn || !actx) return;
@@ -351,6 +352,7 @@ function renderStatus(m){
   reflect('tg-s1', m.slot1 && m.slot1.on); reflect('tg-s2', m.slot2 && m.slot2.on);
   reflect('tg-force', fl.forced_alg); reflect('tg-autokey', fl.auto_key);
   reflect('tg-wav', fl.rec_wav); reflect('tg-wav2', fl.rec_wav);
+  reflect('act-rec', fl.rec_calls); reflect('tg-rec2', fl.rec_calls);
   const kh=m.key_hunt||{}; const el=$('autokey-stat');
   if (el){
     if (kh.locked) setHTML(el, '<span class="found">'+icon('check')+' Found key '+kh.found_key+'</span>');
@@ -465,6 +467,7 @@ function handleActivity(m){
     if (it.k==='call' && it.p!=='P25' && (trk.enabled || (old && old.trkd))) it.trkd = 1;
     acts.set(it.id, it); radioSeen(it, fresh);
     if (it.k !== 'call') continue;
+    if (!it.live && it.rec > 0 && REC.open) recRefresh();
     if (it.p !== 'P25'){ // voice on this channel (trunked grants seen on a P25 control channel are "P25")
       const slot = it.s || 0;
       if (it.live) liveCalls.set(slot, it); else if (liveCalls.get(slot) && liveCalls.get(slot).id === it.id) liveCalls.delete(slot);
@@ -538,7 +541,7 @@ function actDetail(it){
   if (it.k==='call') add('Time', hms(it.t)+(it.live?', in progress':' to '+hms(it.t+it.dur)));
   for (const [k,v] of it.f||[]) add(k,v);
   if (it.crc===0) add('Integrity','failed the CRC check');
-  d.innerHTML='<div class="kv">'+kv+'</div>'+(it.hex?'<pre class="hexd">'+escH(hexDump(it.hex))+'</pre>':'');
+  d.innerHTML='<div class="kv">'+kv+'</div>'+actRec(it)+(it.hex?'<pre class="hexd">'+escH(hexDump(it.hex))+'</pre>':'');
   return d;
 }
 function actHint(){
@@ -967,7 +970,7 @@ function mapOpen(focus){
 }
 function mapClose(){
   MAP.open=false; MAP.focus=null; $('mapdlg').classList.add('hidden');
-  pageInert(!$('login').classList.contains('hidden'));
+  pageInert(!$('login').classList.contains('hidden') || REC.open);
   if (MAP.back && MAP.back.focus) MAP.back.focus();
 }
 function mapFit(){
@@ -1076,7 +1079,7 @@ $('btn-map').onclick=()=>mapOpen();
 $('rad-map').onclick=()=>mapOpen();
 $('map-close').onclick=mapClose;
 $('mapdlg').addEventListener('click', e=>{ if (e.target===$('mapdlg')) mapClose(); });
-document.addEventListener('keydown', e=>{ if (e.key==='Escape' && MAP.open) mapClose(); });
+document.addEventListener('keydown', e=>{ if (e.key==='Escape' && MAP.open){ e.preventDefault(); mapClose(); } });
 $('map-fit').onclick=()=>{ MAP.focus=null; mapFit(); mapDraw(); };
 $('map-follow').onclick=()=>{ MAP.follow=!MAP.follow; reflect('map-follow', MAP.follow); };
 // the buttons step to the next whole zoom level, where tiles are sharpest
@@ -1415,19 +1418,182 @@ function renderBscan(bs, d){
   if (short) $('ad-stat').textContent = short;
 }
 
-//---------------------------------------------------------------- files
-function renderFiles(m){
-  const el=$('filelist'); el.innerHTML='';
-  if (!m.files || !m.files.length){ el.innerHTML='<div class="hint">No recordings yet. Turn on Per-call WAV to record each call.</div>'; return; }
-  m.files.sort((a,b)=>b.mtime-a.mtime);
-  m.files.forEach(f=>{
-    const a=document.createElement('a');
-    const q = 'dl=1'+(token?('&t='+token):'');
-    a.href='/dl/'+m.area+'/'+encodeURIComponent(f.name)+'?'+q;
-    a.textContent = f.name+'  ('+(f.size/1024).toFixed(0)+' KB)';
-    el.appendChild(a);
-  });
+//---------------------------------------------------------------- call recordings
+// one player for every recording on the page, so redrawing a row doesn't stop it
+const RP = { a: new Audio(), key: '', gone: new Set() };
+RP.a.preload = 'none';
+RP.a.volume = 0.8;
+const kept = new Map(); // temporary recording (activity id) -> its name in the WAV folder
+const REC = { open: false, items: [], info: {}, back: null, timer: 0 };
+function recURL(area, name, dl){
+  const q=[]; if (dl) q.push('dl=1'); if (token) q.push('t='+token);
+  return '/dl/'+area+'/'+encodeURIComponent(name)+(q.length ? '?'+q.join('&') : '');
 }
+// play/pause, seek bar and time; extra: buttons after it. The row is the same height whatever it shows
+function recPlayer(area, name, dur, extra){
+  const key=area+'/'+name;
+  if (RP.gone.has(key)) return '<div class="rplay"><span class="rp-msg">Recording removed (deleted, or past the size limit)</span><span class="rp-x"></span></div>';
+  const cur=RP.key===key, playing=cur && !RP.a.paused;
+  const len=(cur && isFinite(RP.a.duration) ? RP.a.duration : dur) || 0, pos=cur ? RP.a.currentTime : 0;
+  return '<div class="rplay" data-key="'+escH(key)+'" data-dur="'+len+'">'+
+    '<button class="sm icon rp-play" data-on="'+playing+'" title="'+(playing?'Pause':'Play')+'" aria-label="'+(playing?'Pause':'Play')+'">'+icon(playing?'pause':'play')+'</button>'+
+    '<input type="range" class="rp-seek" min="0" max="1000" step="1" value="'+(len ? Math.round(pos/len*1000) : 0)+'" aria-label="Position">'+
+    '<span class="rp-time">'+fmtClock(pos)+' / '+fmtClock(len)+'</span><span class="rp-x">'+(extra||'')+'</span></div>';
+}
+function rpSync(){
+  for (const el of document.querySelectorAll('.rplay[data-key]')){
+    const cur=el.dataset.key===RP.key, playing=cur && !RP.a.paused;
+    const len=(cur && isFinite(RP.a.duration) ? RP.a.duration : +el.dataset.dur) || 0, pos=cur ? RP.a.currentTime : 0;
+    const b=el.querySelector('.rp-play');
+    if (b.dataset.on !== String(playing)){
+      b.dataset.on=String(playing); b.innerHTML=icon(playing?'pause':'play');
+      b.title=playing?'Pause':'Play'; b.setAttribute('aria-label', b.title);
+    }
+    const sk=el.querySelector('.rp-seek'); if (!(cur && RP.seeking)) sk.value = len ? Math.round(pos/len*1000) : 0;
+    el.querySelector('.rp-time').textContent=fmtClock(pos)+' / '+fmtClock(len);
+  }
+}
+for (const ev of ['play','pause','timeupdate','ended','loadedmetadata','emptied']) RP.a.addEventListener(ev, rpSync);
+// a recording dropped by the size cap or deleted answers 404, which the element reports as unplayable
+RP.a.addEventListener('error', ()=>{
+  const key=RP.key; if (!key || !RP.a.error) return;
+  RP.key='';
+  if (RP.a.error.code !== 4){ rpSync(); return; }
+  RP.gone.add(key);
+  for (const el of document.querySelectorAll('.rplay[data-key]')){
+    if (el.dataset.key !== key) continue;
+    for (const c of el.querySelectorAll('.rp-play,.rp-seek,.rp-time')) c.remove();
+    el.querySelector('.rp-x').innerHTML=''; // Keep, download and delete have nothing left to act on
+    el.insertAdjacentHTML('afterbegin', '<span class="rp-msg">Recording removed (deleted, or past the size limit)</span>');
+    el.removeAttribute('data-key');
+  }
+});
+function rpLoad(key){
+  const i=key.indexOf('/');
+  RP.key=key; RP.a.src=recURL(key.slice(0,i), key.slice(i+1));
+  RP.a.volume=Math.min(1, +$('vol').value/100);
+}
+document.addEventListener('click', e=>{
+  const b=e.target.closest('.rp-play');
+  if (b){
+    const key=b.closest('.rplay').dataset.key;
+    if (RP.key!==key){ rpLoad(key); RP.a.play().catch(()=>{}); }
+    else if (RP.a.paused) RP.a.play().catch(()=>{});
+    else RP.a.pause();
+    rpSync(); return;
+  }
+  const k=e.target.closest('.rp-keep');
+  if (k){ k.disabled=true; send({cmd:'rec_keep', id:+k.dataset.id}); return; }
+  const d=e.target.closest('.rp-del');
+  if (d){
+    const temp=d.dataset.area==='rec';
+    if (!confirm(temp ? 'Delete this temporary recording?' : 'Delete '+d.dataset.name+' from the WAV folder?')) return;
+    if (RP.key===d.dataset.area+'/'+d.dataset.name){ RP.a.pause(); RP.a.removeAttribute('src'); RP.a.load(); RP.key=''; }
+    send({cmd:'rec_delete', area:d.dataset.area, name:d.dataset.name});
+  }
+});
+document.addEventListener('input', e=>{
+  const sk=e.target.closest && e.target.closest('.rp-seek'); if (!sk) return;
+  const key=sk.closest('.rplay').dataset.key, to=+sk.value/1000;
+  RP.seeking=true;
+  if (RP.key!==key){ rpLoad(key); RP.a.addEventListener('loadedmetadata', ()=>{ RP.a.currentTime=to*RP.a.duration; RP.seeking=false; }, {once:true}); RP.a.load(); return; }
+  if (isFinite(RP.a.duration)) RP.a.currentTime=to*RP.a.duration;
+  RP.seeking=false;
+});
+// Keep, or that it was kept, in a slot of its own width so the players line up
+function recKeep(id, name){
+  return '<span class="rp-k">'+(name ? '<span class="tag ok" title="Kept as '+escH(name)+'">'+icon('check')+'Kept</span>'
+    : '<button class="sm rp-keep" data-id="'+id+'" title="Copy it into the WAV folder, where it stays after DSD-FME exits">Keep</button>')+'</span>';
+}
+// the expanded call row: its recording, while it runs and after
+function actRec(it){
+  if (it.k!=='call' || it.rec===undefined) return '';
+  if (it.live) return '<div class="rplay"><span class="rp-msg">Recording…</span><span class="rp-x"></span></div>';
+  if (!(it.rec > 0)) return '<div class="rplay"><span class="rp-msg">No audio recorded (encrypted, muted, or nothing played)</span><span class="rp-x"></span></div>';
+  return recPlayer('rec', it.id+'.wav', it.rec, recKeep(it.id, kept.get(it.id)));
+}
+function toggleRec(id){ const on=!$(id).classList.contains('on'); send({cmd:'rec_calls', enable:on}); reflect('act-rec', on); reflect('tg-rec2', on); }
+$('act-rec').onclick=()=>toggleRec('act-rec');
+$('tg-rec2').onclick=()=>toggleRec('tg-rec2');
+
+//---------------------------------------------------------------- the Recordings window
+const REC_KIND={temp:'Temporary', kept:'Kept', 'per-call':'Per-call WAV'};
+function recsSet(m){
+  REC.items=m.items||[]; REC.info=m;
+  if (m.cap_mb) $('rec-cap').textContent=m.cap_mb;
+  for (const r of REC.items) if (r.kind==='temp' && r.kept && !kept.has(r.id)){
+    kept.set(r.id, r.kept); const it=acts.get(r.id); if (it && actOpen.has(r.id)) actPut(it);
+  }
+  if (REC.open) renderRecs();
+}
+function recRefresh(){ if (REC.timer) return; REC.timer=setTimeout(()=>{ REC.timer=0; if (REC.open) send({cmd:'list_recordings'}); }, 1500); }
+function recOpen(){
+  if (!REC.open){ REC.back=document.activeElement; REC.open=true; $('recdlg').classList.remove('hidden'); pageInert(true); }
+  send({cmd:'list_recordings'}); renderRecs(); $('rec-close').focus();
+}
+function recClose(){
+  REC.open=false; $('recdlg').classList.add('hidden');
+  pageInert(!$('login').classList.contains('hidden') || MAP.open);
+  if (REC.back && REC.back.focus) REC.back.focus();
+}
+const recT = r => (r.meta && r.meta.t) || r.mtime || 0;
+function recFields(m){ const o={}; for (const [k,v] of (m && m.f) || []) o[k]=v; return o; }
+function ymdhms(t){ const d=new Date(t*1000), p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
+const fmtSize = b => b>=1048576 ? (b/1048576).toFixed(1)+' MB' : Math.max(1, Math.round((b||0)/1024))+' KB';
+// the name Keep gives it (src/dsd_web_rec.c, web_rec_keep), for downloading a temporary one
+function recName(r){
+  const m=r.meta||{}, d=new Date(recT(r)*1000), p=n=>String(n).padStart(2,'0'), s=x=>String(x).replace(/[^A-Za-z0-9+,-]/g,'_');
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'_'+String(r.id%100000).padStart(5,'0')+
+    '_'+s(m.p||'CALL')+(m.dsts ? '_TGT_'+s(m.dsts) : (m.dst>0 ? '_TGT_'+m.dst : ''))+(m.srcs ? '_SRC_'+s(m.srcs) : (m.src>0 ? '_SRC_'+m.src : ''))+'.wav';
+}
+function recMatch(r, q){
+  if (!q) return true;
+  const m=r.meta||{}, f=recFields(m);
+  return [m.src, m.dst, m.srcs, m.dsts, m.sn, m.dn, m.dst>0 && tgName(m.dst), m.src>0 && tgName(m.src), m.p, m.ty, m.enc,
+    f['Talker alias'], f['System'], r.name, r.kept, REC_KIND[r.kind]].join(' ').toLowerCase().includes(q);
+}
+function recRow(r){
+  const m=r.meta||{}, f=recFields(m);
+  const who=idHTML(m.src, m.srcs, m.sn), to=idHTML(m.dst, m.dsts, m.dn, m.g===0 ? 'TG ' : '');
+  let meta='<span class="tag" title="'+(r.kind==='temp' ? 'Removed when DSD-FME exits' : 'In the WAV folder')+'">'+REC_KIND[r.kind]+'</span>';
+  if (m.enc) meta+='<span class="tag enc" title="'+escH(m.enc)+'">'+icon('lock')+escH(m.enc)+'</span>';
+  if (m.lat!=null) meta+='<button class="tag lnk" data-lat="'+m.lat+'" data-lon="'+m.lon+'" data-id="'+escH(m.srcs || (m.src>0 ? String(m.src) : ''))+'" title="'+m.lat.toFixed(5)+', '+m.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
+  meta+='<span class="dur">'+fmtClock(r.dur||0)+'</span>';
+  const det=[m.p, m.freq ? (m.freq/1e6).toFixed(5)+' MHz' : '', f['System'], f['Emergency'] ? 'EMERGENCY' : '',
+    f['Talker alias'] ? 'alias '+f['Talker alias'] : '', f['GPS'] ? 'GPS '+f['GPS'] : '',
+    r.kind==='temp' ? (r.kept ? 'kept as '+r.kept : 'temporary') : r.name, fmtSize(r.size)].filter(x=>x);
+  const keep = r.kind==='temp' ? recKeep(r.id, r.kept) : '<span class="rp-k"></span>';
+  const extra = keep+'<a class="btn icon" href="'+escH(recURL(r.area, r.name, r.area==='wav'))+'" download="'+escH(r.kind==='temp' ? recName(r) : r.name)+'" title="Download" aria-label="Download">'+icon('dl')+'</a>'+
+    '<button class="sm icon rp-del" data-area="'+escH(r.area)+'" data-name="'+escH(r.name)+'" title="Delete" aria-label="Delete">'+icon('trash')+'</button>';
+  return '<div class="rrow"><div class="l1"><span class="t">'+ymdhms(recT(r))+'</span><span class="ty">'+escH(m.ty || 'Call')+'</span>'+
+    (m.s ? '<span class="sl">TS'+m.s+'</span>' : '')+'<span class="who">'+(who || (to ? '' : '<i>unknown</i>'))+(to ? ' → '+to : '')+'</span>'+
+    '<span class="meta">'+meta+'</span></div>'+
+    '<div class="l2" title="'+escH(det.join(' · '))+'">'+escH(det.join(' · '))+'</div>'+recPlayer(r.area, r.name, r.dur, extra)+'</div>';
+}
+function renderRecs(){
+  const q=$('rec-q').value.trim().toLowerCase(), by=$('rec-sort').value;
+  const list=REC.items.filter(r=>recMatch(r, q));
+  const fq=r=>(r.meta && r.meta.freq) || Infinity;
+  if (by==='dur') list.sort((a,b)=>(b.dur||0)-(a.dur||0) || recT(b)-recT(a));
+  else if (by==='freq') list.sort((a,b)=>(fq(a)-fq(b)) || recT(b)-recT(a));
+  else list.sort((a,b)=>recT(b)-recT(a));
+  $('rec-count').textContent = list.length===REC.items.length ? REC.items.length : list.length+' of '+REC.items.length;
+  const i=REC.info||{}, ntemp=REC.items.filter(r=>r.kind==='temp').length;
+  $('rec-sum').textContent=(i.on ? 'Recording calls' : 'Call recording is off')+' · '+ntemp+' temporary ('+(i.used_mb||0)+' of '+(i.cap_mb||0)+' MB, removed at exit)'+
+    ' · WAV folder: '+(i.wav_dir || '—');
+  const el=$('rec-list');
+  if (!list.length){ el.innerHTML='<div class="rhint">'+(REC.items.length ? 'Nothing matches the filter.'
+    : 'No recordings yet. Calls are recorded while Record calls is on; Per-call WAV files show up here too.')+'</div>'; return; }
+  el.innerHTML=list.map(recRow).join('');
+}
+$('btn-recs').onclick=recOpen;
+$('rec-close').onclick=recClose;
+$('rec-q').oninput=renderRecs;
+$('rec-sort').onchange=renderRecs;
+$('recdlg').addEventListener('click', e=>{ if (e.target===$('recdlg')) recClose(); });
+$('rec-list').addEventListener('click', e=>{ const ln=e.target.closest('.lnk'); if (ln) mapOpen({lat:+ln.dataset.lat, lon:+ln.dataset.lon, id:ln.dataset.id}); });
+document.addEventListener('keydown', e=>{ if (e.key==='Escape' && REC.open && !MAP.open && !e.defaultPrevented) recClose(); });
 
 //---------------------------------------------------------------- controls
 function bindToggle(id, cmd, key){ $(id).onclick=()=>{ const on=!$(id).classList.contains('on'); const o={cmd}; o[key]=on; send(o); reflect(id, on); }; }
@@ -1510,9 +1676,6 @@ $('tg-autokey').onclick=()=>{ const on=!$('tg-autokey').classList.contains('on')
 $('tg-force').onclick=()=>{ const on=!$('tg-force').classList.contains('on'); send({cmd:'key', keytype: on?'force':'unforce'}); reflect('tg-force', on); };
 $('btn-keycsv').onclick=()=>send({cmd:'csv', kind:$('kcsvkind').value, text:$('csv-keys').value});
 
-// files
-$('btn-refresh').onclick=()=>send({cmd:'list_files', area:'wav'});
-
 // spectrum config
 function pushSpec(){ send({cmd:'spectrum', fft:+$('fftsize').value, fps:+$('fps').value, avg:+$('avg').value}); }
 $('fftsize').onchange=pushSpec; $('fps').onchange=pushSpec; $('avg').onchange=pushSpec;
@@ -1522,7 +1685,6 @@ $('tabs').addEventListener('click', e=>{ if(e.target.tagName!=='BUTTON') return;
   const t=e.target.dataset.t;
   for (const b of $('tabs').children){ b.classList.toggle('on', b.dataset.t===t); b.setAttribute('aria-selected', b.dataset.t===t); }
   for (const p of document.querySelectorAll('.tabpane')) p.classList.toggle('on', p.dataset.t===t);
-  if (t==='files') send({cmd:'list_files', area:'wav'});
 });
 
 // login (a form, so Enter submits and password managers know the field)

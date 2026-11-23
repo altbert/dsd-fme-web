@@ -1724,40 +1724,12 @@ static void send_hello (dsd_opts * opts, int client)
   jb_free (&b);
 }
 
-static void send_file_list (dsd_opts * opts, int client, const char * area)
+//call recordings and the per-call WAV folder, for the Recordings window
+static void send_recordings (dsd_opts * opts, int client)
 {
-  //only the per-call WAV directory is offered (the one download area web_init registers)
-  const char * dir = !strcmp (area, "wav") ? opts->wav_out_dir : NULL;
   jb b; jb_init (&b);
-  jb_obj (&b, NULL);
-  jb_str (&b, "type", "files");
-  jb_str (&b, "area", area);
-  jb_arr (&b, "files");
-  DIR * d = dir ? opendir (dir) : NULL;
-  if (d)
-  {
-    struct dirent * de;
-    int n = 0;
-    while ((de = readdir (d)) != NULL && n < 500)
-    {
-      if (de->d_name[0] == '.') continue;
-      if (!web_path_component_ok (de->d_name)) continue;
-      char full[2048];
-      struct stat st;
-      snprintf (full, sizeof(full), "%s/%s", dir, de->d_name);
-      if (stat (full, &st) != 0 || !S_ISREG(st.st_mode)) continue;
-      jb_obj (&b, NULL);
-      jb_str (&b, "name", de->d_name);
-      jb_int (&b, "size", (long long)st.st_size);
-      jb_int (&b, "mtime", (long long)st.st_mtime);
-      jb_obj_end (&b);
-      n++;
-    }
-    closedir (d);
-  }
-  jb_arr_end (&b);
-  jb_obj_end (&b);
-  web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
+  web_rec_list (opts, &b);
+  if (b.buf) web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
   jb_free (&b);
 }
 
@@ -2217,9 +2189,44 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (dropped) web_log ("Scan list set (%d freqs, %d past the limit of %d left out).", state->lcn_freq_count, dropped, max);
     else web_log ("Scan list set (%d freqs).", state->lcn_freq_count);
   }
-  else if (!strcmp (c, "list_files"))
+  else if (!strcmp (c, "list_recordings"))
   {
-    send_file_list (opts, client, jv_str (cmd, "area", "wav"));
+    send_recordings (opts, client);
+  }
+  else if (!strcmp (c, "rec_calls"))
+  {
+    int on = jv_bool (cmd, "enable", 1);
+    if (on != web_rec_enabled ())
+    {
+      web_rec_set (on);
+      web_log ("Call recording %s.", on ? "on: calls are recorded until DSD-FME exits" : "off");
+    }
+  }
+  else if (!strcmp (c, "rec_keep"))
+  {
+    char out[1200];
+    uint32_t id = (uint32_t)jv_int (cmd, "id", 0);
+    if (web_rec_keep (opts, id, out, sizeof(out)) == 0)
+    {
+      web_log ("Recording kept as %s/%s.", opts->wav_out_dir, out);
+      jb b; jb_init (&b);
+      jb_obj (&b, NULL);
+      jb_str (&b, "type", "rec_kept");
+      jb_int (&b, "id", id);
+      jb_str (&b, "name", out);
+      jb_obj_end (&b);
+      web_broadcast (WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len, 0);
+      jb_free (&b);
+    }
+    else web_log ("Recording not kept: %s.", out);
+    send_recordings (opts, client);
+  }
+  else if (!strcmp (c, "rec_delete"))
+  {
+    const char * area = jv_str (cmd, "area", ""), * name = jv_str (cmd, "name", "");
+    if (web_rec_delete (opts, area, name)) web_log ("Recording %s deleted.", name);
+    else web_log ("Recording %s not deleted: it is not there, or still being written.", name);
+    send_recordings (opts, client);
   }
   else if (!strcmp (c, "get_status"))
   {
@@ -2631,6 +2638,7 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_int (b, "forced_alg", state->forced_alg_id);
   jb_bool (b, "auto_key", W.auto_key);
   jb_bool (b, "rec_wav", opts->dmr_stereo_wav);
+  jb_bool (b, "rec_calls", web_rec_enabled ());
   jb_obj_end (b);
 
   //auto-decode progress, and what the sync detector hears (both it and the band scan use it)
@@ -2829,6 +2837,9 @@ void web_poll (dsd_opts * opts, dsd_state * state)
   run_squelch (opts);
   run_key_hunt (opts, state);
   web_act_poll (opts, state);
+  web_rec_poll (opts);
+  const char * rec_err = web_rec_error ();
+  if (rec_err[0]) web_log ("%s", rec_err);
 
   //broadcast status at a steady rate when someone is connected
   double now = spectrum_now ();
@@ -2847,6 +2858,7 @@ void web_shutdown (dsd_opts * opts, dsd_state * state)
   if (!W.inited) return;
   spectrum_stop ();
   web_server_stop ();
+  web_rec_shutdown ();
   W.inited = 0;
 }
 
@@ -2861,6 +2873,9 @@ void web_audio_push (dsd_opts * opts, const void * data, size_t nbytes, int anal
 {
   if (!W.inited || nbytes == 0) return;
   if (analog) W.analog_last = spectrum_now ();
+  //calls are recorded as they play here, with or without a browser listening
+  web_rec_audio (data, nbytes, analog ? 1 : opts->pulse_digi_out_channels, analog ? 0 : opts->floating_point,
+                 analog ? 48000 : opts->pulse_digi_rate_out, analog);
   if (!(web_server_subs () & WEB_SUB_AUDIO)) return;
 
   uint8_t hdr[8];

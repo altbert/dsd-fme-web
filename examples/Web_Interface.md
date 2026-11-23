@@ -172,8 +172,27 @@ brute-forceable and are deliberately excluded.
 monitor, when enabled) to the browser via the Web Audio API. Independent of the
 PulseAudio / UDP / WAV outputs, which keep working as usual.
 
-**Files** — per-call WAV recordings (`-7`/the Rec WAV toggle) are listed for
-download straight from the browser.
+**Call recordings** — with *Record calls* on (in the Activity bar and the REC
+tab; on by default), every call is recorded as the browser would play it, after
+the decoder's gain, high-pass filter and mutes, whether a browser listens or
+not. Open a call in the Activity log for a small player; *Keep* copies its
+recording into the WAV folder. Recordings sit in a temporary folder
+(`$TMPDIR/dsd-fme-web-rec-*`, else `/tmp`) that is removed when DSD-FME exits;
+past 256 MB the oldest go first. A call muted by encryption without a key, the
+block list or a talkgroup hold records nothing. With `-o null`, P25 Phase 1,
+NXDN, dPMR, ProVoice and some YSF modes send the browser no voice, so their
+calls record nothing either.
+
+**REC** — the recording toggles: *Record calls*, and *Per-call WAV*, DSD-FME's
+own recorder (`-P`), which writes one file per call into the WAV folder.
+*Open recordings* lists the temporary recordings, the kept ones and the
+per-call WAV files with their date, duration, frequency, protocol and timeslot,
+talkgroup and radio, talker alias, GPS, encryption, system ids, file name and
+size. Each can be played, downloaded or deleted (from the WAV folder too), and
+the list filtered and sorted by date, duration or frequency. A kept recording
+has its call's details in a `.json` file next to it. New per-call WAV files get
+one as well, matched to their call in the Activity log; those that don't match
+show what their file name holds.
 
 ## Security notes
 

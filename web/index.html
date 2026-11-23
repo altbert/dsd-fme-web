@@ -259,6 +259,15 @@ canvas{display:block;width:100%}
 .det{margin:6px 0 2px 64px;padding:8px 10px;background:#161816;border:1px solid var(--glass-edge);border-radius:4px;cursor:auto}
 .det .kv{font-size:13px}
 .hexd{margin:8px 0 0;font:12px/1.4 var(--mono);white-space:pre;overflow:auto;color:var(--silk-3)}
+/* call recordings: one player row, the same height whatever it shows */
+.rplay{display:flex;align-items:center;gap:8px;height:30px;margin-top:6px;min-width:0}
+.rplay .rp-seek{flex:1 1 0;min-width:50px;width:auto}
+.rplay .rp-time{flex:none;min-width:10.5ch;text-align:right;color:var(--amber);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rplay .rp-msg{flex:1 1 auto;min-width:0;color:var(--silk-3);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rplay .rp-x{flex:none;display:flex;align-items:center;gap:6px}
+.rplay .rp-k{flex:none;width:58px;display:flex;justify-content:center}
+.rplay a.btn{flex:none;text-decoration:none}
+.rplay a.btn.icon,.rplay button.icon{padding:0;width:28px;min-width:28px;flex:none}
 .acthint{padding:14px 12px;color:var(--silk-3)}
 .log{height:260px;overflow:auto;font:12.5px/1.45 var(--mono);padding:6px;white-space:pre-wrap;word-break:break-word}
 #events{font:12.5px/1.45 var(--mono);white-space:pre-wrap;word-break:break-word}
@@ -351,9 +360,6 @@ canvas{display:block;width:100%}
 .tabpane{display:none;padding:14px}
 .tabpane.on{display:block}
 .tabpane select{max-width:100%}
-.flist{max-height:220px;overflow:auto;font-size:13.5px}
-.flist a{display:block;padding:5px 2px;border-bottom:1px solid var(--rule);text-decoration:none;word-break:break-all}
-.flist a:hover{text-decoration:underline}
 #autokey-stat{color:var(--silk-2);font-size:13px}
 #autokey-stat .found{color:var(--live);font-weight:600}
 #rtlratev{margin:0}
@@ -371,6 +377,25 @@ canvas{display:block;width:100%}
 .maphd{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-bottom:1px solid var(--plate-edge)}
 .maphd b{font-size:16px;font-weight:600;margin-right:6px}
 .maphd .sp{flex:1}
+.recbox{width:min(1000px,100%);height:min(820px,100%);background:var(--plate);border:1px solid var(--plate-edge);border-radius:8px;
+  display:flex;flex-direction:column;overflow:hidden}
+.recbox .maphd #rec-q{flex:0 1 240px;min-width:0}
+.recsum{margin:6px 12px;min-height:1.4em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.reclist{flex:1 1 auto;overflow:auto;border-top:1px solid var(--plate-edge);background:#121412}
+.rrow{padding:8px 12px;border-bottom:1px solid var(--rule)}
+.rrow .l1{display:flex;align-items:center;gap:8px;height:20px;min-width:0}
+.rrow .t{flex:none;width:136px;color:var(--silk-3);font-size:12.5px;font-variant-numeric:tabular-nums}
+.rrow .ty{flex:none;font-size:13px;font-weight:600;color:var(--silk-2);white-space:nowrap}
+.rrow .sl{flex:none;font-size:11px;color:var(--silk-3);border:1px solid #393c38;border-radius:3px;padding:0 4px;line-height:15px}
+.rrow .who{flex:1 1 auto;min-width:0;color:var(--silk);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .who i{color:var(--silk-3);font-style:normal;font-weight:400}
+.rrow .meta{margin-left:auto;display:flex;gap:4px;align-items:center;flex:none;white-space:nowrap}
+.rrow .meta .enc{max-width:18ch;overflow:hidden;text-overflow:ellipsis}
+.rrow .meta .lnk{cursor:pointer;color:var(--link);border-color:rgba(108,184,255,.4);background:none;min-height:0;box-shadow:none;padding:0 5px;font:500 11.5px/16px var(--sans)}
+.rrow .dur{color:var(--silk-3);font-size:12.5px;display:inline-block;min-width:6ch;text-align:right}
+.rrow .l2{padding-left:144px;height:20px;line-height:20px;color:var(--silk-3);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rrow .rplay{padding-left:144px;margin-top:2px}
+.rhint{padding:16px 12px;color:var(--silk-3);font-size:13.5px}
 .mapview{position:relative;overflow:hidden;background:#101211;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
 .mapview.drag{cursor:grabbing}
 .mapview .tile{position:absolute;left:0;top:0;width:256px;height:256px;transform-origin:0 0;
@@ -438,6 +463,20 @@ canvas{display:block;width:100%}
   .acts,#events{height:420px}
   .act .l1{flex-wrap:wrap;height:auto;row-gap:2px}
   .act .who{order:9;flex-basis:100%;padding-left:64px}
+  .rrow .l1{flex-wrap:wrap;height:auto;row-gap:2px}
+  .rrow .t{width:auto}
+  .rrow .who{order:9;flex-basis:100%}
+  .rrow .l2,.rrow .rplay{padding-left:0}
+  .recbox .maphd #rec-q{flex:1 1 100%;order:9}
+  .recbox .maphd .sp{display:none}
+  .recbox .maphd #rec-sort{flex:1 1 0;min-width:0}
+  .rrow{padding:8px 10px}
+  /* the player keeps two lines whatever it shows: its buttons go on the second */
+  .rplay{flex-wrap:wrap;height:64px;align-content:flex-start;row-gap:6px;gap:6px;overflow:hidden}
+  .rplay .rp-seek{min-width:30px}
+  .rplay .rp-time{min-width:0;font-size:12px}
+  .rplay .rp-x{flex-basis:100%;justify-content:flex-end;min-height:28px}
+  .rplay .rp-msg{line-height:30px}
   .rtab .opt,.rtab .coords{display:none} .rtab .pin{display:inline}
   .rtab th.c-id{width:26%} .rtab th.c-heard{width:21%} .rtab th.c-pos{width:12%}
   .tgtab th.c-heard{width:20%} .tgtab th.c-hold{width:74px}
@@ -485,6 +524,9 @@ canvas{display:block;width:100%}
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 5.5h3.5v13H7zM13.5 5.5H17v13h-3.5z"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 19.5h14"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M10 7V4.5h4V7M6.5 7l1 12.5h9l1-12.5M10 10.5v6M14 10.5v6"/></symbol>
 </svg>
 
 <header class="bar" id="top">
@@ -623,6 +665,7 @@ canvas{display:block;width:100%}
             <button class="chip on" data-k="" aria-pressed="true">All</button><button class="chip" data-k="call" aria-pressed="false">Calls</button><button class="chip" data-k="data" aria-pressed="false">Data</button><button class="chip" data-k="sig" aria-pressed="false" title="Trunking and data link signalling: grants, registrations, affiliations, delivery reports">Signalling</button><button class="chip" data-k="sys" aria-pressed="false">System</button><button class="chip" data-k="log" aria-pressed="false" title="The decoder's own event history, as the console terminal shows it">Decoder log</button>
           </div>
           <input id="act-q" placeholder="Filter: radio, talkgroup, text" aria-label="Filter activity">
+          <button class="tgl sm on" id="act-rec" title="Record every call as it plays here, to play it again from its details (kept until DSD-FME exits)">Record calls</button>
           <button class="tgl sm" id="act-err" title="Also list packets that failed their CRC check">Errors</button>
           <button class="sm" id="act-clear" title="Clear the activity and the decoder's event history">Clear</button>
         </div>
@@ -713,7 +756,7 @@ canvas{display:block;width:100%}
         <button data-t="rf" role="tab" aria-selected="false">RF</button>
         <button data-t="trunk" role="tab" aria-selected="false">Trunk</button>
         <button data-t="keys" role="tab" aria-selected="false">Keys</button>
-        <button data-t="files" role="tab" aria-selected="false">Files</button>
+        <button data-t="rec" role="tab" aria-selected="false">REC</button>
         <button data-t="log" role="tab" aria-selected="false">Log</button>
       </div>
 
@@ -872,13 +915,15 @@ canvas{display:block;width:100%}
         <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
       </div>
 
-      <div class="tabpane" data-t="files" role="tabpanel">
+      <div class="tabpane" data-t="rec" role="tabpanel">
         <div class="row"><span class="lbl">Recording</span>
+          <button class="tgl sm on" id="tg-rec2">Record calls</button>
           <button class="tgl sm" id="tg-wav2">Per-call WAV</button>
         </div>
-        <div class="hint">Decoded per-call WAV files appear here for download.</div>
-        <div class="row"><button class="sm" id="btn-refresh">Refresh list</button></div>
-        <div class="flist" id="filelist"></div>
+        <div class="hint"><b>Record calls</b> keeps every call as it plays here, in a temporary folder that is
+          removed when DSD-FME exits; past <span id="rec-cap">256</span> MB the oldest go first. Keep one to copy it into the WAV folder.
+          <b>Per-call WAV</b> is DSD-FME's own recorder: one file per call in the WAV folder.</div>
+        <div class="row"><button class="sm" id="btn-recs">Open recordings</button></div>
       </div>
 
       <div class="tabpane" data-t="log" role="tabpanel">
@@ -887,6 +932,25 @@ canvas{display:block;width:100%}
     </section>
   </div>
 </main>
+
+<div id="recdlg" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="rec-title">
+  <div class="recbox">
+    <div class="maphd">
+      <b id="rec-title">Recordings</b>
+      <span id="rec-count" class="count"></span>
+      <span class="sp"></span>
+      <input id="rec-q" placeholder="Filter: radio, talkgroup, alias" aria-label="Filter recordings">
+      <select id="rec-sort" aria-label="Sort recordings">
+        <option value="t">Newest first</option>
+        <option value="dur">Longest first</option>
+        <option value="freq">By frequency</option>
+      </select>
+      <button class="sm icon" id="rec-close" title="Close (Esc)" aria-label="Close recordings"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="hint recsum" id="rec-sum"></div>
+    <div class="reclist" id="rec-list"></div>
+  </div>
+</div>
 
 <div id="mapdlg" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="map-title">
   <div class="mapbox">

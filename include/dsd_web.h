@@ -196,6 +196,35 @@ void web_groups_reset (void);                    //a group CSV import replaced s
 int  web_p25_cc_list (long long * out, int max); //the site's control channel, then its secondary ones
 
 //----------------------------------------------------------------------------
+// Call recordings (dsd_web_rec.c), decoder thread only
+//----------------------------------------------------------------------------
+
+//an ended call, for its recording's details and for matching upstream's per-call WAV files
+typedef struct
+{
+  uint32_t id;               //activity item id
+  double t, t_end;           //wall clock
+  long long src, dst;        //-1 = none
+  const char * srcs, * dsts; //callsign style ids
+  const char * proto;
+  const char * json;         //the activity item as rendered
+} web_rec_call;
+
+//channels: 0 = TS1 or the only one, 1 = TS2, 2 = analog
+double web_rec_open (int ch, uint32_t id);  //0 recording, -1 not (off, or no folder)
+double web_rec_close (int ch, uint32_t id); //seconds of audio kept, 0 none
+void web_rec_ended (const web_rec_call * call);
+void web_rec_audio (const void * data, size_t nbytes, int channels, int is_float, int rate, int analog);
+void web_rec_set (int on);
+int  web_rec_enabled (void);
+void web_rec_poll (dsd_opts * opts);        //matches new per-call WAV files to their calls
+int  web_rec_keep (dsd_opts * opts, uint32_t id, char * out, size_t n); //0 and the name, -1 and why
+int  web_rec_delete (dsd_opts * opts, const char * area, const char * name);
+void web_rec_list (dsd_opts * opts, jb * b);
+const char * web_rec_error (void);          //a problem met while recording, "" none
+void web_rec_shutdown (void);
+
+//----------------------------------------------------------------------------
 // Analog FM identification (dsd_web_analog.c), decoder thread
 //----------------------------------------------------------------------------
 

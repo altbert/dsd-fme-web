@@ -48,6 +48,7 @@ typedef struct
   double lat, lon;
   double t, t_end;         //start and last activity (wall clock)
   int live;                //call still in progress
+  double rec;              //call recording: -1 off, 0 recording or nothing heard, else seconds of audio
   long long freq;          //channel frequency in Hz, 0 = not known
   int crc;                 //1 checked ok, 0 failed, -1 not checked
   int rep;                 //times the same packet was heard (confirmed delivery retries)
@@ -360,6 +361,7 @@ static void act_new (act_item * a, const char * kind, const char * proto, int sl
   a->gi = -1;
   a->crc = -1;
   a->trk = -1;
+  a->rec = -1;
   a->t = a->t_end = wall_now ();
   jb_init (&a->f);
 }
@@ -452,6 +454,7 @@ static char * act_render (const act_item * a)
   {
     jb_bool (&b, "live", a->live);
     jb_dbl (&b, "dur", a->t_end - a->t, 1);
+    if (a->rec >= 0) jb_dbl (&b, "rec", a->rec, 1);
   }
   if (a->freq > 0) jb_int (&b, "freq", a->freq);
   if (a->crc >= 0) jb_int (&b, "crc", a->crc);
@@ -818,11 +821,29 @@ static void call_fill (call_track * k, const call_snap * c)
   k->s = *c;
 }
 
+//an ended call's details for its recording, and for matching upstream's per-call WAV file to it
+static void rec_ended (const act_item * a)
+{
+  web_rec_call c;
+  c.id = a->id;
+  c.t = a->t;
+  c.t_end = a->t_end;
+  c.src = a->src;
+  c.dst = a->dst;
+  c.srcs = a->srcs;
+  c.dsts = a->dsts;
+  c.proto = a->proto;
+  c.json = act_find (a->id);
+  web_rec_ended (&c);
+}
+
 static void call_end (call_track * k)
 {
   if (!k->on) return;
   k->a.live = 0;
+  if (k->a.rec >= 0) k->a.rec = web_rec_close ((int)(k - A.call), k->a.id);
   act_publish (&k->a);
+  rec_ended (&k->a);
   act_free (&k->a);
   k->on = 0;
 }
@@ -850,7 +871,9 @@ static void ana_end (void)
 {
   if (!A.ana.on) return;
   A.ana.a.live = 0;
+  if (A.ana.a.rec >= 0) A.ana.a.rec = web_rec_close (2, A.ana.a.id);
   act_publish (&A.ana.a);
+  rec_ended (&A.ana.a);
   act_free (&A.ana.a);
   A.ana.on = 0;
 }
@@ -872,6 +895,8 @@ static void analog_poll (dsd_opts * opts, dsd_state * state)
     //untoned: only what the monitor plays and sounds like speech (not noise over a low squelch, not digital)
     if (!an.tx_tone[0] && !an.ani[0] && !(an.voice && A.ana.play_since && now - A.ana.play_since >= 2.0)) return; //a tone shows within 1.5 s
     act_new (&A.ana.a, "call", "Analog FM", 0);
+    A.ana.a.id = A.next_id++; //known before it is published: its recording is named after it
+    A.ana.a.rec = web_rec_open (2, A.ana.a.id);
     A.ana.a.t = an.t_keyup > 0 && an.t_keyup <= now ? an.t_keyup : now;
     A.ana.a.t_end = now;
     A.ana.a.live = 1;
@@ -904,6 +929,8 @@ static void calls_poll (dsd_opts * opts, dsd_state * state)
     if (!k->on)
     {
       act_new (&k->a, "call", c.proto, slotted ? s + 1 : 0);
+      k->a.id = A.next_id++; //known before it is published: its recording is named after it
+      k->a.rec = web_rec_open (s, k->a.id);
       memset (&k->s, 0, sizeof(k->s)); //nothing carries over from the previous call
       snprintf (k->gps0, sizeof(k->gps0), "%s", c.gps);
       k->a.live = 1;
