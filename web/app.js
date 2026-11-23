@@ -138,6 +138,7 @@ function handleFFT(dv, buf){
   lastFFT = {bins, center, rate, dbmin, vals};
   if (newRate) placeBand();
   drawSpectrum();
+  if (specHover) specInfo(); // the frequency under the mouse, on the span (and marks) of this frame
   setHTML($('specmeta'), '<b>'+(center/1e6).toFixed(4)+' MHz</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
 }
 
@@ -240,16 +241,21 @@ function specToFreq(ev){
   const x = (ev.clientX - r.left)/r.width;
   return Math.round(lastFFT.center + (x-0.5)*lastFFT.rate);
 }
+// the mouse over the spectrum or waterfall, kept so the readout follows each new frame: a retune moves
+// the span under a mouse that stays where it is. null when the mouse is elsewhere
+let specHover = null;
+function specInfo(){
+  const h=specHover, cur=$('cursor'), box=$('specbox').getBoundingClientRect();
+  const f = h && h.clientX >= box.left && h.clientX <= box.right && h.clientY >= box.top && h.clientY <= box.bottom ? specToFreq(h) : null;
+  if (!f){ cur.style.display='none'; setTxt($('specinfo'), ''); return; }
+  cur.style.display='block'; cur.style.left=(h.clientX-box.left)+'px';
+  const m=markAt(h);
+  setTxt($('specinfo'), m ? m.m.name+'  '+fmtMHz(m.m.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz');
+}
 for (const el of [spec, wf]){
   el.addEventListener('click', (ev)=>{ const m=markAt(ev); if (m){ if (m.b) bmTune(m.b); return; } const f=specToFreq(ev); if (f) tuneTo(f); });
-  el.addEventListener('mousemove', (ev)=>{
-    const f=specToFreq(ev); const cur=$('cursor'); if(!f){cur.style.display='none';return;}
-    const r=$('specbox').getBoundingClientRect(); cur.style.display='block';
-    cur.style.left=(ev.clientX-r.left)+'px';
-    const m=markAt(ev);
-    $('specinfo').textContent = m ? m.m.name+'  '+fmtMHz(m.m.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz';
-  });
-  el.addEventListener('mouseleave', ()=>{ $('cursor').style.display='none'; $('specinfo').textContent=''; });
+  el.addEventListener('mousemove', (ev)=>{ specHover={clientX:ev.clientX, clientY:ev.clientY, target:ev.target}; specInfo(); });
+  el.addEventListener('mouseleave', ()=>{ specHover=null; specInfo(); });
 }
 function tuneTo(freq){ send({cmd:'tune', freq}); $('tunefreq').value=(freq/1e6).toFixed(6); }
 
