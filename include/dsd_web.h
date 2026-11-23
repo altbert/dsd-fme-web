@@ -167,7 +167,7 @@ typedef struct
   char group[48];
   char mode[16];   //decoder key (see web_mode_valid), "" keeps the current decoder
   char mod[8];     //"c4fm" / "qpsk" / "gfsk", "" keeps the current modulation
-  int scan;        //lit in the list: the bookmark scan visits it
+  int scan;        //selected for the bookmark scan
 } web_bookmark;
 
 void bm_init (const char * path); //load the list, NULL or "" = default location
@@ -175,10 +175,17 @@ const char * bm_path (void);
 int  bm_get (int id, web_bookmark * out);
 int  bm_near (long long freq, long long tol); //id of the closest bookmark within tol Hz, 0 = none
 int  bm_add (const web_bookmark * bm);       //add (no duplicate per channel), returns the id
-int  bm_scan_next (long long freq, int id, web_bookmark * out); //next lit bookmark after (freq, id), wrapping; 0 = none lit
-int  bm_scan_count (long long freq, int id, int * pos);         //lit bookmarks, and the place of (freq, id) among them
+int  bm_scan_next (long long freq, int id, web_bookmark * out); //next selected bookmark after (freq, id), wrapping; 0 = none
+int  bm_scan_count (long long freq, int id, int * pos);         //selected bookmarks, and the place of (freq, id) among them
 void bm_send (int client); //client < 0 sends to everybody
 int  bm_command (int client, const char * cmd, jv * j); //returns 1 if cmd was a bookmark command
+
+//----------------------------------------------------------------------------
+// Settings the page keeps on the host (dsd_web_settings.c), decoder thread only
+//----------------------------------------------------------------------------
+
+void web_settings_init (const char * dir);                      //load <dir>/web_settings.json
+int  web_settings_command (int client, const char * cmd, jv * j); //returns 1 if cmd was a settings command
 
 //----------------------------------------------------------------------------
 // Activity log and system picture (dsd_web_data.c), decoder thread only

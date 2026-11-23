@@ -110,9 +110,9 @@ the console. The band scan listens the same way on every carrier it finds.
 or the file `--web-bookmarks` names), so every browser sees the same list. A
 bookmark has a name, a group, and optionally the decoder and modulation that
 clicking it applies. Under its name each row shows when a call was last heard
-on it, from the Activity log. The key at the start of a row puts the bookmark
-in the **scan**: *Scan* steps through the lit bookmarks by frequency, from the
-tuned one up, each with its own decoder (one that keeps the current decoder
+on it, from the Activity log. The key at the start of a row selects the
+bookmark for the **scan**: *Scan* steps through the selected bookmarks by
+frequency, from the tuned one up, each with its own decoder (one that keeps the current decoder
 gets the one that ran when the scan started), and stops on each active one.
 Active is what that decoder plays: a digital sync or, for a decoder that plays
 analog FM (Analog, AUTO or Auto-detect with Analog on, or Monitor on), the
@@ -125,7 +125,7 @@ the scan finds it quiet;
 *Hold* keeps the scan on the bookmark until you release it. With an RTL-SDR the
 spectrum takes part too. A bookmark only counts as open when its own 6 kHz
 stand out there as well, since the RMS squelch also opens on strong carriers
-elsewhere in the capture. And the lit bookmarks in the clean part of the
+elsewhere in the capture. And the selected bookmarks in the clean part of the
 spectrum (from 15 % of the span under the tuned frequency to 45 % over it) are
 judged on it without a retune: the quiet ones are passed over, and when all of
 them are quiet the receiver stays where it is, so channels within a few hundred
@@ -133,9 +133,11 @@ kHz of each other are watched without retuning. A retune and its check take
 about 0.75 s at the default sample rate, longer at 0.25 MSPS. With SDR++ over
 rigctl, set its squelch: the scan takes audio that isn't silent for an open
 channel. Tuning by hand, clicking a bookmark, choosing a decoder, Auto-decode,
-Auto-tune, the band scan and trunking stop the scan. *Select all* lights the
-key of every bookmark the search and group filter show, *Unselect all* puts
-them all out; export and import keep them.
+Auto-tune, the band scan and trunking stop the scan. *Select all* selects
+every bookmark the search and group filter show, *Unselect all* unselects them
+all; export and import keep the selection. Hang and the band scan's settings
+are kept on the host too, in `web_settings.json` next to the bookmark file, so
+every browser shows the same ones.
 
 **Analog FM** — while no digital sync is held, the audio the analog monitor
 would play is checked for a CTCSS tone, a DCS code and the DTMF ANI some radios

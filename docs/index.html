@@ -186,7 +186,7 @@ dsd-fme -i rtl --web 8080</pre>
       <li><b>Activity log</b>: calls, LRRP positions, ARS registrations, text messages, P25 packet data, and analog FM with its CTCSS tone, DCS code and DTMF ANI.</li>
       <li><b>Radios and map</b>: every radio heard, positions on an OpenStreetMap map.</li>
       <li><b>Trunking</b>: follows calls from a P25 control channel, with skip, hold and block per talkgroup.</li>
-      <li><b>Bookmarks and a scan</b>: saved channels shared by every browser, and a scan through the ones you tick that stops on each active one with its own decoder.</li>
+      <li><b>Bookmarks and a scan</b>: saved channels shared by every browser, and a scan through the ones you select that stops on each active one with its own decoder.</li>
       <li><b>Audio and recordings</b>: decoded audio in the browser and per-call WAV downloads.</li>
       <li><b>Other SDRs</b> (HackRF, Airspy, SDRplay…) through SDR++, and RTL-SDR over <code>rtl_tcp</code>.</li>
       <li><b>Kept up to date</b>: changes to the original DSD-FME are merged in regularly.</li>
@@ -245,7 +245,7 @@ cmake -B build &amp;&amp; cmake --build build -j"$(nproc)"
     <tr><td><code>--web [bind:]port</code></td><td>Starts the web server. <code>--web</code> alone listens on <code>127.0.0.1:8080</code>, so only this computer can open it. <code>--web 9000</code> changes the port. IPv6 goes in brackets: <code>--web [::1]:8080</code>.</td></tr>
     <tr><td><code>--web 0.0.0.0:8080</code></td><td>Listens on every network interface, so phones and other computers on your LAN can open it. Set a password if you do this.</td></tr>
     <tr><td><code>--web-pass &lt;pw&gt;</code></td><td>Asks for a password before the page shows or controls anything. It also lets the page be opened under any host name (see <a href="#security">Security</a>).</td></tr>
-    <tr><td><code>--web-bookmarks &lt;file&gt;</code></td><td>Where bookmarks are saved. The default is <code>~/.config/dsd-fme/web_bookmarks.json</code>.</td></tr>
+    <tr><td><code>--web-bookmarks &lt;file&gt;</code></td><td>Where bookmarks are saved. The default is <code>~/.config/dsd-fme/web_bookmarks.json</code>. The scans' settings go in <code>web_settings.json</code> next to it.</td></tr>
     <tr><td><code>--web-root &lt;dir&gt;</code></td><td>Serves the page from a folder on disk instead of the copy built into the binary (for working on the UI).</td></tr>
   </table></div>
   <h3>DSD-FME options that go well with it</h3>
@@ -330,7 +330,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
       <p>Saved channels, each with a name, frequency, decoder, modulation and group. Click one to tune and switch decoder in one step. They are saved on the computer running dsd-fme. Under each name: when a call was last heard there, or <b>On air</b>.</p>
       <ul>
         <li><span class="k">Add</span> saves the tuned channel. Search matches name, group or MHz; the menu picks a group.</li>
-        <li><b>Scan</b>: the key at the start of a row puts the bookmark in the scan. <span class="k">Scan</span> steps through them by frequency and stops on each active one with its own decoder: a digital one once it syncs, an analog one when the channel opens. <b>Hang</b> is how long it keeps listening after the channel goes quiet; it stays as long as the channel is active. <span class="k">Hold</span> stays on the bookmark; <span class="k">Skip</span> leaves it until it goes quiet. With an RTL-SDR, the bookmarks inside the spectrum are checked there without retuning.</li>
+        <li><b>Scan</b>: the key at the start of a row selects the bookmark for the scan. <span class="k">Scan</span> steps through the selected ones by frequency and stops on each active one with its own decoder: a digital one once it syncs, an analog one when the channel opens. <b>Hang</b> is how long it keeps listening after the channel goes quiet; it stays as long as the channel is active. <span class="k">Hold</span> stays on the bookmark; <span class="k">Skip</span> leaves it until it goes quiet. With an RTL-SDR, the bookmarks inside the spectrum are checked there without retuning.</li>
         <li><span class="k">Select all</span> selects every bookmark the search and group menu show; <span class="k">Unselect all</span> clears them.</li>
         <li><b>Import / export</b>: <span class="k">Export</span> saves them as a file; <span class="k">Import…</span> takes that file, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.</li>
       </ul>

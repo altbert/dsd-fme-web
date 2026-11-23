@@ -139,7 +139,7 @@ static struct
   char bs_saved_mode[16];
   char bs_msg[128];
 
-  //bookmark scan: step through the lit bookmarks, each with its own decoder, and stop on the active ones
+  //bookmark scan: step through the selected bookmarks, each with its own decoder, and stop on the active ones
   int sc_state;
   int sc_held;                        //Hold: stay on this bookmark
   web_bookmark sc_bm;                 //the one tuned (a copy: the list can change meanwhile)
@@ -151,7 +151,7 @@ static struct
   float sc_hang;                      //s it is listened to after it goes quiet
   int sc_skip[SC_MAX_SKIP];           //passed over until found quiet (Skip, a signal its decoder doesn't take)
   int sc_nskip;
-  int sc_inview;                      //lit bookmarks the spectrum showed quiet at the last step
+  int sc_inview;                      //selected bookmarks the spectrum showed quiet at the last step
   int sc_rest;                        //nothing else to tune then: the receiver stayed where it is
   char sc_mode0[16], sc_mod0[8];      //decoder and modulation from before the scan, for bookmarks that keep it
   char sc_msg[128];
@@ -210,6 +210,32 @@ static void web_log (const char * fmt, ...)
   vsnprintf (line, sizeof(line), fmt, ap);
   va_end (ap);
   web_broadcast (WEB_KIND_CONSOLE, WS_OP_TEXT, line, strlen (line), WEB_SUB_CONSOLE);
+}
+
+//the result of an action, for the line under its button in the browser that asked
+static void cmd_reply (int client, const char * what, int ok, const char * msg)
+{
+  jb b; jb_init (&b);
+  jb_obj (&b, NULL);
+  jb_str (&b, "type", "result");
+  jb_str (&b, "for", what);
+  jb_bool (&b, "ok", ok);
+  jb_str (&b, "msg", msg);
+  jb_obj_end (&b);
+  web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
+  jb_free (&b);
+}
+
+//...and in the log too
+static void __attribute__ ((format (printf, 4, 5))) cmd_result (int client, const char * what, int ok, const char * fmt, ...)
+{
+  char msg[1024];
+  va_list ap;
+  va_start (ap, fmt);
+  vsnprintf (msg, sizeof(msg), fmt, ap);
+  va_end (ap);
+  web_log ("%s", msg);
+  cmd_reply (client, what, ok, msg);
 }
 
 //the live decoder frequency the dongle / rig is parked on
@@ -1393,7 +1419,7 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
 }
 
 //----------------------------------------------------------------------------
-// Bookmark scan: step through the bookmarks lit in the list, in frequency
+// Bookmark scan: step through the bookmarks selected in the list, in frequency
 // order, each with its own decoder, and stop on the active ones. Active is
 // what the decoder plays: a digital sync, or, for a decoder that plays analog
 // FM (Analog, AUTO or auto-decode with Analog on, Monitor), the channel open
@@ -1401,7 +1427,7 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
 // any other decoder the hang time (at least SC_SYNC) to find its sync. The
 // scan moves on Hang seconds after the bookmark goes quiet; leaving one that
 // is still on (Skip, a signal its decoder doesn't take) passes it over until
-// it is found quiet. With the RTL spectrum, the lit
+// it is found quiet. With the RTL spectrum, the selected
 // bookmarks in the clean part of the capture are judged on it without a
 // retune: the quiet ones are passed over, and when all of them are quiet the
 // receiver stays where it is.
@@ -1513,12 +1539,12 @@ static int sc_open (dsd_opts * opts, const web_analog_info * an)
   return lv <= -900 || lv >= sc_thr ();
 }
 
-//on to the next lit bookmark. With a settled RTL spectrum, the ones in its clean part that show no
+//on to the next selected bookmark. With a settled RTL spectrum, the ones in its clean part that show no
 //carrier are passed over without a retune; when that is all of them, the receiver stays where it is
 static void sc_next (dsd_opts * opts, dsd_state * state)
 {
   int n = bm_scan_count (0, 0, NULL);
-  if (n == 0) { sc_stop (": no bookmark is lit any more"); return; }
+  if (n == 0) { sc_stop (": no bookmark is selected any more"); return; }
   float nf = sc_view (opts), thr = sc_thr ();
   web_bookmark bm = W.sc_bm, first = W.sc_bm;
   int seen = 0, quiet = 0, have_first = 0;
@@ -1577,7 +1603,7 @@ static void sc_start (dsd_opts * opts, dsd_state * state, jv * cmd)
   web_bookmark bm;
   if (!bm_scan_next (current_freq (opts) - 1, 0x7FFFFFFF, &bm)) //from the tuned frequency up
   {
-    sc_fail ("has nothing to scan: light the key of the bookmarks to scan.");
+    sc_fail ("has nothing to scan: select the bookmarks to scan.");
     return;
   }
   //the scan owns the tuner, and each bookmark brings its decoder
@@ -1807,7 +1833,7 @@ static void hota_reset (dsd_state * state)
   state->hota_sbrc_idx2[0] = state->hota_sbrc_idx2[1] = -1;
 }
 
-static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
+static void set_key (dsd_opts * opts, dsd_state * state, int client, jv * cmd)
 {
   const char * type = jv_str (cmd, "keytype", "");
   const char * val = jv_str (cmd, "value", "");
@@ -1819,12 +1845,12 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
   if ((!strcmp (type, "straight") && key_field_max (buf) > 224) || (!strcmp (type, "vertex") && key_field_max (buf) > 64) ||
       (!strcmp (type, "hytera_ota") && key_field_max (buf) > 32))
   {
-    web_log ("Key not set: the %s key value is too long.", type);
+    cmd_result (client, "key", 0, "Key not set: the %s key value is too long.", type);
     return;
   }
 
-  if (!strcmp (type, "force"))   { state->forced_alg_id = 1; web_log ("Forcing key priority over ENC identifiers."); return; }
-  if (!strcmp (type, "unforce")) { state->forced_alg_id = 0; web_log ("Key priority forcing off."); return; }
+  if (!strcmp (type, "force"))   { state->forced_alg_id = 1; cmd_result (client, "key", 1, "Forcing key priority over ENC identifiers."); return; }
+  if (!strcmp (type, "unforce")) { state->forced_alg_id = 0; cmd_result (client, "key", 1, "Key priority forcing off."); return; }
 
   if (!strcmp (type, "clear"))
   {
@@ -1839,7 +1865,7 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     state->forced_alg_id = 0; state->keyloader = 0;
     hota_reset (state);
     opts->dmr_mute_encL = 1; opts->dmr_mute_encR = 1;
-    web_log ("All keys cleared.");
+    cmd_result (client, "key", 1, "All keys cleared.");
     return;
   }
 
@@ -1855,9 +1881,9 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
     state->lastsrc = state->lastsrcR = 0;
     state->lasttg = state->lasttgR = 0;
     hytera_ota_keystream_setup (state, buf);
-    if (state->hota_key_loaded) web_log ("Key set: Hytera OTA signalling.");
-    else if (state->hota_enc_check) web_log ("Hytera OTA check on: it doesn't detect OTA encryption, it treats all signalling as encrypted (CSBKs, PI and data headers are dropped, so control channels don't trunk) and shows calls under pseudo TG 8686868. Use it only on systems known to be OTA-encrypted.");
-    else web_log ("Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 for a check without a key.");
+    if (state->hota_key_loaded) cmd_result (client, "key", 1, "Key set: Hytera OTA signalling.");
+    else if (state->hota_enc_check) cmd_result (client, "key", 1, "Hytera OTA check on: it doesn't detect OTA encryption, it treats all signalling as encrypted (CSBKs, PI and data headers are dropped, so control channels don't trunk) and shows calls under pseudo TG 8686868. Use it only on systems known to be OTA-encrypted.");
+    else cmd_result (client, "key", 0, "Key not set: Hytera OTA takes 128:<32 hex digits>, or 0:0 for a check without a key.");
     return;
   }
 
@@ -1909,7 +1935,7 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
   else if (!strcmp (type, "vertex"))     { vertex_keystream_setup (state, buf); state->keyloader = 0; }
   else if (!strcmp (type, "csi"))        { parse_raw_user_string (buf, state->static_ks_bits[0]); state->csi_ee = 1; }
   else if (!strcmp (type, "ras"))        { ras_effective_key_creation (state, buf); }
-  else { web_log ("Unknown key type '%s'", type); return; }
+  else { cmd_result (client, "key", 0, "Key not set: unknown key type '%s'.", type); return; }
 
   //unmute only once a key was actually loaded (an unknown type leaves the mute alone)
   opts->dmr_mute_encL = 0;
@@ -1921,14 +1947,14 @@ static void set_key (dsd_opts * opts, dsd_state * state, jv * cmd)
   {
     opts->dmr_mute_encL = 1; opts->dmr_mute_encR = 1;
   }
-  web_log ("Key set: %s", type);
+  cmd_result (client, "key", 1, "Key set: %s.", type);
 }
 
 //----------------------------------------------------------------------------
 // CSV import from uploaded text (written to a temp file, reusing importers)
 //----------------------------------------------------------------------------
 
-static int write_temp (const char * dir, const char * name, const char * text, char * out, size_t outlen)
+static int write_temp (const char * dir, const char * name, const char * text, char * out, size_t outlen, char * err, size_t errlen)
 {
   struct stat st;
   if (!dir || !dir[0]) dir = ".";
@@ -1937,7 +1963,7 @@ static int write_temp (const char * dir, const char * name, const char * text, c
   FILE * f = fopen (out, "w");
   if (!f)
   {
-    web_log ("Import failed: unable to write %s (%s).", out, strerror (errno));
+    snprintf (err, errlen, "Import failed: unable to write %s (%s).", out, strerror (errno));
     return 0;
   }
   if (text) fputs (text, f);
@@ -1945,16 +1971,18 @@ static int write_temp (const char * dir, const char * name, const char * text, c
   return 1;
 }
 
-static void load_csv (dsd_opts * opts, dsd_state * state, jv * cmd)
+static void load_csv (dsd_opts * opts, dsd_state * state, int client, jv * cmd)
 {
   const char * kind = jv_str (cmd, "kind", "");
   const char * text = jv_str (cmd, "text", "");
-  char path[1200];
+  const char * what = !strcmp (kind, "channel") || !strcmp (kind, "group") ? kind : "keycsv";
+  char path[1200], err[1400];
   const char * dir = W.opts->wav_out_dir;
 
   if (!strcmp (kind, "channel"))
   {
-    if (write_temp (dir, "web_channel_map.csv", text, path, sizeof(path)))
+    if (!write_temp (dir, "web_channel_map.csv", text, path, sizeof(path), err, sizeof(err))) cmd_result (client, what, 0, "%s", err);
+    else
     {
       snprintf (opts->chan_in_file, sizeof(opts->chan_in_file), "%s", path);
       memset (state->trunk_chan_map, 0, sizeof(state->trunk_chan_map));
@@ -1964,40 +1992,43 @@ static void load_csv (dsd_opts * opts, dsd_state * state, jv * cmd)
       int n = 0; //channels in the map (the LCN list next to it stops at 26)
       for (size_t i = 0; i < sizeof(state->trunk_chan_map) / sizeof(state->trunk_chan_map[0]); i++)
         if (state->trunk_chan_map[i]) n++;
-      web_log ("Imported channel map (%d channels).", n);
+      cmd_result (client, what, 1, "Imported channel map (%d channels).", n);
     }
   }
   else if (!strcmp (kind, "group"))
   {
-    if (write_temp (dir, "web_group.csv", text, path, sizeof(path)))
+    if (!write_temp (dir, "web_group.csv", text, path, sizeof(path), err, sizeof(err))) cmd_result (client, what, 0, "%s", err);
+    else
     {
       snprintf (opts->group_in_file, sizeof(opts->group_in_file), "%s", path);
       state->group_tally = 0;
       csvGroupImport (opts, state);
       web_groups_reset ();
-      web_log ("Imported group list (%u groups).", state->group_tally);
+      cmd_result (client, what, 1, "Imported group list (%u groups).", state->group_tally);
     }
   }
   else if (!strcmp (kind, "keys_dec"))
   {
-    if (write_temp (dir, "web_keys_dec.csv", text, path, sizeof(path)))
+    if (!write_temp (dir, "web_keys_dec.csv", text, path, sizeof(path), err, sizeof(err))) cmd_result (client, what, 0, "%s", err);
+    else
     {
       snprintf (opts->key_in_file, sizeof(opts->key_in_file), "%s", path);
       csvKeyImportDec (opts, state);
       state->keyloader = 1;
       opts->dmr_mute_encL = 0; opts->dmr_mute_encR = 0;
-      web_log ("Imported decimal key list.");
+      cmd_result (client, what, 1, "Imported decimal key list.");
     }
   }
   else if (!strcmp (kind, "keys_hex"))
   {
-    if (write_temp (dir, "web_keys_hex.csv", text, path, sizeof(path)))
+    if (!write_temp (dir, "web_keys_hex.csv", text, path, sizeof(path), err, sizeof(err))) cmd_result (client, what, 0, "%s", err);
+    else
     {
       snprintf (opts->key_in_file, sizeof(opts->key_in_file), "%s", path);
       csvKeyImportHex (opts, state);
       state->keyloader = 1;
       opts->dmr_mute_encL = 0; opts->dmr_mute_encR = 0;
-      web_log ("Imported hex key list.");
+      cmd_result (client, what, 1, "Imported hex key list.");
     }
   }
 }
@@ -2153,7 +2184,10 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     {
       //a level by hand turns Auto floor off; during a band scan it is the one put back after it
       int sq = (int)jv_int (cmd, "squelch", 0);
-      if (W.sq_auto) web_log ("Squelch %d, Auto floor off.", sq);
+      char m[96];
+      snprintf (m, sizeof(m), W.sq_auto ? "Squelch %d, Auto floor off." : "Squelch %d.", sq);
+      if (W.sq_auto) web_log ("%s", m); //the arrows send a level at every step: the log only gets the switch
+      cmd_reply (client, "sql", 1, m);
       W.sq_auto = 0;
       sq_set (opts, sq);
       if (W.bs_state != BS_OFF) W.bs_saved_sql = sq;
@@ -2162,16 +2196,16 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     {
       //the tuned frequency's quiet level plus the margin, once
       float r = W.sq_chan > 0 ? W.sq_chan : (float)opts->rtl_rms;
-      if (W.bs_state != BS_OFF) web_log ("Channel floor: not while the band scan runs.");
-      else if (r <= 0) web_log ("Channel floor: no level measured on this frequency yet.");
+      if (W.bs_state != BS_OFF) cmd_result (client, "sql", 0, "Channel floor: not while the band scan runs.");
+      else if (r <= 0) cmd_result (client, "sql", 0, "Channel floor: no level measured on this frequency yet.");
       else
       {
         W.sq_auto = 0;
         sq_set (opts, sq_level (r));
         if (W.sq_floor > 0 && r > 2.0f * W.sq_floor)
-          web_log ("Squelch %d from this frequency (%.0f RMS, %.0f dB over the noise floor: probably a signal on it), Auto floor off.",
+          cmd_result (client, "sql", 1, "Squelch %d from this frequency (%.0f RMS, %.0f dB over the noise floor: probably a signal on it), Auto floor off.",
                    opts->rtl_squelch_level, r, 20.0 * log10 (r / W.sq_floor));
-        else web_log ("Squelch %d from this frequency (%.0f RMS), Auto floor off.", opts->rtl_squelch_level, r);
+        else cmd_result (client, "sql", 1, "Squelch %d from this frequency (%.0f RMS), Auto floor off.", opts->rtl_squelch_level, r);
       }
     }
     if (jv_has (cmd, "bw"))
@@ -2312,14 +2346,19 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     state->p2_sysid = (unsigned long long)jv_int (cmd, "sysid", 0) & 0xFFF;
     state->p2_cc = (unsigned long long)jv_int (cmd, "cc", 0) & 0xFFF;
     state->p2_hardset = (state->p2_wacn && state->p2_sysid && state->p2_cc) ? 1 : 0;
+    if (state->p2_hardset)
+      cmd_result (client, "p2", 1, "Phase 2 parameters set: WACN %05llX, SYS %03llX, CC %03llX.", state->p2_wacn, state->p2_sysid, state->p2_cc);
+    else if (!state->p2_wacn && !state->p2_sysid && !state->p2_cc)
+      cmd_result (client, "p2", 1, "Phase 2 parameters cleared: the decoder learns them from the system.");
+    else cmd_result (client, "p2", 0, "Not set: WACN, SYS and CC are all needed.");
   }
   else if (!strcmp (c, "key"))
   {
-    set_key (opts, state, cmd);
+    set_key (opts, state, client, cmd);
   }
   else if (!strcmp (c, "csv"))
   {
-    load_csv (opts, state, cmd);
+    load_csv (opts, state, client, cmd);
   }
   else if (!strcmp (c, "reset_events"))
   {
@@ -2353,9 +2392,9 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     //reopen (and leak) the files of the recording already running
     int on = jv_bool (cmd, "enable", 0);
     if (opts->static_wav_file == 1)
-      web_log ("Per-call WAV recording is not available while writing a single WAV file (-w).");
+      cmd_result (client, "wav", 0, "Per-call WAV recording is not available while writing a single WAV file (-w).");
     else if (on == opts->dmr_stereo_wav)
-      web_log ("Per-call WAV recording is already %s.", on ? "on" : "off");
+      cmd_result (client, "wav", 1, "Per-call WAV recording is already %s.", on ? "on" : "off");
     else if (on)
     {
       struct stat st;
@@ -2364,14 +2403,14 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       opts->wav_out_f = open_wav_file (opts->wav_out_dir, opts->wav_out_file, 8000, 0);
       opts->wav_out_fR = open_wav_file (opts->wav_out_dir, opts->wav_out_fileR, 8000, 0);
       opts->dmr_stereo_wav = 1;
-      web_log ("Per-call WAV recording enabled.");
+      cmd_result (client, "wav", 1, "Per-call WAV recording enabled.");
     }
     else
     {
       if (opts->wav_out_f) opts->wav_out_f = close_and_rename_wav_file (opts->wav_out_f, opts->wav_out_file, opts->wav_out_dir, opts->wav_custom_tag, &state->event_history_s[0]);
       if (opts->wav_out_fR) opts->wav_out_fR = close_and_rename_wav_file (opts->wav_out_fR, opts->wav_out_fileR, opts->wav_out_dir, opts->wav_custom_tag, &state->event_history_s[1]);
       opts->wav_out_file[0] = 0; opts->wav_out_fileR[0] = 0; opts->dmr_stereo_wav = 0;
-      web_log ("Per-call WAV recording disabled.");
+      cmd_result (client, "wav", 1, "Per-call WAV recording disabled.");
     }
   }
   else if (!strcmp (c, "spectrum"))
@@ -2496,6 +2535,10 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   {
     //bookmark list / save / delete / import
   }
+  else if (web_settings_command (client, c, cmd))
+  {
+    //the band scan's and the bookmark scan's settings
+  }
   else if (!strcmp (c, "auto_key"))
   {
     W.auto_key = jv_bool (cmd, "enable", 0);
@@ -2524,8 +2567,8 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       else dropped++;
     }
     state->lcn_freq_roll = 0;
-    if (dropped) web_log ("Scan list set (%d freqs, %d past the limit of %d left out).", state->lcn_freq_count, dropped, max);
-    else web_log ("Scan list set (%d freqs).", state->lcn_freq_count);
+    if (dropped) cmd_result (client, "scanlist", 0, "Scan list set (%d freqs, %d past the limit of %d left out).", state->lcn_freq_count, dropped, max);
+    else cmd_result (client, "scanlist", 1, "Scan list set (%d freqs).", state->lcn_freq_count);
   }
   else if (!strcmp (c, "list_recordings"))
   {
@@ -2546,7 +2589,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     uint32_t id = (uint32_t)jv_int (cmd, "id", 0);
     if (web_rec_keep (opts, id, out, sizeof(out)) == 0)
     {
-      web_log ("Recording kept as %s/%s.", opts->wav_out_dir, out);
+      cmd_result (client, "rec", 1, "Recording kept as %s/%s.", opts->wav_out_dir, out);
       jb b; jb_init (&b);
       jb_obj (&b, NULL);
       jb_str (&b, "type", "rec_kept");
@@ -2556,14 +2599,14 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       web_broadcast (WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len, 0);
       jb_free (&b);
     }
-    else web_log ("Recording not kept: %s.", out);
+    else cmd_result (client, "rec", 0, "Recording not kept: %s.", out);
     send_recordings (opts, client);
   }
   else if (!strcmp (c, "rec_delete"))
   {
     const char * area = jv_str (cmd, "area", ""), * name = jv_str (cmd, "name", "");
-    if (web_rec_delete (opts, area, name)) web_log ("Recording %s deleted.", name);
-    else web_log ("Recording %s not deleted: it is not there, or still being written.", name);
+    if (web_rec_delete (opts, area, name)) cmd_result (client, "rec", 1, "Recording %s deleted.", name);
+    else cmd_result (client, "rec", 0, "Recording %s not deleted: it is not there, or still being written.", name);
     send_recordings (opts, client);
   }
   else if (!strcmp (c, "get_status"))
@@ -2920,6 +2963,16 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_bool (b, "floating_point", opts->floating_point);
   jb_dbl (b, "digi_gain", state->aout_gain * 2, 0);
   jb_dbl (b, "analog_gain", opts->audio_gainA, 0);
+  jb_dbl (b, "audio_gain", opts->audio_gain, 1); //the Digital gain slider: 0 is auto
+  jb_obj_end (b);
+
+  //spectrum settings, so every page shows the ones running
+  int s_fft, s_fps, s_avg;
+  spectrum_get_config (&s_fft, &s_fps, &s_avg);
+  jb_obj (b, "spectrum");
+  jb_int (b, "fft", s_fft);
+  jb_int (b, "fps", s_fps);
+  jb_int (b, "avg", s_avg);
   jb_obj_end (b);
 
   //analog FM identification: what is heard now, and the tone and ANI of the current or last transmission
@@ -3178,6 +3231,13 @@ void web_init (dsd_opts * opts, dsd_state * state)
   opts->monitor_input_audio = analog_wanted (opts);
   bm_init (opts->web_bookmarks);
   fprintf (stderr, "Web bookmarks: %s\n", bm_path ());
+  //the page's settings go next to the bookmarks
+  char dir[1024];
+  snprintf (dir, sizeof(dir), "%s", bm_path ());
+  char * slash = strrchr (dir, '/');
+  if (!slash) snprintf (dir, sizeof(dir), ".");
+  else slash[slash == dir ? 1 : 0] = 0; //"/x.json" keeps its "/"
+  web_settings_init (dir);
   web_act_init (opts, state);
   spectrum_start ();
   //expose the per-call WAV directory for browser download (and nothing else: the working

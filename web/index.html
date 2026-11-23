@@ -354,6 +354,10 @@ canvas{display:block;width:100%}
 .bm button.led{justify-content:center}
 .bm-g{padding:8px 10px 3px;font-size:12.5px;font-weight:600;color:var(--silk-3);border-bottom:1px solid var(--rule);background:#121312;position:sticky;top:0}
 #bm-msg{min-height:1.4em}
+/* an action's result, under its button: one line, kept, so nothing below moves when it fills (a long
+   one ends in an ellipsis, all of it in the tooltip and the Log) */
+.hint.res{min-height:1.4em;margin:2px 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hint.bad{color:var(--fail)}
 #bm-form{margin-top:8px;padding-top:4px;border-top:1px solid var(--plate-edge)}
 /* bookmark scan: the badge, Hold and the status keep their size whatever they say */
 #bm-scan{margin-top:8px;border-top:1px solid var(--plate-edge)}
@@ -402,6 +406,7 @@ canvas{display:block;width:100%}
   display:flex;flex-direction:column;overflow:hidden}
 .recbox .maphd #rec-q{flex:0 1 240px;min-width:0}
 .recsum{margin:6px 12px;min-height:1.4em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recsum.res{margin:0 12px 6px}
 .reclist{flex:1 1 auto;overflow:auto;border-top:1px solid var(--plate-edge);background:#121412}
 .rrow{padding:8px 12px;border-bottom:1px solid var(--rule)}
 .rrow .l1{display:flex;align-items:center;gap:8px;height:20px;min-width:0}
@@ -845,6 +850,7 @@ canvas{display:block;width:100%}
           <input id="p2cc" placeholder="CC/NAC" aria-label="CC / NAC (hex)" style="width:72px">
           <button class="sm" id="btn-p2">Set</button>
         </div></div>
+        <div class="hint res" id="res-p2" role="status"></div>
       </div>
 
       <div class="tabpane" data-t="rf" role="tabpanel">
@@ -878,6 +884,7 @@ canvas{display:block;width:100%}
           <button class="sm" id="btn-sq" title="Apply this level; turns Auto floor off">Set</button>
           <button class="sm" id="btn-sqchan" title="Use this frequency's quiet level plus the margin">Channel floor</button>
           <span class="sqv" id="sqchan"></span></div></div>
+        <div class="hint res" id="res-sql" role="status"></div>
         <div class="hint">Auto floor keeps the squelch the chosen margin over the noise floor of the whole spectrum, so it follows the gain. Off, the level stays where the arrows, Set or Channel floor (this frequency's own quiet level plus the margin) put it. The squelch gates NXDN, dPMR and M17 sync, the analog monitor, the band scan and the bookmark scan.</div>
         <div class="row"><label for="setmodbw">SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:84px"><span class="unit">Hz (RIGCTL)</span><button class="sm" id="btn-smb">Set</button></div>
       </div>
@@ -888,11 +895,13 @@ canvas{display:block;width:100%}
         <div class="hint">For DMR Tier III, Capacity Plus, NXDN and EDACS systems that send channel numbers instead of frequencies; P25 sends its own channel plan. One <code>channel,frequency in Hz</code> per line after a header line.</div>
         <textarea id="csv-chan" placeholder="ChannelNumber(dec),frequency(Hz)&#10;1,851012500"></textarea>
         <div class="row"><button class="sm" id="btn-chan">Import channel map</button></div>
+        <div class="hint res" id="res-channel" role="status"></div>
         <h3 class="sub"><label for="csv-group">Talkgroup list</label></h3>
         <div class="hint">DSD-FME's group CSV, <code>number,mode,name,tag</code> after a header line: mode A follows, B blocks. Importing replaces the names and choices made in the Trunking card.</div>
         <textarea id="csv-group" placeholder="DEC,Mode,Name,Tag&#10;1449,A,Fire Dispatch,Fire"></textarea>
         <div class="row"><button class="sm" id="btn-group">Import groups</button>
           <button class="sm" id="btn-group-cur" title="Fill in the current talkgroup list">Current list</button></div>
+        <div class="hint res" id="res-group" role="status"></div>
         <h3 class="sub"><label for="scanlist">Scan list (conventional)</label></h3>
         <div class="hint">Steps through these frequencies and stops on each one that carries a signal. It is not trunking: the two don't run together.</div>
         <div class="row"><button class="tgl sm" id="tg-scan">Scanner</button>
@@ -900,6 +909,7 @@ canvas{display:block;width:100%}
         <textarea id="scanlist" placeholder="one freq per line&#10;154.9875M&#10;155.145M"></textarea>
         <div class="row"><button class="sm" id="btn-scanset">Apply scan list</button>
           <button class="sm" id="btn-scanbm" title="Fill with the bookmarks shown (first 26)">From bookmarks</button></div>
+        <div class="hint res" id="res-scanlist" role="status"></div>
       </div>
 
       <div class="tabpane" data-t="keys" role="tabpanel">
@@ -938,6 +948,7 @@ canvas{display:block;width:100%}
           <button class="sm" id="btn-keyclear">Clear all keys</button>
           <button class="tgl sm" id="tg-force">Force key</button>
         </div></div>
+        <div class="hint res" id="res-key" role="status"></div>
         <h3 class="sub">Auto-find key</h3>
         <div class="hint">Finds a DMR Basic Privacy key (1–255): in speech pauses radios send a fixed silence frame, so the encrypted pauses give the key away. Let it run over some encrypted BP voice. Strong ciphers (AES/DES/RC4) cannot be found this way.</div>
         <div class="row">
@@ -951,6 +962,7 @@ canvas{display:block;width:100%}
         <div class="hint">The first line is a header and is skipped. Hex list: <code>keyid,key</code>, a longer key as up to four 16-digit columns. Hytera Basic and Enhanced encrypted data packets use the key whose id their data header names, before a key entered above.</div>
         <textarea id="csv-keys" placeholder="keyid,keyvalue"></textarea>
         <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
+        <div class="hint res" id="res-keycsv" role="status"></div>
       </div>
 
       <div class="tabpane" data-t="rec" role="tabpanel">
@@ -958,6 +970,7 @@ canvas{display:block;width:100%}
           <button class="tgl sm on" id="tg-rec2">Record calls</button>
           <button class="tgl sm" id="tg-wav2">Per-call WAV</button>
         </div>
+        <div class="hint res" id="res-wav" role="status"></div>
         <div class="hint"><b>Record calls</b> keeps every call as it plays here, in a temporary folder that is
           removed when DSD-FME exits; past <span id="rec-cap">256</span> MB the oldest go first. Keep one to copy it into the WAV folder.
           <b>Per-call WAV</b> is DSD-FME's own recorder: one file per call in the WAV folder.</div>
@@ -986,6 +999,7 @@ canvas{display:block;width:100%}
       <button class="sm icon" id="rec-close" title="Close (Esc)" aria-label="Close recordings"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div class="hint recsum" id="rec-sum"></div>
+    <div class="hint recsum res" id="res-rec" role="status"></div>
     <div class="reclist" id="rec-list"></div>
   </div>
 </div>

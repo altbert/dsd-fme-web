@@ -2284,7 +2284,7 @@ static long long p25_freq (dsd_state * state, int ch)
 static void ch_label (char * out, size_t n, dsd_state * state, int ch)
 {
   long long f = p25_freq (state, ch);
-  if (f) snprintf (out, n, "%.5f MHz (ch %04X)", f / 1e6, ch);
+  if (f) snprintf (out, n, "%.6f MHz (ch %04X)", f / 1e6, ch);
   else snprintf (out, n, "ch %04X", ch);
 }
 
@@ -2743,7 +2743,7 @@ static void p25_osp (dsd_state * state, int op, const uint8_t * b)
         int off = (b[1] << 6) | (b[2] >> 2);
         offm = ((off >> 13) & 1 ? 1 : -1) * (off & 0x1FFF) * spac * 0.000125;
       }
-      p25_sys_note ("Channel identifier %d: base %.5f MHz, %.2f kHz steps, transmit offset %+.4f MHz%s", id, base / 1e6,
+      p25_sys_note ("Channel identifier %d: base %.6f MHz, %.2f kHz steps, transmit offset %+.6f MHz%s", id, base / 1e6,
                     spac * 0.125, offm, op == 0x33 ? ", TDMA" : "");
       break;
     }

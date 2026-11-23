@@ -23,7 +23,7 @@ function connect(){
 function send(obj){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 function subscribe(){ send({cmd:'subscribe', fft:true, audio:audioOn, console:true, events:actKind==='log'}); }
-function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); send({cmd:'activity'}); send({cmd:'list_recordings'}); }
+function resync(){ subscribe(); send({cmd:'get_status'}); send({cmd:'bm_list'}); send({cmd:'settings_get'}); send({cmd:'activity'}); send({cmd:'list_recordings'}); }
 
 function onMessage(ev){
   if (typeof ev.data === 'string'){
@@ -58,6 +58,8 @@ function handleJSON(m){
   else if (m.type === 'bm_saved'){ bmFormClose(); bmMsg(m.warn ? 'Saved, but '+m.warn+'.' : 'Saved.', !!m.warn); }
   else if (m.type === 'bm_error'){ bmMsg('Not saved: '+m.msg+'.', true); }
   else if (m.type === 'bm_imported'){ bmMsg(m.msg); }
+  else if (m.type === 'settings'){ settingsSet(m); }
+  else if (m.type === 'result'){ resMsg('res-'+m.for, m.msg, !m.ok); if (m.for === 'rec' && !m.ok) renderActs(); } // a failed Keep: its button again
 }
 
 function setConn(txt, cls){ const b=$('st-conn'); b.textContent=txt; b.className='badge '+cls; }
@@ -139,7 +141,7 @@ function handleFFT(dv, buf){
   if (newRate) placeBand();
   drawSpectrum();
   if (specHover) specInfo(); // the frequency under the mouse, on the span (and marks) of this frame
-  setHTML($('specmeta'), '<b>'+(center/1e6).toFixed(4)+' MHz</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
+  setHTML($('specmeta'), '<b>'+mhz(center)+'</b><span>'+(rate/1e6).toFixed(2)+' MS/s</span><span>'+bins+' bins</span>');
 }
 
 // the demodulator's channel (the RTL Bandwidth, kHz) as a band around the tuned frequency, the middle of the span
@@ -250,14 +252,14 @@ function specInfo(){
   if (!f){ cur.style.display='none'; setTxt($('specinfo'), ''); return; }
   cur.style.display='block'; cur.style.left=(h.clientX-box.left)+'px';
   const m=markAt(h);
-  setTxt($('specinfo'), m ? m.m.name+'  '+fmtMHz(m.m.freq)+' MHz' : (f/1e6).toFixed(5)+' MHz');
+  setTxt($('specinfo'), m ? m.m.name+'  '+mhz(m.m.freq) : mhz(f));
 }
 for (const el of [spec, wf]){
   el.addEventListener('click', (ev)=>{ const m=markAt(ev); if (m){ if (m.b) bmTune(m.b); return; } const f=specToFreq(ev); if (f) tuneTo(f); });
   el.addEventListener('mousemove', (ev)=>{ specHover={clientX:ev.clientX, clientY:ev.clientY, target:ev.target}; specInfo(); });
   el.addEventListener('mouseleave', ()=>{ specHover=null; specInfo(); });
 }
-function tuneTo(freq){ send({cmd:'tune', freq}); $('tunefreq').value=(freq/1e6).toFixed(6); }
+function tuneTo(freq){ send({cmd:'tune', freq}); $('tunefreq').value=fmtMHz(freq); }
 
 //---------------------------------------------------------------- audio
 let actx=null, gain=null, playTime=0, audioOn=false;
@@ -368,6 +370,12 @@ function renderStatus(m){
   }
   // only when the running value changes, so a pick waiting for Set isn't overwritten
   if (inp.bw && inp.bw !== shownBw){ shownBw = inp.bw; $('rtlbw').value = String(inp.bw); }
+  hostVal('rtlppm', inp.ppm); hostVal('rtlvol', inp.vol); hostVal('setmodbw', inp.setmod_bw);
+  hostVal('gdig', d.audio_gain, v => { $('gdig').value = v; $('gdigv').textContent = v ? v : 'auto'; });
+  hostVal('gana', d.analog_gain, v => { $('gana').value = v; $('ganav').textContent = v; });
+  if (d.mod) hostVal('modu', d.mod.toLowerCase());
+  const sp = m.spectrum || {};
+  hostVal('fftsize', sp.fft); hostVal('fps', sp.fps); hostVal('avg', sp.avg);
   if ((inp.bw||0) !== bandKHz){ bandKHz = inp.bw||0; placeBand(); }
   if (inp.rate !== undefined){
     if (document.activeElement !== $('rtlrate')) $('rtlrate').value = String(inp.rate_target||0);
@@ -463,6 +471,25 @@ $('d-freq').addEventListener('keydown', e=>{
   e.preventDefault();
   dfRender();
 });
+
+//---------------------------------------------------------------- results and host values
+// an action's result, in the line under its button: normal text that clears after a few seconds, or red
+// until the next try
+const resTimers = {};
+function resMsg(id, t, bad){
+  const e=$(id); if (!e) return;
+  e.textContent = t || ''; e.title = t || ''; e.classList.toggle('bad', !!bad);
+  clearTimeout(resTimers[id]);
+  if (t && !bad) resTimers[id] = setTimeout(()=>{ e.textContent = ''; }, 6000);
+}
+// a control showing what the host runs with: set when the host's value changes, and never while the
+// field is being edited, so a value typed and waiting for Set stays
+const hostShown = {};
+function hostVal(id, v, set){
+  if (v === undefined || v === null || hostShown[id] === v || document.activeElement === $(id)) return;
+  hostShown[id] = v;
+  if (set) set(v); else $(id).value = String(v);
+}
 
 //---------------------------------------------------------------- slot boxes
 // built once; every line is always there, empty or not, so a call starting or ending moves nothing
@@ -613,7 +640,7 @@ function actDetail(it){
   let kv='';
   const add=(k,v)=>{ kv+='<span class="k">'+escH(k)+'</span><span class="v">'+escH(v)+'</span>'; };
   add('Protocol', it.p+(it.s?', timeslot '+it.s:''));
-  if (it.freq) add('Frequency', (it.freq/1e6).toFixed(5)+' MHz');
+  if (it.freq) add('Frequency', mhz(it.freq));
   if (it.k==='call') add('Time', hms(it.t)+(it.live?', in progress':' to '+hms(it.t+it.dur)));
   for (const [k,v] of it.f||[]) add(k,v);
   if (it.crc===0) add('Integrity','failed the CRC check');
@@ -754,7 +781,7 @@ function trunkable(s){
 function sysLine(s){
   if (s && s.p25){ const p=s.p25;
     return ['P25', p.wacn && p.sys ? p.wacn+'-'+p.sys : (p.sys ? 'SYS '+p.sys : ''), p.rfss!=null ? 'RFSS '+p.rfss+' site '+(p.site!=null ? p.site : '?') : '',
-      p.cc ? 'control channel '+(p.cc/1e6).toFixed(5)+' MHz' : ''].filter(x=>x).join(' · '); }
+      p.cc ? 'control channel '+mhz(p.cc) : ''].filter(x=>x).join(' · '); }
   if (s && s.dmr){ const d=s.dmr;
     return ['DMR', [d.brand, d.sub].filter(x=>x).join(' ').trim(), d.syscode ? 'system '+d.syscode : '', d.rest > 0 ? 'rest channel '+d.rest : ''].filter(x=>x).join(' · '); }
   if (s && s.nxdn){ const n=s.nxdn; return ['NXDN', n.sys ? 'system '+n.sys : '', n.site ? 'site '+n.site : ''].filter(x=>x).join(' · '); }
@@ -816,7 +843,7 @@ function renderTrunkNow(){
   const lamp=$('st-trk');
   setTxt(lamp, st==='follow' && f.id > 0 ? (f.k===0 || f.k===-1 ? 'TG ' : 'Radio ')+f.id : 'Trunking', 'Trunking: '+bt.toLowerCase());
   lamp.className = 'badge '+bc+(tr.enabled ? '' : ' hidden');
-  setTxt($('trk-sys'), sysLine(sysPic) || (tr.cc_freq ? 'Control channel '+(tr.cc_freq/1e6).toFixed(5)+' MHz' : ''));
+  setTxt($('trk-sys'), sysLine(sysPic) || (tr.cc_freq ? 'Control channel '+mhz(tr.cc_freq) : ''));
   let what='', sub='';
   const show = {go:false, skip:false, back:false, hold:false, block:false, stop:!!tr.enabled};
   if (st==='off'){
@@ -833,7 +860,7 @@ function renderTrunkNow(){
     if (st==='follow'){
       what = 'Following '+callWho(f);
       const bits=[];
-      if (f.f) bits.push('<b>'+(f.f/1e6).toFixed(5)+' MHz</b>'+(f.ch ? ' (ch '+escH(f.ch)+')' : ''));
+      if (f.f) bits.push('<b>'+mhz(f.f)+'</b>'+(f.ch ? ' (ch '+escH(f.ch)+')' : ''));
       bits.push(f.k===2 ? 'packet data, nothing to hear' : (KIND_WORD[f.k] || 'call'));
       if (f.src > 0) bits.push('radio '+idWithName(f.src));
       // the voice channel names the cipher; without its key the decoder keeps the audio muted
@@ -860,7 +887,7 @@ function renderTrunkNow(){
   else if (st==='hunt'){
     const h=tr.hunt||[], i=h.indexOf(trkFreq);
     what = 'Control channel lost';
-    sub = 'Searching: trying <b>'+(trkFreq/1e6).toFixed(5)+' MHz</b>'+(i>=0 ? ' ('+(i+1)+' of '+h.length+')' : '')+
+    sub = 'Searching: trying <b>'+mhz(trkFreq)+'</b>'+(i>=0 ? ' ('+(i+1)+' of '+h.length+')' : '')+
       '. A site moves its control channel to a backup when the main one fails.';
   }
   else {
@@ -1237,7 +1264,6 @@ setInterval(()=>{ if (radios.size) renderRadios(); }, 5000);
 function renderSystem(m){
   const kv=rows=>'<div class="kv">'+rows.filter(r=>r[1]!==undefined && r[1]!=='' && r[1]!==null)
     .map(([k,v,c])=>'<span class="k">'+escH(k)+'</span><span class="v'+(c?' '+c:'')+'">'+escH(v)+'</span>').join('')+'</div>';
-  const mhz=f=>(f/1e6).toFixed(5)+' MHz';
   let h='';
   if (m.dmr){ const d=m.dmr;
     h+='<div><h4>DMR '+(d.ms?'direct mode':'repeater')+'</h4>'+kv([['Color code',d.cc],['System code',d.syscode],['Vendor',[d.brand,d.sub].filter(x=>x).join(' ')],['Site',d.site],['Rest channel',d.rest],
@@ -1263,7 +1289,7 @@ function logConsole(line){
 }
 
 //---------------------------------------------------------------- bookmarks
-let bms = [], bmEdit = 0, bmCurId = 0, bmMsgTimer = 0;
+let bms = [], bmEdit = 0, bmCurId = 0;
 const MODE_LABEL = {autodecode:'Auto-detect', auto:'AUTO', tdma:'TDMA', p25p1:'P25p1', p25p2:'P25p2', dmr:'DMR', nxdn48:'NXDN48',
   nxdn96:'NXDN96', dpmr:'dPMR', ysf:'YSF', dstar:'D-STAR', m17:'M17', provoice:'ProVoice', edacs:'EDACS', analog:'Analog'};
 const MODS = ['c4fm','qpsk','gfsk'];
@@ -1276,17 +1302,18 @@ const MODS = ['c4fm','qpsk','gfsk'];
   for (const o of $('mode').options) s.add(new Option(o.text, o.value));
 })();
 
-// MHz without trailing zeros, but at least kHz resolution: 154.9875, 154.800, 446.00625
-function fmtMHz(hz){ return (hz/1e6).toFixed(5).replace(/0{1,2}$/, ''); }
+// every frequency the page shows: MHz with 6 decimals (to the Hz), as the inputs and the readout
+function fmtMHz(hz){ return (hz/1e6).toFixed(6); }
+function mhz(hz){ return fmtMHz(hz)+' MHz'; }
 // nearest bookmark within 2.5 kHz (less than half the narrowest channel step)
 function bmAt(f){ let best=null, bd=2501; for (const b of bms){ const d=Math.abs(b.freq-f); if (d<bd){ bd=d; best=b; } } return best; }
-function bmTune(b){ send({cmd:'bm_tune', id:b.id}); $('tunefreq').value=(b.freq/1e6).toFixed(6); }
-function bmMsg(t, bad){ const e=$('bm-msg'); e.textContent=t||''; e.style.color=bad?'var(--fail)':''; clearTimeout(bmMsgTimer); if (t && !bad) bmMsgTimer=setTimeout(()=>{ e.textContent=''; }, 4000); }
+function bmTune(b){ send({cmd:'bm_tune', id:b.id}); $('tunefreq').value=fmtMHz(b.freq); }
+function bmMsg(t, bad){ resMsg('bm-msg', t, bad); }
 
 function bmFiltered(){
   const q=$('bm-q').value.trim().toLowerCase(), g=$('bm-grp').value;
   return bms.filter(b => (!g || b.group===g) &&
-      (!q || b.name.toLowerCase().includes(q) || b.group.toLowerCase().includes(q) || (b.freq/1e6).toFixed(6).includes(q)))
+      (!q || b.name.toLowerCase().includes(q) || b.group.toLowerCase().includes(q) || fmtMHz(b.freq).includes(q)))
     .sort((a,b) => (a.group||'￿').localeCompare(b.group||'￿') || a.freq-b.freq);
 }
 
@@ -1316,10 +1343,10 @@ function renderBookmarks(){
       const gh=document.createElement('div'); gh.className='bm-g'; gh.textContent=b.group||'Other';
       el.appendChild(gh); lastGroup=b.group;
     }
-    const row=document.createElement('div'); row.className='bm'; row.dataset.id=b.id; row.title='Tune '+b.name+' ('+fmtMHz(b.freq)+' MHz)';
+    const row=document.createElement('div'); row.className='bm'; row.dataset.id=b.id; row.title='Tune '+b.name+' ('+mhz(b.freq)+')';
     row.tabIndex=0;
     const k=document.createElement('button'); k.className='tgl sm led'+(b.scan?' on':''); k.setAttribute('aria-pressed', String(!!b.scan));
-    k.setAttribute('aria-label', 'Scan '+b.name); k.title = b.scan ? 'In the scan: click to remove' : 'Not in the scan: click to add';
+    k.setAttribute('aria-label', 'Scan '+b.name); k.title = b.scan ? 'Selected for the scan: click to unselect' : 'Not selected: click to select';
     k.onclick=(ev)=>{ ev.stopPropagation(); bmScanSet([b.id], !b.scan); };
     const n=document.createElement('span'); n.className='bm-n';
     const nm=document.createElement('span'); nm.className='bm-nm'; nm.textContent=b.name;
@@ -1345,7 +1372,7 @@ function renderBookmarks(){
   scCount();
 }
 
-// light or put out the scan key of some bookmarks: at once here, then the host sends the list back
+// select or unselect bookmarks for the scan: at once here, then the host sends the list back
 function bmScanSet(ids, on){
   if (!ids.length) return;
   const set=new Set(ids);
@@ -1398,7 +1425,7 @@ function bmFormOpen(b){
   if ($('card-bm').classList.contains('folded')) foldSet('card-bm', false);
   bmEdit = b.id || 0;
   $('bm-name').value = b.name || '';
-  $('bm-freq').value = b.freq ? (b.freq/1e6).toFixed(6) : '';
+  $('bm-freq').value = b.freq ? fmtMHz(b.freq) : '';
   $('bm-mode').value = b.mode || '';
   $('bm-mod').value = b.mod || '';
   $('bm-group').value = b.group || '';
@@ -1414,7 +1441,7 @@ function bmQuick(){ const cur = curFreq ? bmAt(curFreq) : null; bmFormOpen(cur |
 $('bm-add').onclick = ()=>bmFormOpen(bmCurrent());
 $('btn-bm').onclick = bmQuick;
 $('bm-cancel').onclick = ()=>{ bmFormClose(); bmMsg(''); };
-$('bm-cur').onclick = ()=>{ const c=bmCurrent(); if (c.freq) $('bm-freq').value=(c.freq/1e6).toFixed(6); $('bm-mode').value=c.mode; };
+$('bm-cur').onclick = ()=>{ const c=bmCurrent(); if (c.freq) $('bm-freq').value=fmtMHz(c.freq); $('bm-mode').value=c.mode; };
 $('bm-save').onclick = ()=>{
   const freq=parseFreq($('bm-freq').value);
   if (!freq){ bmMsg('Enter a frequency, e.g. 851.0125M.', true); return; }
@@ -1463,13 +1490,11 @@ function parseBookmarkFile(text){
 }
 
 //---------------------------------------------------------------- bookmark scan
-// steps through the bookmarks with a lit key and stops on the active ones (dsd_web.c, run_bm_scan)
+// steps through the selected bookmarks and stops on the active ones (dsd_web.c, run_bm_scan)
 let scState = null, scAirId = 0; // the last status; the bookmark marked as being listened to
 function scOpts(){ return {hang: Math.max(0, +$('sc-hang').value || 0)}; }
-// per-browser convenience, as the band scan's: Hang as last set here
-function scSave(){ try { localStorage.setItem('dsdfme.bmscan', JSON.stringify({h:$('sc-hang').value})); } catch(e){} }
-(function(){ try { const s=JSON.parse(localStorage.getItem('dsdfme.bmscan') || 'null'); if (!s) return;
-  if (s.h != null && s.h !== '') $('sc-hang').value=s.h; } catch(e){} })();
+// Hang is kept on the host (web_settings.json) with the band scan's settings, so every page shows the same
+function scSave(){ send({cmd:'settings_set', bookmark_scan:scOpts()}); }
 $('sc-start').onclick=()=>{ send(Object.assign({cmd:'bmscan_start'}, scOpts())); scSave(); };
 $('sc-stop').onclick=()=>send({cmd:'bmscan_stop'});
 $('sc-hold').onclick=()=>send({cmd:'bmscan_hold', on: !(scState && scState.held)});
@@ -1479,7 +1504,7 @@ $('sc-all').onclick=()=>bmScanSet(bmFiltered().filter(b=>!b.scan).map(b=>b.id), 
 $('sc-none').onclick=()=>bmScanSet(bms.filter(b=>b.scan).map(b=>b.id), false);
 function scCount(){
   const n=bms.filter(b=>b.scan).length;
-  setTxt($('sc-count'), bms.length ? n+' of '+bms.length+' ticked' : '');
+  setTxt($('sc-count'), bms.length ? n+' of '+bms.length+' selected' : '');
   $('sc-start').disabled = !!scState && scState.state !== 'off' || !n;
 }
 // the row the scan listens to gets a green bar (amber stays the tuned one)
@@ -1504,10 +1529,10 @@ function renderBmScan(sc, d){
   if (on){ // another browser may have started it: show its settings
     if (document.activeElement !== $('sc-hang')) $('sc-hang').value = sc.hang;
   }
-  const where = nm+', '+fmtMHz(sc.freq)+' MHz'+(sc.pos ? ' ('+sc.pos+' of '+sc.n+')' : '');
+  const where = nm+', '+mhz(sc.freq)+(sc.pos ? ' ('+sc.pos+' of '+sc.n+')' : '');
   const dec = sc.mode && sc.mode !== 'autodecode' && MODE_LABEL[sc.mode] ? MODE_LABEL[sc.mode] : esc(d.name);
   let t, short = '';
-  if (!on) t = sc.msg ? 'Bookmark scan '+sc.msg : 'Light the key of the bookmarks to scan, then press Scan. It steps through them by frequency and stops on each active one with that bookmark’s decoder, until it has been quiet for Hang seconds.';
+  if (!on) t = sc.msg ? 'Bookmark scan '+sc.msg : 'Select the bookmarks to scan with the key at the start of their row, then press Scan. It steps through them by frequency and stops on each active one with that bookmark’s decoder, until it has been quiet for Hang seconds.';
   else if (sc.held){ t = 'Held on '+where+(lis ? ', active' : ', quiet')+'. Release to scan on.'; short = 'Bookmark scan: held on '+nm; }
   else if (lis){
     t = 'Active: '+where+', '+dec+' · '+fmtClock(sc.on)+(!sc.synced && !sc.plays ? ' · waiting for its sync' : '')+
@@ -1542,14 +1567,37 @@ function bsExcl(){
   return out;
 }
 function bsOpts(){ return {threshold:+$('bs-thr').value||10, skip_known:$('bs-skip').classList.contains('on'), keep_going:$('bs-keep').classList.contains('on'), exclude:bsExcl()}; }
-// per-browser convenience: remember the band choice and options
-function bsSave(){ try { localStorage.setItem('dsdfme.bscan', JSON.stringify({p:$('bs-preset').value, lo:$('bs-lo').value, hi:$('bs-hi').value,
-  t:$('bs-thr').value, s:$('bs-skip').classList.contains('on'), k:$('bs-keep').classList.contains('on'), x:$('bs-excl').value})); } catch(e){} }
+// the band scan's settings are kept on the host (web_settings.json), so every page shows the same ones
+function bsSave(){ send({cmd:'settings_set', band_scan:{bands:$('bs-preset').value, from:$('bs-lo').value, to:$('bs-hi').value,
+  threshold:+$('bs-thr').value||10, exclude:$('bs-excl').value, skip_bookmarked:$('bs-skip').classList.contains('on'),
+  keep_going:$('bs-keep').classList.contains('on')}}); }
 function bsCustom(){ $('bs-custom').classList.toggle('hidden', $('bs-preset').value !== 'custom'); }
-(function(){ try { const s=JSON.parse(localStorage.getItem('dsdfme.bscan') || 'null'); if (!s) return;
-  if (s.p in BS_PRESETS || s.p === 'custom') $('bs-preset').value=s.p;
-  $('bs-lo').value=s.lo||''; $('bs-hi').value=s.hi||''; $('bs-thr').value=s.t||10; $('bs-excl').value=s.x||'';
-  reflect('bs-skip', s.s); reflect('bs-keep', s.k); bsCustom(); } catch(e){} })();
+// the host's settings into the forms (not a field being edited). The first time, what this browser kept
+// before (localStorage) goes to the host, unless the host has its own saved already
+let settingsSeen = false;
+function settingsSet(m){
+  if (!settingsSeen){ settingsSeen = true; if (settingsMigrate(m)) return; }
+  const b = m.band_scan || {}, sc = m.bookmark_scan || {}, idle = id => document.activeElement !== $(id);
+  if ((b.bands in BS_PRESETS || b.bands === 'custom') && idle('bs-preset')) $('bs-preset').value = b.bands;
+  if (idle('bs-lo')) $('bs-lo').value = b.from || '';
+  if (idle('bs-hi')) $('bs-hi').value = b.to || '';
+  if (b.threshold != null && idle('bs-thr')) $('bs-thr').value = b.threshold;
+  if (idle('bs-excl')) $('bs-excl').value = b.exclude || '';
+  reflect('bs-skip', b.skip_bookmarked); reflect('bs-keep', b.keep_going);
+  if (sc.hang != null && idle('sc-hang')) $('sc-hang').value = sc.hang;
+  bsCustom();
+}
+function settingsMigrate(m){
+  let bs = null, sc = null;
+  try { bs = JSON.parse(localStorage.getItem('dsdfme.bscan') || 'null'); sc = JSON.parse(localStorage.getItem('dsdfme.bmscan') || 'null');
+    localStorage.removeItem('dsdfme.bscan'); localStorage.removeItem('dsdfme.bmscan'); } catch(e){}
+  if (m.saved || !(bs || sc)) return false;
+  const o = {cmd:'settings_set'};
+  if (bs) o.band_scan = {bands:bs.p, from:bs.lo||'', to:bs.hi||'', threshold:+bs.t||10, exclude:bs.x||'', skip_bookmarked:!!bs.s, keep_going:!!bs.k};
+  if (sc && sc.h != null && sc.h !== '') o.bookmark_scan = {hang:+sc.h||0};
+  send(o); // the host sends every page the settings back
+  return true;
+}
 
 $('bs-preset').onchange=()=>{ bsCustom(); bsSave(); };
 for (const id of ['bs-lo','bs-hi']) $(id).onchange=bsSave;
@@ -1573,7 +1621,7 @@ for (const id of ['bs-thr','bs-excl']) $(id).onchange=()=>{ send(Object.assign({
 
 function renderBscan(bs, d){
   if (!bs) return;
-  const on = bs.state !== 'off', mhz = f => fmtMHz(f)+' MHz';
+  const on = bs.state !== 'off';
   setTxt($('bs-badge'), {off:'Off', sweep:'Sweeping', probe:'Probing', found:'Locked', fixed:'Found'}[bs.state] || bs.state);
   $('bs-badge').className = 'badge '+(bs.state==='found' || bs.state==='fixed' ? 'live' : (on ? 'warn' : ''));
   setTxt($('st-bs'), bs.state==='fixed' ? 'Band scan found' : 'Band scan');
@@ -1747,7 +1795,7 @@ function recRow(r){
   if (m.enc) meta+='<span class="tag enc" title="'+escH(m.enc)+'">'+icon('lock')+escH(m.enc)+'</span>';
   if (m.lat!=null) meta+='<button class="tag lnk" data-lat="'+m.lat+'" data-lon="'+m.lon+'" data-id="'+escH(m.srcs || (m.src>0 ? String(m.src) : ''))+'" title="'+m.lat.toFixed(5)+', '+m.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
   meta+='<span class="dur">'+fmtClock(r.dur||0)+'</span>';
-  const det=[m.p, m.freq ? (m.freq/1e6).toFixed(5)+' MHz' : '', f['System'], f['Emergency'] ? 'EMERGENCY' : '',
+  const det=[m.p, m.freq ? mhz(m.freq) : '', f['System'], f['Emergency'] ? 'EMERGENCY' : '',
     f['Talker alias'] ? 'alias '+f['Talker alias'] : '', f['GPS'] ? 'GPS '+f['GPS'] : '',
     r.kind==='temp' ? (r.kept ? 'kept as '+r.kept : 'temporary') : r.name, fmtSize(r.size)].filter(x=>x);
   const keep = r.kind==='temp' ? recKeep(r.id, r.kept) : '<span class="rp-k"></span>';
@@ -1846,7 +1894,7 @@ $('btn-group-cur').onclick=()=>{
   $('csv-group').value=rows.join('\n');
 };
 $('btn-scanset').onclick=()=>{ const fs=$('scanlist').value.split(/\s+/).map(parseFreq).filter(x=>x); send({cmd:'scan_set', freqs:fs}); };
-$('btn-scanbm').onclick=()=>{ $('scanlist').value=bmFiltered().slice(0,26).map(b=>(b.freq/1e6).toFixed(6)+'M').join('\n'); };
+$('btn-scanbm').onclick=()=>{ $('scanlist').value=bmFiltered().slice(0,26).map(b=>fmtMHz(b.freq)+'M').join('\n'); };
 
 // auto
 $('tg-autotune').onclick=()=>{ const on=!$('tg-autotune').classList.contains('on'); send({cmd:'auto_tune', enable:on}); reflect('tg-autotune', on); };

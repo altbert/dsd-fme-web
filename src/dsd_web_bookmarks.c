@@ -73,7 +73,7 @@ static int parse_item (jv * o, web_bookmark * bm, const char ** why)
   bm->scan = jv_bool (o, "scan", 0);
   if (!web_mode_valid (bm->mode)) { *why = "unknown decoder"; return 0; }
   if (!mod_ok (bm->mod)) { *why = "unknown modulation"; return 0; }
-  if (!bm->name[0]) snprintf (bm->name, sizeof(bm->name), "%.4f MHz", bm->freq / 1e6);
+  if (!bm->name[0]) snprintf (bm->name, sizeof(bm->name), "%.6f MHz", bm->freq / 1e6);
   return 1;
 }
 
@@ -86,7 +86,7 @@ static void item_json (jb * b, const web_bookmark * bm)
   jb_str (b, "group", bm->group);
   jb_str (b, "mode", bm->mode);
   jb_str (b, "mod", bm->mod);
-  if (bm->scan) jb_bool (b, "scan", 1); //only when lit, so the file stays easy to edit by hand
+  if (bm->scan) jb_bool (b, "scan", 1); //only when selected, so the file stays easy to edit by hand
   jb_obj_end (b);
 }
 
@@ -238,13 +238,13 @@ int bm_add (const web_bookmark * in)
   copy_text (bm->group, sizeof(bm->group), in->group);
   copy_text (bm->mode, sizeof(bm->mode), web_mode_valid (in->mode) ? in->mode : "");
   copy_text (bm->mod, sizeof(bm->mod), mod_ok (in->mod) ? in->mod : "");
-  if (!bm->name[0]) snprintf (bm->name, sizeof(bm->name), "%.4f MHz", bm->freq / 1e6);
+  if (!bm->name[0]) snprintf (bm->name, sizeof(bm->name), "%.6f MHz", bm->freq / 1e6);
   save ();
   bm_send (-1);
   return bm->id;
 }
 
-//the lit bookmark after (freq, id) in frequency order, wrapping around to the lowest; 0 when none is lit
+//the selected bookmark after (freq, id) in frequency order, wrapping around to the lowest; 0 when none is
 int bm_scan_next (long long freq, int id, web_bookmark * out)
 {
   const web_bookmark * next = NULL, * first = NULL;
@@ -261,20 +261,20 @@ int bm_scan_next (long long freq, int id, web_bookmark * out)
   return 1;
 }
 
-//lit bookmarks; pos (unless NULL) gets the place of (freq, id) among them in frequency order, 1 the
-//lowest, 0 when that one isn't lit (or no longer on freq)
+//selected bookmarks; pos (unless NULL) gets the place of (freq, id) among them in frequency order, 1
+//the lowest, 0 when that one isn't selected (or no longer on freq)
 int bm_scan_count (long long freq, int id, int * pos)
 {
-  int n = 0, below = 0, lit = 0;
+  int n = 0, below = 0, sel = 0;
   for (int i = 0; i < B.count; i++)
   {
     const web_bookmark * b = &B.items[i];
     if (!b->scan) continue;
     n++;
     if (before (b, freq, id)) below++;
-    if (b->id == id && b->freq == freq) lit = 1;
+    if (b->id == id && b->freq == freq) sel = 1;
   }
-  if (pos) *pos = lit ? below + 1 : 0;
+  if (pos) *pos = sel ? below + 1 : 0;
   return n;
 }
 
@@ -341,7 +341,7 @@ int bm_command (int client, const char * c, jv * cmd)
 
   if (!strcmp (c, "bm_scan"))
   {
-    //light or put out the scan key of some bookmarks (one, or all of those shown)
+    //select or unselect bookmarks for the scan (one, or all of those shown)
     int on = jv_bool (cmd, "on", 1), changed = 0;
     for (jv * e = jv_first (jv_get (cmd, "ids")); e; e = e->next)
     {
