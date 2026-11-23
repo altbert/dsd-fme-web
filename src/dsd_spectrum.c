@@ -62,6 +62,7 @@ static int * brev;
 static int hist_head, hist_count; // ring of the newest MAX_AVG block spectra in hist
 static float win_norm = 1.0f;
 static double win_unit;   // bin power for white IQ noise of variance 1 (I² + Q², in 8-bit steps)
+static const double bh[4] = { 0.35875, 0.48829, 0.14128, 0.01168 }; // the window: 4-term Blackman-Harris
 
 //four floats at a time: GCC and Clang turn these into SSE or NEON (or plain code elsewhere), which the
 //compilers don't do on their own at -O2 for loops of unknown length
@@ -107,13 +108,25 @@ static int fft_prepare (int n)
   for (int i = 0; i < n; i++)
   {
     double x = 2.0 * M_PI * i / n;
-    double v = 0.35875 - 0.48829 * cos (x) + 0.14128 * cos (2 * x) - 0.01168 * cos (3 * x);
+    double v = bh[0] - bh[1] * cos (x) + bh[2] * cos (2 * x) - bh[3] * cos (3 * x);
     win[i] = (float)v; s += v; s2 += v * v;
   }
   win_norm = (float)(1.0 / ((s * 128.0) * (s * 128.0))); // full-scale tone -> ~0 dBFS
   win_unit = s2 / ((s * 128.0) * (s * 128.0));
   fn = n;
   return 0;
+}
+
+//power the bin k away from the tuned frequency's shows for the IQ conversion's DC tone, in a frame's
+//units: the RTL's 8-bit samples center on 127.5 but get 127 taken off (rtl_sdr_fm.cpp), a +0.5 bias in
+//I and Q. That is |0.5 + 0.5j|² over the full scale's (128 per window sum) squared, spread over the 7
+//bins around the tuned one as the window's transform is (its k-th term halved over its sum, squared)
+double spectrum_dc_power (int k)
+{
+  if (k < 0) k = -k;
+  if (k > 3) return 0;
+  double r = k ? bh[k] / (2.0 * bh[0]) : 1.0;
+  return 0.5 / (128.0 * 128.0) * r * r;
 }
 
 //in place from bit-reversed input order (fft_block loads it so), n a power of two from 8 up

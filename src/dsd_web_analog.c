@@ -386,7 +386,7 @@ static void an_restart (double settle)
 //how long the old channel's audio keeps coming after a retune: the USB transfer in flight and the
 //one the decoder is still working through (librtlsdr's 256 KiB, 131072 samples: 0.13 s at the
 //default rate, 0.52 s at 0.25 MSPS)
-static double settle_time (dsd_opts * opts)
+double web_retune_settle (dsd_opts * opts)
 {
 #ifdef USE_RTLSDR
   uint32_t r = opts->audio_in_type == 3 ? rtl_dev_rate () : 0;
@@ -402,7 +402,7 @@ void web_analog_retuned (dsd_opts * opts)
   if (!AN.ready) an_init ();
   uint32_t freq = opts->rtlsdr_center_freq;
   if (AN.freq && llabs ((long long)freq - (long long)AN.freq) < 3000) { AN.freq = freq; return; } //auto-tune centering it
-  double settle = AN.freq ? settle_time (opts) : 0; //the first channel has no old audio before it
+  double settle = AN.freq ? web_retune_settle (opts) : 0; //the first channel has no old audio before it
   AN.freq = freq;
   an_restart (settle);
   web_detect_reset (); //the sync detector waits out the same settle (web_analog_tap)

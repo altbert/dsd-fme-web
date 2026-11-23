@@ -2,7 +2,7 @@
 // with made-up demo data. The radios, names, talkgroups, positions and messages are invented. The
 // spectrum and waterfall stay live, from the simulated receiver (fakertl.c).
 (() => {
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000), freq = curFreq; // the calls are on the tuned repeater
   const R = {
     3101: { n: 'Airboat 3', a: 'AIRBOAT 3', lat: 25.76128, lon: -80.48207, v: 41 },
     3104: { n: 'Gator Patrol', a: 'GATOR PTL', lat: 25.74512, lon: -80.68044, v: 18 },
@@ -16,7 +16,7 @@
   let id = 100;
   const pos = (r) => r.lat.toFixed(5) + ', ' + r.lon.toFixed(5);
   const call = (dt, s, src, tg, dur, live) => {
-    const r = R[src], it = { id: ++id, k: 'call', p: 'DMR', s, t: now - dt, ty: 'Group call', src, sn: r.n, dst: tg, dn: TG[tg], g: 0,
+    const r = R[src], it = { id: ++id, k: 'call', p: 'DMR', s, t: now - dt, ty: 'Group call', src, sn: r.n, dst: tg, dn: TG[tg], g: 0, freq,
       live: live ? 1 : 0, dur, f: [['Talker alias', r.a]], sum: src + ' → TG ' + tg + ' (' + r.a + ')' };
     if (live && r.lat != null) { it.lat = r.lat; it.lon = r.lon; it.f.push(['GPS', pos(r)]); }
     items.push(it);
@@ -50,11 +50,18 @@
     slot2: slot(3107, 2, '', ''),
   };
   const demoSystem = { type: 'system', dmr: { ms: 0, cc: 1 } };
+  // the bookmark scan, listening to the repeater since its first live call began: the real one would
+  // retune the receiver away from the scene
+  const lit = bms.filter((b) => b.scan).sort((a, b) => a.freq - b.freq || a.id - b.id), here = bmAt(freq);
+  const demoScan = () => ({ state: 'listen', id: here.id, freq: here.freq, name: here.name, mode: here.mode, pos: lit.indexOf(here) + 1,
+    n: lit.length, held: false, rest: false, inview: 0, skipped: false, nskip: 0, on: Date.now() / 1000 - (now - 14), synced: true,
+    plays: false, left: -1, hang: 2, msg: '' });
 
   const real = window.__realHandleJSON || handleJSON;
   window.__realHandleJSON = real;
   handleJSON = function (m) {
-    if (m.type === 'status') { m.decode = Object.assign(m.decode || {}, demoStatus.decode); m.slot1 = demoStatus.slot1; m.slot2 = demoStatus.slot2; }
+    if (m.type === 'status') { m.decode = Object.assign(m.decode || {}, demoStatus.decode); m.slot1 = demoStatus.slot1; m.slot2 = demoStatus.slot2;
+      if (here) m.bmscan = demoScan(); }
     if (m.type === 'system') m = demoSystem;
     if (m.type === 'activity' && !m.demo) return; // nothing the decoder logs reaches the page
     return real(m);

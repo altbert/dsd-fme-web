@@ -150,6 +150,7 @@ void spectrum_push_iq (const int16_t * iq, int n, uint32_t center, uint32_t rate
 void spectrum_configure (int fft_size, int fps, int averaging);
 void spectrum_get_config (int * fft_size, int * fps, int * averaging);
 int  spectrum_copy_latest (spectrum_frame * out, int max_bins); //returns 1 if a frame was copied
+double spectrum_dc_power (int k); //power the IQ conversion's DC tone puts k bins from the tuned frequency
 double spectrum_now (void);
 
 //----------------------------------------------------------------------------
@@ -166,6 +167,7 @@ typedef struct
   char group[48];
   char mode[16];   //decoder key (see web_mode_valid), "" keeps the current decoder
   char mod[8];     //"c4fm" / "qpsk" / "gfsk", "" keeps the current modulation
+  int scan;        //lit in the list: the bookmark scan visits it
 } web_bookmark;
 
 void bm_init (const char * path); //load the list, NULL or "" = default location
@@ -173,6 +175,8 @@ const char * bm_path (void);
 int  bm_get (int id, web_bookmark * out);
 int  bm_near (long long freq, long long tol); //id of the closest bookmark within tol Hz, 0 = none
 int  bm_add (const web_bookmark * bm);       //add (no duplicate per channel), returns the id
+int  bm_scan_next (long long freq, int id, web_bookmark * out); //next lit bookmark after (freq, id), wrapping; 0 = none lit
+int  bm_scan_count (long long freq, int id, int * pos);         //lit bookmarks, and the place of (freq, id) among them
 void bm_send (int client); //client < 0 sends to everybody
 int  bm_command (int client, const char * cmd, jv * j); //returns 1 if cmd was a bookmark command
 
@@ -240,6 +244,7 @@ typedef struct
 } web_analog_info;
 
 void web_analog_retuned (dsd_opts * opts); //tuned to opts->rtlsdr_center_freq: forget the last channel (the tap, web_analog_tap, is in dsd.h)
+double web_retune_settle (dsd_opts * opts); //seconds the old channel's audio keeps coming after a retune
 void web_analog_get (web_analog_info * out);
 int  web_analog_playing (void); //analog audio went out in the last 0.6 s (dsd_web.c)
 

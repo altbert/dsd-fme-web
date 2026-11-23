@@ -173,7 +173,7 @@ html.viewer-open{overflow:hidden}
 dsd-fme -i rtl --web 8080</pre>
 
 <figure>
-  <a class="shot" href="screenshots/web-desktop.webp"><img src="screenshots/web-desktop.webp" width="1440" height="900" alt="Spectrum with the demodulator's channel shaded, waterfall, bookmarks and a DMR call on both slots"></a>
+  <a class="shot" href="screenshots/web-desktop.webp"><img src="screenshots/web-desktop.webp" width="1440" height="900" alt="Spectrum with the demodulator's channel shaded, waterfall, the bookmark scan listening to a repeater and a DMR call on both slots"></a>
   <figcaption>Spectrum and waterfall, the receiver readout and a DMR call on both slots.</figcaption>
 </figure>
 
@@ -186,6 +186,7 @@ dsd-fme -i rtl --web 8080</pre>
       <li><b>Activity log</b>: calls, LRRP positions, ARS registrations, text messages, P25 packet data, and analog FM with its CTCSS tone, DCS code and DTMF ANI.</li>
       <li><b>Radios and map</b>: every radio heard, positions on an OpenStreetMap map.</li>
       <li><b>Trunking</b>: follows calls from a P25 control channel, with skip, hold and block per talkgroup.</li>
+      <li><b>Bookmarks and a scan</b>: saved channels shared by every browser, and a scan through the ones you tick that stops on each active one with its own decoder.</li>
       <li><b>Audio and recordings</b>: decoded audio in the browser and per-call WAV downloads.</li>
       <li><b>Other SDRs</b> (HackRF, Airspy, SDRplay…) through SDR++, and RTL-SDR over <code>rtl_tcp</code>.</li>
       <li><b>Kept up to date</b>: changes to the original DSD-FME are merged in regularly.</li>
@@ -275,7 +276,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   <div class="panels">
     <div class="panel">
       <h3>Top bar</h3>
-      <p>Lamps for the connection to dsd-fme, sync and the decoder in use, plus Trunking and Band scan lamps while those run.</p>
+      <p>Lamps for the connection to dsd-fme, sync and the decoder in use, plus Trunking, bookmark Scan and Band scan lamps while those run.</p>
       <ul>
         <li><span class="k">Map</span> opens the radio map.</li>
         <li><span class="k">Audio</span> plays the decoded voice and analog audio in the browser, with a volume slider. The speakers and WAV outputs keep working as before.</li>
@@ -325,9 +326,11 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
     </div>
     <div class="panel">
       <h3>Bookmarks</h3>
-      <p>Saved channels, each with a name, frequency, decoder, modulation and group. Click one to tune and switch decoder in one step. They are saved on the computer running dsd-fme.</p>
+      <p>Saved channels, each with a name, frequency, decoder, modulation and group. Click one to tune and switch decoder in one step. They are saved on the computer running dsd-fme. Under each name: when a call was last heard there, or <b>On air</b>.</p>
       <ul>
         <li><span class="k">Add</span> saves the tuned channel. Search matches name, group or MHz; the menu picks a group.</li>
+        <li><b>Scan</b>: the key at the start of a row puts the bookmark in the scan. <span class="k">Scan</span> steps through them by frequency and stops on each active one with its own decoder: a digital one once it syncs, an analog one when the channel opens. <b>Hang</b> is how long it keeps listening after the channel goes quiet; it stays as long as the channel is active. <span class="k">Hold</span> stays on the bookmark; <span class="k">Skip</span> leaves it until it goes quiet. With an RTL-SDR, the bookmarks inside the spectrum are checked there without retuning.</li>
+        <li><span class="k">Select all</span> selects every bookmark the search and group menu show; <span class="k">Unselect all</span> clears them.</li>
         <li><b>Import / export</b>: <span class="k">Export</span> saves them as a file; <span class="k">Import…</span> takes that file, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.</li>
       </ul>
     </div>
@@ -357,7 +360,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   <h3>RF</h3>
   <ul>
     <li>RTL-SDR: <b>LNA gain</b>, <span class="k">Tuner AGC</span> (the tuner sets its own gain; the slider is off meanwhile), <span class="k">RTL AGC</span> (digital gain that lifts noise too, so the squelch works poorly with it), <b>PPM</b> correction, sample <b>Volume</b> (×1–3), <b>Bandwidth</b> (4–24 kHz) and <b>Sample rate</b> (0.25–3.2 MSPS; above 2.4 most dongles drop samples).</li>
-    <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio and the band scan.</li>
+    <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio, the band scan and the bookmark scan.</li>
     <li><b>SetMod BW</b>: the bandwidth sent over rigctl (SDR++).</li>
   </ul>
   <h3>Trunk</h3>

@@ -9,7 +9,7 @@ A fork of [DSD-FME](https://github.com/lwvmobile/dsd-fme) with a browser interfa
 dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 ```
 
-![DSD-FME web: spectrum with the demodulator's channel shaded, waterfall, bookmarks and a DMR call on both slots](docs/screenshots/web-desktop.webp)
+![DSD-FME web: spectrum with the demodulator's channel shaded, waterfall, the bookmark scan listening to a repeater and a DMR call on both slots](docs/screenshots/web-desktop.webp)
 
 ## What's new in this fork
 
@@ -19,7 +19,7 @@ dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 - **Activity log**: calls, decoded packet data (LRRP, ARS, text messages, P25 packet data…) and signalling, with filters. Analog FM transmissions show up too, with their CTCSS tone or DCS code and the DTMF ANI radios send at key-up.
 - **Radios and map**: every radio heard, positions on an OpenStreetMap map, radios on air pulse.
 - **Trunking card**: follows P25 calls from the control channel, with skip, hold, block and a follow key per talkgroup.
-- **Bookmarks, keys, audio and recordings**: bookmarks with groups, key entry (plus auto-find for DMR Basic Privacy), decoded audio in the browser, per-call WAV downloads.
+- **Bookmarks, keys, audio and recordings**: bookmarks with groups and a scan that stops on the active ones, each with its own decoder; key entry (plus auto-find for DMR Basic Privacy), decoded audio in the browser, per-call WAV downloads.
 - **Works on phones.**
 
 Without `--web` it's the regular DSD-FME. Flags and details: [examples/Web_Interface.md](examples/Web_Interface.md). Building it and what it needs: [BUILD.md](BUILD.md).

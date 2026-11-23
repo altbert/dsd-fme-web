@@ -329,19 +329,33 @@ canvas{display:block;width:100%}
 /* ---------- bookmarks ---------- */
 .bmlist{height:260px;overflow:auto;margin:8px 0 0}
 .bmlist .hint{padding:10px 12px;margin:0}
-.bm{display:flex;gap:6px;align-items:center;padding:3px 6px 3px 10px;border-bottom:1px solid var(--rule);cursor:pointer;min-height:36px}
+.bm{display:flex;gap:6px;align-items:center;padding:3px 6px;border-bottom:1px solid var(--rule);cursor:pointer;min-height:36px}
 .bm:last-child{border-bottom:none}
 .bm:hover{background:#161816}
 .bm:focus-visible{outline-offset:-2px}
 .bm.on{box-shadow:inset 3px 0 0 var(--amber);background:#1a1912}
-.bm .bm-n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silk)}
+.bm.air{box-shadow:inset 3px 0 0 var(--live)}
+/* the name, and under it when a call was last heard there: two fixed lines, so rows keep their height */
+.bm .bm-n{flex:1;min-width:0;display:flex;flex-direction:column}
+.bm .bm-nm{line-height:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silk)}
+.bm .bm-h{height:13px;line-height:13px;font-size:11.5px;color:var(--silk-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bm .bm-h.air{color:var(--live);font-weight:600}
 .bm .bm-f{color:var(--silk-2);font-size:13.5px}
 .bm.on .bm-f{color:var(--amber)}
 .bm .tag{min-width:42px;justify-content:center}
 .bm button{width:28px;min-width:28px;min-height:28px;padding:0;color:var(--silk-2)}
+.bm button.led{justify-content:center}
 .bm-g{padding:8px 10px 3px;font-size:12.5px;font-weight:600;color:var(--silk-3);border-bottom:1px solid var(--rule);background:#121312;position:sticky;top:0}
 #bm-msg{min-height:1.4em}
 #bm-form{margin-top:8px;padding-top:4px;border-top:1px solid var(--plate-edge)}
+/* bookmark scan: the badge, Hold and the status keep their size whatever they say */
+#bm-scan{margin-top:8px;border-top:1px solid var(--plate-edge)}
+#bm-scan .tgbar{margin-top:10px}
+#sc-badge{min-width:96px}
+#sc-hold{min-width:68px}
+#sc-hang{width:56px}
+#sc-stat{height:4.2em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;margin-bottom:0}
+#st-sc{width:160px}
 
 /* ---------- band scan ---------- */
 #bs-stat{height:5.6em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;margin-bottom:0}
@@ -536,6 +550,7 @@ canvas{display:block;width:100%}
     <span id="st-carrier" class="badge">No sync</span>
     <span id="st-mode" class="mode" title="Decoder">—</span>
     <span id="st-trk" class="badge hidden">Trunking</span>
+    <span id="st-sc" class="badge warn hidden"><span class="ell">Scanning</span></span>
     <span id="st-bs" class="badge warn vh">Band scan</span>
   </div>
   <div class="bar-ctl">
@@ -704,6 +719,22 @@ canvas{display:block;width:100%}
           <div class="row"><label for="bm-group">Group</label><input id="bm-group" list="bm-groups" maxlength="40" style="flex:1" placeholder="optional"><datalist id="bm-groups"></datalist></div>
           <div class="row"><button class="p sm" id="bm-save">Add bookmark</button><button class="sm" id="bm-cancel">Cancel</button></div>
         </div>
+        <div id="bm-scan">
+          <div class="tgbar"><span class="tgtitle">Scan <span id="sc-badge" class="badge">Off</span></span>
+            <span id="sc-count" class="count" title="Bookmarks with a lit key, of all bookmarks"></span></div>
+          <div class="row btns">
+            <button class="p sm" id="sc-start" title="Step through the bookmarks with a lit key, by frequency, and stop on each active one with that bookmark's decoder"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Scan</button>
+            <button class="sm" id="sc-stop" disabled>Stop</button>
+            <button class="sm" id="sc-hold" disabled title="Stay on this bookmark until you release it">Hold</button>
+            <button class="sm" id="sc-skip" disabled title="Leave this bookmark now; the scan passes it over until it is quiet">Skip</button>
+          </div>
+          <div class="row">
+            <label class="pair" title="Seconds the scan keeps listening after the bookmark goes quiet, for a reply, before it moves on">Hang <input id="sc-hang" type="number" step="0.5" min="0" max="60" value="2"> s</label>
+            <span class="btns"><button class="sm" id="sc-all" title="Select every bookmark the search and group filter show for the scan">Select all</button>
+            <button class="sm" id="sc-none" title="Leave every bookmark out of the scan">Unselect all</button></span>
+          </div>
+          <div class="hint" id="sc-stat" role="status"></div>
+        </div>
         <details>
           <summary>Import / export</summary>
           <div class="row" style="margin-top:8px"><button class="sm" id="bm-export">Export</button><button class="sm" id="bm-import">Import…</button>
@@ -840,7 +871,7 @@ canvas{display:block;width:100%}
           <button class="sm" id="btn-sq" title="Hold the level typed in the box (turns Auto floor off)">Set</button>
           <button class="sm" id="btn-sqchan" title="Set the level once from this frequency's own quiet level plus the margin (turns Auto floor off)">Channel floor</button>
           <span class="sqv" id="sqchan"></span></div></div>
-        <div class="hint">Auto floor keeps the squelch the chosen margin over the noise floor of the whole spectrum, so it follows the gain. Off, the level stays where the arrows, Set or Channel floor (this frequency's own quiet level plus the margin) put it. The squelch gates NXDN, dPMR and M17 sync, the analog monitor and the band scan.</div>
+        <div class="hint">Auto floor keeps the squelch the chosen margin over the noise floor of the whole spectrum, so it follows the gain. Off, the level stays where the arrows, Set or Channel floor (this frequency's own quiet level plus the margin) put it. The squelch gates NXDN, dPMR and M17 sync, the analog monitor, the band scan and the bookmark scan.</div>
         <div class="row"><label for="setmodbw">SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:84px"><span class="unit">Hz (RIGCTL)</span><button class="sm" id="btn-smb">Set</button></div>
       </div>
 

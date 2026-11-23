@@ -70,6 +70,7 @@ static int parse_item (jv * o, web_bookmark * bm, const char ** why)
   copy_text (bm->group, sizeof(bm->group), jv_str (o, "group", ""));
   copy_text (bm->mode, sizeof(bm->mode), jv_str (o, "mode", ""));
   copy_text (bm->mod, sizeof(bm->mod), jv_str (o, "mod", ""));
+  bm->scan = jv_bool (o, "scan", 0);
   if (!web_mode_valid (bm->mode)) { *why = "unknown decoder"; return 0; }
   if (!mod_ok (bm->mod)) { *why = "unknown modulation"; return 0; }
   if (!bm->name[0]) snprintf (bm->name, sizeof(bm->name), "%.4f MHz", bm->freq / 1e6);
@@ -85,7 +86,14 @@ static void item_json (jb * b, const web_bookmark * bm)
   jb_str (b, "group", bm->group);
   jb_str (b, "mode", bm->mode);
   jb_str (b, "mod", bm->mod);
+  if (bm->scan) jb_bool (b, "scan", 1); //only when lit, so the file stays easy to edit by hand
   jb_obj_end (b);
+}
+
+//(freq, id) order: frequency, then id for bookmarks on the same one
+static int before (const web_bookmark * b, long long freq, int id)
+{
+  return b->freq < freq || (b->freq == freq && b->id < id);
 }
 
 //mkdir -p for the directory part of a path
@@ -236,6 +244,40 @@ int bm_add (const web_bookmark * in)
   return bm->id;
 }
 
+//the lit bookmark after (freq, id) in frequency order, wrapping around to the lowest; 0 when none is lit
+int bm_scan_next (long long freq, int id, web_bookmark * out)
+{
+  const web_bookmark * next = NULL, * first = NULL;
+  for (int i = 0; i < B.count; i++)
+  {
+    const web_bookmark * b = &B.items[i];
+    if (!b->scan) continue;
+    if (!first || before (b, first->freq, first->id)) first = b;
+    if (!before (b, freq, id) && (b->freq != freq || b->id != id) && (!next || before (b, next->freq, next->id))) next = b;
+  }
+  if (!next) next = first;
+  if (!next) return 0;
+  *out = *next;
+  return 1;
+}
+
+//lit bookmarks; pos (unless NULL) gets the place of (freq, id) among them in frequency order, 1 the
+//lowest, 0 when that one isn't lit (or no longer on freq)
+int bm_scan_count (long long freq, int id, int * pos)
+{
+  int n = 0, below = 0, lit = 0;
+  for (int i = 0; i < B.count; i++)
+  {
+    const web_bookmark * b = &B.items[i];
+    if (!b->scan) continue;
+    n++;
+    if (before (b, freq, id)) below++;
+    if (b->id == id && b->freq == freq) lit = 1;
+  }
+  if (pos) *pos = lit ? below + 1 : 0;
+  return n;
+}
+
 //send the list to one client, or everybody when client < 0
 void bm_send (int client)
 {
@@ -268,6 +310,7 @@ int bm_command (int client, const char * c, jv * cmd)
     const char * why = NULL;
     if (!parse_item (cmd, &bm, &why)) { reply (client, "bm_error", "msg", why, 0); return 1; }
     web_bookmark * old = bm.id > 0 ? find (bm.id) : NULL;
+    if (old && !jv_has (cmd, "scan")) bm.scan = old->scan; //the edit form leaves the key as it is
     if (!old)
     {
       if (B.count >= WEB_BM_MAX) { reply (client, "bm_error", "msg", "bookmark list is full", 0); return 1; }
@@ -293,6 +336,20 @@ int bm_command (int client, const char * c, jv * cmd)
       bm_send (-1);
       break;
     }
+    return 1;
+  }
+
+  if (!strcmp (c, "bm_scan"))
+  {
+    //light or put out the scan key of some bookmarks (one, or all of those shown)
+    int on = jv_bool (cmd, "on", 1), changed = 0;
+    for (jv * e = jv_first (jv_get (cmd, "ids")); e; e = e->next)
+    {
+      web_bookmark * bm = e->t == JV_NUM ? find ((int)e->num) : NULL;
+      if (bm && bm->scan != on) { bm->scan = on; changed = 1; }
+    }
+    if (changed) save ();
+    bm_send (-1); //also when nothing changed: a page that reflected the key at once gets the truth back
     return 1;
   }
 

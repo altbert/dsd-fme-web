@@ -30,7 +30,9 @@ loads OpenStreetMap tiles, so it needs internet. A run takes about a minute.
    12 px wide.
 4. Runs `demo_page.js` in the page. It replaces what the decoder reports
    (status, slots, activity log, system) with made-up radios, talkgroups,
-   positions and messages. The spectrum and waterfall stay live.
+   positions and messages, and shows the bookmark scan listening to the tuned
+   repeater (the real scan would retune the receiver away from the scene). The
+   spectrum and waterfall stay live.
 5. Takes the desktop shot (1440×900), the activity log and radios, the map,
    and the phone shot (390×844 at 2×). The spectrum shots are taken a few
    seconds into a transmission of the bursty M17 hotspot, so it shows in the

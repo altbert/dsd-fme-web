@@ -34,6 +34,12 @@ static const char * web_modes[] = { "auto", "tdma", "p25p1", "p25p2", "dmr", "nx
 #define BS_SKIP_SECS  1800.0 //how long a carrier no decoder locked on is left alone
 enum { BS_OFF = 0, BS_TUNE, BS_PROBE, BS_FOUND, BS_FIXED };
 
+//bookmark scan
+#define SC_DWELL    0.25 //seconds a quiet bookmark is listened to once its retune settled
+#define SC_SYNC     1.5  //least time an open channel gives a decoder that plays no analog to find its sync
+#define SC_MAX_SKIP 64
+enum { SC_OFF = 0, SC_HOP, SC_LISTEN };
+
 typedef struct
 {
   long long freq; //Hz, power weighted center
@@ -132,6 +138,23 @@ static struct
   int bs_saved_fps, bs_saved_avg, bs_saved_sql;
   char bs_saved_mode[16];
   char bs_msg[128];
+
+  //bookmark scan: step through the lit bookmarks, each with its own decoder, and stop on the active ones
+  int sc_state;
+  int sc_held;                        //Hold: stay on this bookmark
+  web_bookmark sc_bm;                 //the one tuned (a copy: the list can change meanwhile)
+  double sc_ready;                    //its retune has settled from then on
+  double sc_view_t;                   //and the spectrum shows it from then on
+  double sc_check;                    //listening for activity on it since then (SC_HOP)
+  double sc_open, sc_last;            //found active then, and last heard active (SC_LISTEN)
+  int sc_synced;                      //its decoder synced since it was found active
+  float sc_hang;                      //s it is listened to after it goes quiet
+  int sc_skip[SC_MAX_SKIP];           //passed over until found quiet (Skip, a signal its decoder doesn't take)
+  int sc_nskip;
+  int sc_inview;                      //lit bookmarks the spectrum showed quiet at the last step
+  int sc_rest;                        //nothing else to tune then: the receiver stayed where it is
+  char sc_mode0[16], sc_mod0[8];      //decoder and modulation from before the scan, for bookmarks that keep it
+  char sc_msg[128];
 
   //squelch: Auto floor holds it a margin over the noise floor of the spectrum
   int sq_auto;
@@ -1017,6 +1040,15 @@ static void bs_stop (dsd_opts * opts, dsd_state * state, const char * why)
   web_log ("Band scan stopped%s.", why);
 }
 
+//the bookmark scan stops where it is: the receiver stays on that bookmark, with its decoder
+static void sc_stop (const char * why)
+{
+  if (W.sc_state == SC_OFF) return;
+  W.sc_state = SC_OFF;
+  W.sc_held = 0;
+  web_log ("Bookmark scan stopped%s.", why);
+}
+
 //----------------------------------------------------------------------------
 // Trunking from the browser: one click on a control channel, stop, skip a call
 //----------------------------------------------------------------------------
@@ -1029,6 +1061,7 @@ static void trunk_start (dsd_opts * opts, dsd_state * state)
     return;
   }
   bs_stop (opts, state, " (trunking enabled)");
+  sc_stop (" (trunking enabled)");
   long long cc[6];
   int ncc = web_p25_cc_list (cc, 6);
   int st = state->lastsynctype;
@@ -1134,6 +1167,7 @@ static void bs_start (dsd_opts * opts, dsd_state * state, jv * cmd)
   bs_set_excl (jv_get (cmd, "exclude"));
 
   //the scan owns the tuner and the decoder choice
+  sc_stop (" (band scan started)");
   if (opts->p25_trunk || opts->scanner_mode || W.auto_decode || W.auto_tune)
     web_log ("Band scan: trunking, scanner, auto-decode and auto-tune switched off.");
   opts->p25_trunk = 0; opts->scanner_mode = 0;
@@ -1356,6 +1390,259 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
       web_log ("Band scan: holding on %.6f MHz, Continue keeps looking.", W.bs_last_freq / 1e6);
     }
   }
+}
+
+//----------------------------------------------------------------------------
+// Bookmark scan: step through the bookmarks lit in the list, in frequency
+// order, each with its own decoder, and stop on the active ones. Active is
+// what the decoder plays: a digital sync, or, for a decoder that plays analog
+// FM (Analog, AUTO or auto-decode with Analog on, Monitor), the channel open
+// over the squelch (with SDR++, its audio not silent). An open channel gives
+// any other decoder the hang time (at least SC_SYNC) to find its sync. The
+// scan moves on Hang seconds after the bookmark goes quiet; leaving one that
+// is still on (Skip, a signal its decoder doesn't take) passes it over until
+// it is found quiet. With the RTL spectrum, the lit
+// bookmarks in the clean part of the capture are judged on it without a
+// retune: the quiet ones are passed over, and when all of them are quiet the
+// receiver stays where it is.
+//----------------------------------------------------------------------------
+
+static int sc_skipped (int id)
+{
+  for (int i = 0; i < W.sc_nskip; i++)
+    if (W.sc_skip[i] == id) return 1;
+  return 0;
+}
+
+static void sc_skip_set (int id, int on)
+{
+  for (int i = 0; i < W.sc_nskip; i++)
+    if (W.sc_skip[i] == id)
+    {
+      if (!on) W.sc_skip[i] = W.sc_skip[--W.sc_nskip];
+      return;
+    }
+  if (on && W.sc_nskip < SC_MAX_SKIP) W.sc_skip[W.sc_nskip++] = id;
+}
+
+//tune a bookmark with its decoder (one that keeps the current decoder gets the one from before the
+//scan), without tune_bookmark's logs: the scan does this every second or so
+static void sc_tune (dsd_opts * opts, dsd_state * state, const web_bookmark * bm)
+{
+  //the channel left behind is still on (synced, or listened to and still over the squelch): the decoder
+  //may sync on its samples still coming, and such a carrier only drops after 1800 symbols without a sync
+  web_analog_info an;
+  web_analog_get (&an);
+  int stale = state->carrier == 1 || (an.active && W.sc_state == SC_LISTEN);
+  const char * m = bm->mode[0] ? bm->mode : W.sc_mode0;
+  const char * mod = bm->mod[0] ? bm->mod : (bm->mode[0] ? "" : W.sc_mod0);
+  W.auto_decode = !strcmp (m, "autodecode");
+  if (!W.auto_decode && m[0]) apply_mode (opts, state, m);
+  do_tune (opts, state, (long)bm->freq);
+  noCarrier (opts, state);
+  web_act_retuned ();
+  if (W.auto_decode) ad_restart (opts, state, 1);
+  if (mod[0]) set_modulation (opts, state, mod);
+  double now = spectrum_now (), settle = web_retune_settle (opts);
+  //the spectrum shows the new channel sooner than the decoder hears it: two transfers after the retune
+  //its frames hold none of the old one's samples (the band scan's BS_SETTLE at the default rate)
+  W.sc_view_t = now + (settle - 0.25 > BS_SETTLE ? settle - 0.25 : BS_SETTLE);
+  if (stale) settle += 1800.0 * (state->samplesPerSymbol > 0 ? state->samplesPerSymbol : 10) / 48000.0;
+  W.sc_bm = *bm;
+  W.sc_ready = W.sc_check = now + settle;
+  W.sc_rest = 0;
+  W.sc_state = SC_HOP;
+}
+
+//the noise floor (median bin) of the newest spectrum when it shows the current tuning settled, 0 when
+//there is none (RTL input only)
+static float sc_view (dsd_opts * opts)
+{
+  static float tmp[16384], nf;
+  static uint64_t seq;
+  if (opts->audio_in_type != 3) return 0;
+  W.sf.power = W.sf_power;
+  if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.bins < 64 || W.sf.rate == 0) return 0;
+  if ((long long)W.sf.center != (long long)current_freq (opts) || W.sf.start_time < W.sc_view_t) return 0;
+  if (W.sf.seq != seq)
+  {
+    seq = W.sf.seq;
+    memcpy (tmp, W.sf.power, sizeof(float) * W.sf.bins);
+    nf = select_kth (tmp, W.sf.bins, W.sf.bins / 2);
+  }
+  return nf > 0 ? nf : 0;
+}
+
+//dB the 6 kHz around freq stand over the noise floor nf in that spectrum, without the IQ conversion's
+//DC tone at the tuned frequency (on its own it lifts 6 kHz of weak noise by 7 dB); -999 outside the
+//clean part of the capture (-15 %..+45 % of the span around the tuned frequency, as the band scan's
+//peak finder)
+static float sc_view_level (long long freq, float nf)
+{
+  int n = W.sf.bins;
+  double hz = (double)W.sf.rate / n, off = (double)(freq - (long long)W.sf.center);
+  if (off < -0.15 * W.sf.rate || off > 0.45 * W.sf.rate) return -999;
+  int m = n / 2 + (int)llround (off / hz), h = (int)(3000.0 / hz);
+  if (h < 1) h = 1;
+  if (m - h < 0 || m + h >= n) return -999;
+  double s = 0;
+  for (int i = m - h; i <= m + h; i++)
+  {
+    double p = W.sf.power[i] - spectrum_dc_power (i - n / 2);
+    if (p > 0) s += p;
+  }
+  return s > 0 ? 10.0f * log10f ((float)(s / ((2 * h + 1) * (double)nf))) : -999;
+}
+
+//dB a signal has to stand over the noise floor on the spectrum: the squelch margin, at least 3
+static float sc_thr (void)
+{
+  return W.sq_margin > 3 ? (float)W.sq_margin : 3.0f;
+}
+
+//the tuned bookmark's channel is open: over the squelch and, with the RTL, on the spectrum too, since
+//the RMS squelch also opens on strong carriers elsewhere in the capture (the demod's filter takes them
+//in 13-34 dB down). 1 open, 0 not, -1 not known yet (over the squelch, no settled spectrum yet)
+static int sc_open (dsd_opts * opts, const web_analog_info * an)
+{
+  if (!an->active) return 0;
+  if (opts->audio_in_type != 3) return 1; //after the receiver's own squelch (SDR++)
+  float nf = sc_view (opts);
+  if (nf <= 0) return -1;
+  float lv = sc_view_level (W.sc_bm.freq, nf);
+  return lv <= -900 || lv >= sc_thr ();
+}
+
+//on to the next lit bookmark. With a settled RTL spectrum, the ones in its clean part that show no
+//carrier are passed over without a retune; when that is all of them, the receiver stays where it is
+static void sc_next (dsd_opts * opts, dsd_state * state)
+{
+  int n = bm_scan_count (0, 0, NULL);
+  if (n == 0) { sc_stop (": no bookmark is lit any more"); return; }
+  float nf = sc_view (opts), thr = sc_thr ();
+  web_bookmark bm = W.sc_bm, first = W.sc_bm;
+  int seen = 0, quiet = 0, have_first = 0;
+  for (int k = 0; k < n && bm_scan_next (bm.freq, bm.id, &bm); k++)
+  {
+    if (bm.id == W.sc_bm.id && bm.freq == W.sc_bm.freq) break; //round the list, back to the one tuned
+    if (!have_first) { first = bm; have_first = 1; }
+    float lv = nf > 0 ? sc_view_level (bm.freq, nf) : -999;
+    if (lv > -900 && (lv < thr || sc_skipped (bm.id)))
+    {
+      if (lv < thr) { sc_skip_set (bm.id, 0); quiet++; } //quiet: no longer passed over
+      seen++;
+      continue;
+    }
+    W.sc_inview = quiet;
+    sc_tune (opts, state, &bm);
+    return;
+  }
+  W.sc_inview = quiet;
+  //nothing else to tune: stay and look again after a dwell, unless the one tuned was put out (or moved)
+  //meanwhile
+  int pos = 0;
+  bm_scan_count (W.sc_bm.freq, W.sc_bm.id, &pos);
+  if (!pos && have_first) { sc_tune (opts, state, &first); return; }
+  W.sc_rest = seen > 0;
+  W.sc_check = spectrum_now ();
+  W.sc_state = SC_HOP;
+}
+
+static void sc_fail (const char * msg)
+{
+  snprintf (W.sc_msg, sizeof(W.sc_msg), "%s", msg);
+  web_log ("Bookmark scan %s", msg);
+}
+
+//Hang, also while it runs
+static void sc_opts (jv * cmd)
+{
+  if (jv_has (cmd, "hang"))
+  {
+    float h = (float)jv_num (cmd, "hang", 2);
+    W.sc_hang = !(h >= 0) ? 0 : (h > 600 ? 600 : h);
+  }
+}
+
+static void sc_start (dsd_opts * opts, dsd_state * state, jv * cmd)
+{
+  sc_opts (cmd);
+  if (W.sc_state != SC_OFF) return;
+  W.sc_msg[0] = 0;
+  if (opts->audio_in_type != 3 && opts->use_rigctl != 1)
+  {
+    sc_fail ("needs a receiver DSD-FME can retune: the RTL-SDR input (-i rtl) or rigctl (-U).");
+    return;
+  }
+  web_bookmark bm;
+  if (!bm_scan_next (current_freq (opts) - 1, 0x7FFFFFFF, &bm)) //from the tuned frequency up
+  {
+    sc_fail ("has nothing to scan: light the key of the bookmarks to scan.");
+    return;
+  }
+  //the scan owns the tuner, and each bookmark brings its decoder
+  bs_stop (opts, state, " (bookmark scan started)");
+  trunk_stop (opts, state, 0, " (bookmark scan started)");
+  if (opts->scanner_mode || W.auto_tune) web_log ("Bookmark scan: scanner and auto-tune switched off.");
+  opts->scanner_mode = 0;
+  W.auto_tune = 0;
+  snprintf (W.sc_mode0, sizeof(W.sc_mode0), "%s", W.auto_decode ? "autodecode" : mode_key (opts, state));
+  snprintf (W.sc_mod0, sizeof(W.sc_mod0), "%s", opts->mod_qpsk ? "qpsk" : (opts->mod_gfsk ? "gfsk" : "c4fm"));
+  W.sc_nskip = 0;
+  W.sc_held = 0;
+  W.sc_inview = 0;
+  sc_tune (opts, state, &bm);
+  int n = bm_scan_count (0, 0, NULL);
+  web_log ("Bookmark scan started: %d bookmark%s, %.1f s hang.", n, n == 1 ? "" : "s", W.sc_hang);
+}
+
+static void run_bm_scan (dsd_opts * opts, dsd_state * state)
+{
+  if (W.sc_state == SC_OFF) return;
+  double now = spectrum_now ();
+  if (now < W.sc_ready) return; //the old channel's audio and samples are still coming
+  web_analog_info an;
+  web_analog_get (&an);
+  int sync = state->carrier == 1, plays = analog_wanted (opts), id = W.sc_bm.id, open = sc_open (opts, &an);
+  if (open < 0)
+  {
+    //over the squelch, but the spectrum doesn't show this tuning yet (it runs a transfer behind): wait
+    //for it a while before taking the squelch's word
+    if (W.sc_state == SC_HOP && !sync && now - W.sc_ready < 1.5) return;
+    open = 1;
+  }
+
+  if (W.sc_state == SC_HOP)
+  {
+    if (!sync && !open)
+    {
+      sc_skip_set (id, 0); //found quiet: no longer passed over
+      if (!W.sc_held && now - W.sc_check >= SC_DWELL) sc_next (opts, state);
+      return;
+    }
+    if (sc_skipped (id) && !W.sc_held)
+    {
+      if (now - W.sc_check >= SC_DWELL) sc_next (opts, state); //still on: passed over
+      return;
+    }
+    W.sc_state = SC_LISTEN;
+    W.sc_open = W.sc_last = now;
+    W.sc_synced = sync;
+    W.sc_rest = 0;
+    web_log ("Bookmark scan: %s, %.6f MHz, active.", W.sc_bm.name, W.sc_bm.freq / 1e6);
+    return;
+  }
+
+  //SC_LISTEN: what its decoder plays keeps it here, a digital sync or (a decoder that plays analog FM)
+  //the open channel
+  if (sync) W.sc_synced = 1;
+  if (sync || (open && plays)) W.sc_last = now;
+  if (W.sc_held) return;
+  double wait = W.sc_hang;
+  if (!plays && !W.sc_synced && wait < SC_SYNC) wait = SC_SYNC; //time for its decoder to find the sync
+  if (now - W.sc_last < wait) return;
+  if (sync || open) sc_skip_set (id, 1); //left while still on: passed over until found quiet
+  sc_next (opts, state);
 }
 
 //----------------------------------------------------------------------------
@@ -1785,6 +2072,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     if (f > 0)
     {
       bs_stop (opts, state, " (tuned by hand)");
+      sc_stop (" (tuned by hand)");
       trunk_stop (opts, state, 0, " (tuned by hand)"); //it would hunt its way back to the control channel
       retune (opts, state, f);
     }
@@ -1792,6 +2080,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   else if (!strcmp (c, "mode"))
   {
     bs_stop (opts, state, " (decoder chosen by hand)");
+    sc_stop (" (decoder chosen by hand)");
     select_decoder (opts, state, jv_str (cmd, "mode", "auto"));
   }
   else if (!strcmp (c, "modulation"))
@@ -1931,6 +2220,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     {
       opts->p25_trunk = 1;
       bs_stop (opts, state, " (trunking enabled)");
+      sc_stop (" (trunking enabled)");
       opts->scanner_mode = 0;
       update_analog (opts, state); //no analog fallback while trunking
       web_log ("Trunking enabled");
@@ -1965,6 +2255,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   {
     opts->scanner_mode = jv_bool (cmd, "enable", 0);
     if (opts->scanner_mode) bs_stop (opts, state, " (scanner enabled)");
+    if (opts->scanner_mode) sc_stop (" (scanner enabled)");
     if (opts->scanner_mode) opts->p25_trunk = 0;
     web_log ("Scanner %s", opts->scanner_mode ? "enabled" : "disabled");
   }
@@ -2049,6 +2340,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   else if (!strcmp (c, "cycle"))
   {
     bs_stop (opts, state, " (tuned by hand)");
+    sc_stop (" (tuned by hand)");
     //manual forward channel cycle (scanner / trunk list)
     if (state->lcn_freq_roll >= state->lcn_freq_count) state->lcn_freq_roll = 0;
     if (state->trunk_lcn_freq[state->lcn_freq_roll] != 0)
@@ -2093,12 +2385,14 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
   {
     W.auto_tune = jv_bool (cmd, "enable", 0);
     if (W.auto_tune) bs_stop (opts, state, " (auto-tune enabled)");
+    if (W.auto_tune) sc_stop (" (auto-tune enabled)");
     web_log ("Auto-tune %s", W.auto_tune ? "enabled" : "disabled");
   }
   else if (!strcmp (c, "auto_decode"))
   {
     int on = jv_bool (cmd, "enable", 0);
     if (on) bs_stop (opts, state, " (auto-decode enabled)");
+    sc_stop (on ? " (auto-decode enabled)" : " (auto-decode switched off)"); //each bookmark sets it
     ad_enable (opts, state, on);
   }
   else if (!strcmp (c, "bscan_start"))
@@ -2150,12 +2444,50 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     update_analog (opts, state);
     web_log ("Analog fallback in AUTO / auto-decode %s", W.auto_analog ? "enabled" : "disabled");
   }
+  else if (!strcmp (c, "bmscan_start"))
+  {
+    sc_start (opts, state, cmd);
+  }
+  else if (!strcmp (c, "bmscan_stop"))
+  {
+    sc_stop ("");
+  }
+  else if (!strcmp (c, "bmscan_opts"))
+  {
+    sc_opts (cmd); //Hang, also for the next start
+  }
+  else if (!strcmp (c, "bmscan_hold"))
+  {
+    int on = jv_bool (cmd, "on", 1);
+    if (W.sc_state != SC_OFF && on != W.sc_held)
+    {
+      W.sc_held = on;
+      if (on) web_log ("Bookmark scan: holding on %s.", W.sc_bm.name);
+      else
+      {
+        //released: it gets its dwell and hang again from now, so it doesn't leave at once
+        W.sc_check = W.sc_open = W.sc_last = spectrum_now ();
+        web_log ("Bookmark scan: released, scanning on.");
+      }
+    }
+  }
+  else if (!strcmp (c, "bmscan_skip"))
+  {
+    //leave it now, and pass it over until it is found quiet
+    if (W.sc_state != SC_OFF)
+    {
+      W.sc_held = 0;
+      sc_skip_set (W.sc_bm.id, 1);
+      sc_next (opts, state);
+    }
+  }
   else if (!strcmp (c, "bm_tune"))
   {
     web_bookmark bm;
     if (bm_get ((int)jv_int (cmd, "id", 0), &bm))
     {
       bs_stop (opts, state, " (bookmark tuned)");
+      sc_stop (" (bookmark tuned)");
       trunk_stop (opts, state, 0, " (bookmark tuned)");
       tune_bookmark (opts, state, &bm);
     }
@@ -2695,6 +3027,42 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   jb_str (b, "msg", W.bs_msg);
   jb_obj_end (b);
 
+  //bookmark scan progress
+  jb_obj (b, "bmscan");
+  static const char * sc_names[] = { "off", "hop", "listen" };
+  jb_str (b, "state", sc_names[W.sc_state]);
+  if (W.sc_state != SC_OFF)
+  {
+    double now = spectrum_now ();
+    int pos = 0, n = bm_scan_count (W.sc_bm.freq, W.sc_bm.id, &pos);
+    jb_int (b, "id", W.sc_bm.id);
+    jb_int (b, "freq", W.sc_bm.freq);
+    jb_str (b, "name", W.sc_bm.name);
+    jb_str (b, "mode", W.sc_bm.mode[0] ? W.sc_bm.mode : W.sc_mode0);
+    jb_int (b, "pos", pos);
+    jb_int (b, "n", n);
+    jb_bool (b, "held", W.sc_held);
+    jb_bool (b, "rest", W.sc_rest);
+    jb_int (b, "inview", W.sc_inview);
+    jb_bool (b, "skipped", sc_skipped (W.sc_bm.id));
+    jb_int (b, "nskip", W.sc_nskip);
+    if (W.sc_state == SC_LISTEN)
+    {
+      //seconds until it moves on, the hang left once it is quiet; -1 while it is active
+      int plays = analog_wanted (opts), act = state->carrier == 1 || (sc_open (opts, &an) != 0 && plays);
+      double wait = !plays && !W.sc_synced && W.sc_hang < SC_SYNC ? SC_SYNC : W.sc_hang;
+      double left = act ? -1 : wait - (now - W.sc_last);
+      if (left < 0 && !act) left = 0;
+      jb_dbl (b, "on", now - W.sc_open, 1);
+      jb_bool (b, "synced", W.sc_synced);
+      jb_bool (b, "plays", plays); //its decoder plays analog FM: the open channel counts
+      jb_dbl (b, "left", left, 1);
+    }
+  }
+  jb_dbl (b, "hang", W.sc_hang, 1);
+  jb_str (b, "msg", W.sc_msg);
+  jb_obj_end (b);
+
   //key-hunt progress
   jb_obj (b, "key_hunt");
   jb_bool (b, "active", W.auto_key);
@@ -2797,6 +3165,7 @@ void web_init (dsd_opts * opts, dsd_state * state)
   W.auto_analog = 1;
   W.bs_thr_db = 10;
   W.bs_skip_known = 1;
+  W.sc_hang = 2;
   W.ad_try = W.bs_find = -1; //no find being tried
   W.cosine_default = opts->frame_m17 ? 1 : opts->use_cosine_filter; //-fz turns it off for M17 only
   W.user_monitor = opts->monitor_input_audio && !mode_is_analog (opts);
@@ -2840,6 +3209,7 @@ void web_poll (dsd_opts * opts, dsd_state * state)
   run_auto_tune (opts, state);
   run_auto_decode (opts, state);
   run_band_scan (opts, state);
+  run_bm_scan (opts, state);
   run_squelch (opts);
   run_key_hunt (opts, state);
   web_act_poll (opts, state);

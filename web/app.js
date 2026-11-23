@@ -320,6 +320,7 @@ function renderStatus(m){
     probe:'Listening for every digital sync'+listen};
   $('ad-stat').textContent = adText[au.state] || adText.off;
   renderBscan(m.bscan, d);
+  renderBmScan(m.bmscan, d);
 
   // bookmark under the tuned frequency
   curFreq = inp.freq||0; curMode = d.mode||''; autoOn = au.state && au.state !== 'off';
@@ -480,6 +481,7 @@ function handleActivity(m){
   $('act-count').textContent = acts.size;
   renderRadios();
   renderTalkgroups();
+  bmHeard();
 }
 
 function actMatch(it){
@@ -1224,7 +1226,10 @@ function renderBookmarks(){
   const dl=$('bm-groups'); dl.innerHTML='';
   for (const g of groups) dl.appendChild(new Option(g));
 
-  const list=bmFiltered(), el=$('bm-list'); el.innerHTML='';
+  // rebuilt on every change (a key lit here comes back from the host): keep the scroll position and the focus
+  const list=bmFiltered(), el=$('bm-list'), top=el.scrollTop, fo=document.activeElement;
+  const frow=fo && fo.closest ? fo.closest('#bm-list .bm') : null, fid=frow ? frow.dataset.id : '', fkey=!!frow && fo!==frow && fo.classList.contains('led');
+  el.innerHTML='';
   if (!list.length){
     const h=document.createElement('div'); h.className='hint';
     h.textContent = bms.length ? 'No bookmark matches.' : 'No bookmarks yet. Tune a channel and press the star or Add.';
@@ -1239,9 +1244,15 @@ function renderBookmarks(){
     }
     const row=document.createElement('div'); row.className='bm'; row.dataset.id=b.id; row.title='Tune '+b.name+' ('+fmtMHz(b.freq)+' MHz)';
     row.tabIndex=0;
-    const n=document.createElement('span'); n.className='bm-n'; n.textContent=b.name;
+    const k=document.createElement('button'); k.className='tgl sm led'+(b.scan?' on':''); k.setAttribute('aria-pressed', String(!!b.scan));
+    k.setAttribute('aria-label', 'Scan '+b.name); k.title = b.scan ? 'Scanned: click to leave it out of the scan' : 'Not scanned: click to scan it';
+    k.onclick=(ev)=>{ ev.stopPropagation(); bmScanSet([b.id], !b.scan); };
+    const n=document.createElement('span'); n.className='bm-n';
+    const nm=document.createElement('span'); nm.className='bm-nm'; nm.textContent=b.name;
+    const hd=document.createElement('span'); hd.className='bm-h'; hd.dataset.id=b.id;
+    n.append(nm, hd);
     const f=document.createElement('span'); f.className='bm-f'; f.textContent=fmtMHz(b.freq);
-    row.append(n, f);
+    row.append(k, n, f);
     if (b.mode){ const t=document.createElement('span'); t.className='tag'; t.textContent=MODE_LABEL[b.mode]||b.mode; row.append(t); }
     const e=document.createElement('button'); e.innerHTML=icon('edit'); e.title='Edit'; e.setAttribute('aria-label', 'Edit '+b.name);
     e.onclick=(ev)=>{ ev.stopPropagation(); bmFormOpen(b); };
@@ -1252,8 +1263,50 @@ function renderBookmarks(){
     row.onkeydown=(ev)=>{ if (ev.target===row && (ev.key==='Enter' || ev.key===' ')){ ev.preventDefault(); bmTune(b); } };
     el.appendChild(row);
   }
+  el.scrollTop = top;
+  if (fid){ const r=el.querySelector('.bm[data-id="'+fid+'"]'), t=r && (fkey ? r.querySelector('.led') : r); if (t) t.focus({preventScroll:true}); }
   bmCurId = -1; bmMarkCurrent();
+  scAirId = -1; bmMarkScan();
+  bmHeardDraw();
+  scCount();
 }
+
+// light or put out the scan key of some bookmarks: at once here, then the host sends the list back
+function bmScanSet(ids, on){
+  if (!ids.length) return;
+  const set=new Set(ids);
+  for (const b of bms) if (set.has(b.id)) b.scan=on;
+  renderBookmarks();
+  send({cmd:'bm_scan', ids, on});
+}
+
+// when a call was last heard on each bookmark's channel (on air: now), from the Activity log; the
+// lines are updated in place, about once a second at most
+let bmHeardT=0, bmHeardTimer=0;
+function bmHeard(){
+  if (bmHeardTimer) return;
+  bmHeardTimer=setTimeout(()=>{ bmHeardTimer=0; bmHeardT=Date.now(); bmHeardDraw(); }, Math.max(0, 1000-(Date.now()-bmHeardT)));
+}
+function bmHeardDraw(){
+  const now=Date.now()/1000, byFreq=new Map(), byId=new Map();
+  for (const it of acts.values()){
+    if (it.k!=='call' || !(it.freq > 0)) continue;
+    const o=byFreq.get(it.freq) || {t:0, live:false};
+    o.t=Math.max(o.t, it.live ? now : it.t+(it.dur||0)); o.live=o.live || !!it.live;
+    byFreq.set(it.freq, o);
+  }
+  for (const [f, o] of byFreq){
+    const b=bmAt(f); if (!b) continue;
+    const p=byId.get(b.id) || {t:0, live:false};
+    byId.set(b.id, {t:Math.max(p.t, o.t), live:p.live || o.live});
+  }
+  for (const el of $('bm-list').querySelectorAll('.bm-h')){
+    const h=byId.get(+el.dataset.id);
+    setTxt(el, !h ? '' : (h.live ? 'On air' : 'Heard '+ago(now-h.t)), h && !h.live ? 'Last call ended '+hms(h.t) : '');
+    el.classList.toggle('air', !!(h && h.live));
+  }
+}
+setInterval(bmHeard, 5000);
 
 // highlight the bookmark we are tuned to without rebuilding the list
 function bmMarkCurrent(){
@@ -1298,7 +1351,7 @@ $('bm-q').oninput = renderBookmarks;
 $('bm-grp').onchange = renderBookmarks;
 
 $('bm-export').onclick = ()=>{
-  const data = JSON.stringify({version:1, bookmarks: bms.map(b=>({freq:b.freq, name:b.name, group:b.group, mode:b.mode, mod:b.mod}))}, null, 2);
+  const data = JSON.stringify({version:1, bookmarks: bms.map(b=>Object.assign({freq:b.freq, name:b.name, group:b.group, mode:b.mode, mod:b.mod}, b.scan ? {scan:true} : {}))}, null, 2);
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([data], {type:'application/json'}));
   a.download='dsd-fme-bookmarks.json'; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
@@ -1314,15 +1367,15 @@ $('bm-file').onchange = async ()=>{
 // our export (or a bare array), SDR++ frequency_manager_config.json, or CSV lines freq,name,decoder,group
 function parseBookmarkFile(text){
   const out=[];
-  const push=(freq, name, group, mode, mod)=>{
+  const push=(freq, name, group, mode, mod, scan)=>{
     freq=Math.round(+freq); if (!(freq>0)) return;
     mode=(''+(mode||'')).toLowerCase(); mod=(''+(mod||'')).toLowerCase();
-    out.push({freq, name:''+(name||''), group:''+(group||''), mode: MODE_LABEL[mode]?mode:'', mod: MODS.includes(mod)?mod:''});
+    out.push({freq, name:''+(name||''), group:''+(group||''), mode: MODE_LABEL[mode]?mode:'', mod: MODS.includes(mod)?mod:'', scan: scan===true});
   };
   let j=null; try { j=JSON.parse(text); } catch(e){}
   if (j && typeof j==='object'){
     const arr = Array.isArray(j) ? j : (Array.isArray(j.bookmarks) ? j.bookmarks : null);
-    if (arr) for (const b of arr){ if (b) push(b.freq, b.name, b.group, b.mode, b.mod); }
+    if (arr) for (const b of arr){ if (b) push(b.freq, b.name, b.group, b.mode, b.mod, b.scan); }
     else if (j.lists && typeof j.lists==='object')
       for (const [list, l] of Object.entries(j.lists))
         for (const [name, b] of Object.entries((l && l.bookmarks) || {})) if (b) push(b.frequency, name, list);
@@ -1333,6 +1386,66 @@ function parseBookmarkFile(text){
     const freq=parseFreq(p[0]); if (freq) push(freq, p[1], p[3], p[2]);
   }
   return out;
+}
+
+//---------------------------------------------------------------- bookmark scan
+// steps through the bookmarks with a lit key and stops on the active ones (dsd_web.c, run_bm_scan)
+let scState = null, scAirId = 0; // the last status; the bookmark marked as being listened to
+function scOpts(){ return {hang: Math.max(0, +$('sc-hang').value || 0)}; }
+// per-browser convenience, as the band scan's: Hang as last set here
+function scSave(){ try { localStorage.setItem('dsdfme.bmscan', JSON.stringify({h:$('sc-hang').value})); } catch(e){} }
+(function(){ try { const s=JSON.parse(localStorage.getItem('dsdfme.bmscan') || 'null'); if (!s) return;
+  if (s.h != null && s.h !== '') $('sc-hang').value=s.h; } catch(e){} })();
+$('sc-start').onclick=()=>{ send(Object.assign({cmd:'bmscan_start'}, scOpts())); scSave(); };
+$('sc-stop').onclick=()=>send({cmd:'bmscan_stop'});
+$('sc-hold').onclick=()=>send({cmd:'bmscan_hold', on: !(scState && scState.held)});
+$('sc-skip').onclick=()=>send({cmd:'bmscan_skip'});
+$('sc-hang').onchange=()=>{ send(Object.assign({cmd:'bmscan_opts'}, scOpts())); scSave(); };
+$('sc-all').onclick=()=>bmScanSet(bmFiltered().filter(b=>!b.scan).map(b=>b.id), true);
+$('sc-none').onclick=()=>bmScanSet(bms.filter(b=>b.scan).map(b=>b.id), false);
+function scCount(){
+  const n=bms.filter(b=>b.scan).length;
+  setTxt($('sc-count'), bms.length ? n+' of '+bms.length+' ticked' : '');
+  $('sc-start').disabled = !!scState && scState.state !== 'off' || !n;
+}
+// the row the scan listens to gets a green bar (amber stays the tuned one)
+function bmMarkScan(){
+  const id = scState && scState.state === 'listen' ? scState.id : 0;
+  if (id === scAirId) return;
+  scAirId = id;
+  for (const r of $('bm-list').children) r.classList.toggle('air', !!id && +r.dataset.id === id);
+}
+function renderBmScan(sc, d){
+  if (!sc) return;
+  scState = sc;
+  const on = sc.state !== 'off', lis = sc.state === 'listen', nm = esc(sc.name);
+  setTxt($('sc-badge'), !on ? 'Off' : (sc.held ? 'Held' : (lis ? 'Listening' : 'Scanning')));
+  $('sc-badge').className = 'badge'+(!on ? '' : (lis ? ' live' : ' warn'));
+  const lamp=$('st-sc'), lt = lis ? 'Scan: '+nm : (sc.held ? 'Scan held' : 'Scanning');
+  setTxt(lamp.firstElementChild, lt); lamp.title = 'Bookmark scan: '+(lis ? 'listening to ' : (sc.held ? 'held on ' : 'checking '))+nm;
+  lamp.className = 'badge '+(lis ? 'live' : 'warn')+(on ? '' : ' hidden');
+  scCount();
+  $('sc-stop').disabled = !on; $('sc-hold').disabled = !on; $('sc-skip').disabled = !on;
+  setTxt($('sc-hold'), sc.held ? 'Release' : 'Hold');
+  if (on){ // another browser may have started it: show its settings
+    if (document.activeElement !== $('sc-hang')) $('sc-hang').value = sc.hang;
+  }
+  const where = nm+', '+fmtMHz(sc.freq)+' MHz'+(sc.pos ? ' ('+sc.pos+' of '+sc.n+')' : '');
+  const dec = sc.mode && sc.mode !== 'autodecode' && MODE_LABEL[sc.mode] ? MODE_LABEL[sc.mode] : esc(d.name);
+  let t, short = '';
+  if (!on) t = sc.msg ? 'Bookmark scan '+sc.msg : 'Light the key of the bookmarks to scan, then press Scan. It steps through them by frequency and stops on each active one with that bookmark’s decoder, until it has been quiet for Hang seconds.';
+  else if (sc.held){ t = 'Held on '+where+(lis ? ', active' : ', quiet')+'. Release to scan on.'; short = 'Bookmark scan: held on '+nm; }
+  else if (lis){
+    t = 'Active: '+where+', '+dec+' · '+fmtClock(sc.on)+(!sc.synced && !sc.plays ? ' · waiting for its sync' : '')+
+      (sc.left >= 0 ? ' · moving on in '+Math.ceil(sc.left)+' s' : '');
+    short = 'Bookmark scan: listening to '+nm;
+  }
+  else if (sc.rest){ t = 'Nothing new on the spectrum ('+sc.inview+' quiet in view), staying on '+where+'.'; short = 'Bookmark scan: all quiet'; }
+  else { t = (sc.skipped ? 'Passing over ' : 'Checking ')+where+(sc.inview ? ' · '+sc.inview+' more quiet on the spectrum' : '')+'.'; short = 'Bookmark scan: checking '+nm; }
+  setTxt($('sc-stat'), t);
+  $('sc-stat').style.color = !on && sc.msg ? 'var(--fail)' : '';
+  if (short) $('ad-stat').textContent = short;
+  bmMarkScan();
 }
 
 //---------------------------------------------------------------- band scan

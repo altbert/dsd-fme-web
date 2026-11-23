@@ -43,9 +43,9 @@ const TUNED = 433475000, BW_KHZ = 12;
 const STATIONS = '433475000:m17:30,433425000:fm:24,433525000:m17burst:22,433575000:cw:16';
 const BURST_HZ = 433525000 - TUNED; // the spectrum shots wait for this one to be on the air
 const BOOKMARKS = { version: 1, bookmarks: [
-  { freq: 433475000, name: 'Demo repeater', group: 'Demo', mode: 'dmr', mod: '' },
-  { freq: 433425000, name: 'Analog simplex', group: 'Demo', mode: 'analog', mod: '' },
-  { freq: 433525000, name: 'M17 hotspot', group: 'Demo', mode: 'm17', mod: '' },
+  { freq: 433475000, name: 'Demo repeater', group: 'Demo', mode: 'dmr', mod: '', scan: true },
+  { freq: 433425000, name: 'Analog simplex', group: 'Demo', mode: 'analog', mod: '', scan: true },
+  { freq: 433525000, name: 'M17 hotspot', group: 'Demo', mode: 'm17', mod: '', scan: true },
   { freq: 851012500, name: 'Trunked control channel', group: 'Examples', mode: 'p25p1', mod: '' },
 ] };
 

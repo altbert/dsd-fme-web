@@ -54,8 +54,8 @@ software that demodulates the signal and sends DSD-FME the audio.
 *Network* (TCP, port 7355, where `-i tcp` connects by default) and enable the
 *Rigctl Server* module (port 4532). Then run `dsd-fme -i tcp -U 4532 --web 8080`.
 DSD-FME decodes what SDR++ demodulates, and retunes SDR++ when you type a
-frequency, pick a bookmark or follow trunked calls (this rigctl path hasn't
-been tested from the web page yet). All decoding and its views work:
+frequency, pick or scan bookmarks, or follow trunked calls (this rigctl path
+hasn't been tested from the web page yet). All decoding and its views work:
 readouts, slots, activity log, packet data, radios, map, keys, browser audio
 and recordings. The spectrum and waterfall (with click-to-tune and
 auto-tune), the band scan, the squelch's Auto floor and the RTL settings in the
@@ -101,6 +101,37 @@ analog FM (with Analog on). NXDN and dPMR decode in the polarity the Inverted
 toggle sets, M17 only upright: a sync heard the other way round is reported in
 the console. The band scan listens the same way on every carrier it finds.
 
+**Bookmarks** — kept on the DSD-FME host (`~/.config/dsd-fme/web_bookmarks.json`,
+or the file `--web-bookmarks` names), so every browser sees the same list. A
+bookmark has a name, a group, and optionally the decoder and modulation that
+clicking it applies. Under its name each row shows when a call was last heard
+on it, from the Activity log. The key at the start of a row puts the bookmark
+in the **scan**: *Scan* steps through the lit bookmarks by frequency, from the
+tuned one up, each with its own decoder (one that keeps the current decoder
+gets the one that ran when the scan started), and stops on each active one.
+Active is what that decoder plays: a digital sync or, for a decoder that plays
+analog FM (Analog, AUTO or Auto-detect with Analog on, or Monitor on), the
+channel open over the squelch. An open channel gives a digital decoder the hang
+time, at least 1.5 s, to find its sync, or the scan moves on. It keeps
+listening *Hang* seconds after the bookmark goes quiet (2 s unless you set
+another), and stays as long as the bookmark is active. A bookmark left while it
+is still on (*Skip*, or a signal its decoder doesn't take) is passed over until
+the scan finds it quiet;
+*Hold* keeps the scan on the bookmark until you release it. With an RTL-SDR the
+spectrum takes part too. A bookmark only counts as open when its own 6 kHz
+stand out there as well, since the RMS squelch also opens on strong carriers
+elsewhere in the capture. And the lit bookmarks in the clean part of the
+spectrum (from 15 % of the span under the tuned frequency to 45 % over it) are
+judged on it without a retune: the quiet ones are passed over, and when all of
+them are quiet the receiver stays where it is, so channels within a few hundred
+kHz of each other are watched without retuning. A retune and its check take
+about 0.75 s at the default sample rate, longer at 0.25 MSPS. With SDR++ over
+rigctl, set its squelch: the scan takes audio that isn't silent for an open
+channel. Tuning by hand, clicking a bookmark, choosing a decoder, Auto-decode,
+Auto-tune, the band scan and trunking stop the scan. *Select all* lights the
+key of every bookmark the search and group filter show, *Unselect all* puts
+them all out; export and import keep them.
+
 **Analog FM** — while no digital sync is held, the audio the analog monitor
 would play is checked for a CTCSS tone, a DCS code and the DTMF ANI some radios
 send at key-up (their ID as digits). The Decode readout then shows them in its
@@ -126,7 +157,7 @@ branding, NXDN RAN/cipher) and the event history.
 
 **RF** — RTL gain / PPM / sample volume / bandwidth / sample rate, the RMS
 squelch, and the RIGCTL SetMod bandwidth. The squelch gates NXDN, dPMR and M17
-sync and the analog monitor. **Auto floor**, on by default with an RTL-SDR,
+sync, the analog monitor, the band scan and the bookmark scan. **Auto floor**, on by default with an RTL-SDR,
 keeps it a margin (+4 dB unless you pick another) over the noise floor measured
 across the whole spectrum, so it follows gain and AGC changes and holds on a
 channel that never goes quiet. A squelch given on the command line
