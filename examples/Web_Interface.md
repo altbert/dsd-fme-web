@@ -83,7 +83,12 @@ in (Bandwidth in the RF tab). Click anywhere on the spectrum or waterfall to
 tune the dongle there.
 
 **Tuning** — type a frequency (`851.0125M`, `154987500`, `446M`…) or click the
-spectrum. **Auto-tune** snaps the dongle onto the strongest nearby peak and
+spectrum. Or tune on the Decode card's frequency readout: click a digit, then
+type it or step it with the up and down arrow keys, and the digits after it go
+to 0; left and right pick another digit, `.` the first one after the point.
+Typing moves on to the next digit, so a whole frequency can be typed from the
+left. It tunes once you stop (0.4 s after an arrow, 1.5 s after a typed digit);
+Enter tunes at once, Escape undoes the change. **Auto-tune** snaps the dongle onto the strongest nearby peak and
 keeps it centred. **Auto-decode** listens on the tuned channel for the frame
 syncs of every protocol DSD-FME decodes at once (P25 Phase 1 and 2, DMR,
 X2-TDMA, YSF, D-STAR, NXDN48/96, dPMR, M17, ProVoice and EDACS) and switches

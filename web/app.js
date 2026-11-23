@@ -305,7 +305,7 @@ function renderStatus(m){
   $('st-carrier').className = 'badge '+(d.carrier?'live':(ana?'warn':''));
   setTxt($('st-mode'), esc(d.name) || '—');
   // the readout's unlit segments are "8888.888888"; no frequency (non-RTL input) leaves them all dark
-  setTxt($('d-freq'), inp.freq > 0 ? (inp.freq/1e6).toFixed(6) : '');
+  dfStatus(inp);
   $('d-sys').textContent = ana ? 'Analog FM' : (esc(d.sys) || '—');
   // the frame row tells the tone and DTMF ANI of an analog transmission while it is on
   const toneRow = ana && (aTone || aAni);
@@ -395,6 +395,74 @@ function renderStatus(m){
 function gainLabel(g, actual){ return g+' dB'+(actual > 0 && actual !== g*10 ? ' ('+(actual/10).toFixed(1)+')' : ''); }
 let shownBw = 0; // RTL bandwidth last reflected into the RF tab
 function hex(n){ return (n>>>0).toString(16).toUpperCase(); }
+
+//---------------------------------------------------------------- frequency readout: tuning digit by digit
+// Click a digit of the readout, then type it or step it with the up and down arrows: the digits after it
+// go to 0. Left and right pick another digit, '.' the first one after the point. A change tunes once the
+// keys rest (Enter at once, Escape undoes it). Each digit is a span, p its power of ten in Hz; in front of
+// a frequency under 1000 MHz the blank is a space, a digit wide in the segment face
+const DF = { tuned: 0, can: false, sel: 6, pending: 0, sent: 0, sentT: 0, timer: 0 };
+// the frequency the readout shows: a change not tuned yet, one just sent (until the status has it), the tuned one
+function dfShown(){
+  if (DF.pending) return DF.pending;
+  if (DF.sent && DF.tuned !== DF.sent && Date.now() - DF.sentT < 1500) return DF.sent;
+  return DF.tuned;
+}
+function dfRender(){
+  const el=$('d-freq'), hz=dfShown(), on=document.activeElement===el;
+  let h='';
+  if (hz > 0){
+    const s=String(Math.floor(hz/1e6)).padStart(4, ' ')+'.'+String(hz%1e6).padStart(6, '0');
+    for (let i=0, p=9; i<s.length; i++){
+      if (s[i]==='.'){ h+='<span class="dp">.</span>'; continue; }
+      h+='<span class="dg'+(on && p===DF.sel ? ' sel' : '')+'" data-p="'+p+'">'+s[i]+'</span>'; p--;
+    }
+  }
+  setHTML(el, h);
+}
+function dfStatus(inp){
+  DF.tuned = inp.freq > 0 ? Math.round(inp.freq) : 0;
+  // only a receiver DSD-FME tunes: the RTL-SDR, or rigctl
+  const can = DF.tuned > 0 && (inp.type === 'rtl' || !!inp.rigctl), el=$('d-freq');
+  if (can !== DF.can){
+    DF.can = can; el.tabIndex = can ? 0 : -1; el.classList.toggle('can', can);
+    el.title = can ? 'Click a digit, then type it or step it with the up and down arrow keys (the digits after it go to 0). Left and right pick another digit. It tunes once you stop; Enter tunes at once, Escape undoes.' : '';
+    if (!can){ clearTimeout(DF.timer); DF.pending=0; if (document.activeElement===el) el.blur(); }
+  }
+  dfRender();
+}
+// set digit p to d and the digits after it to 0; tunes after wait ms without another change
+function dfSet(p, d, wait){
+  const base=dfShown(), unit=10**p, f=(Math.floor(base/(unit*10))*10 + d)*unit;
+  if (!(f > 0)) return false;
+  if (f !== base){ DF.pending=f; clearTimeout(DF.timer); DF.timer=setTimeout(dfApply, wait); }
+  return true;
+}
+function dfApply(){
+  clearTimeout(DF.timer); DF.timer=0;
+  if (!DF.pending) return;
+  const f=DF.pending; DF.pending=0; DF.sent=f; DF.sentT=Date.now();
+  tuneTo(f); dfRender();
+}
+$('d-freq').addEventListener('mousedown', e=>{ const d=e.target.closest('.dg'); if (d && DF.can){ DF.sel=+d.dataset.p; dfRender(); } });
+$('d-freq').addEventListener('focus', dfRender);
+$('d-freq').addEventListener('blur', dfRender);
+$('d-freq').addEventListener('keydown', e=>{
+  if (!DF.can) return;
+  const k=e.key;
+  if (k==='ArrowLeft' || k==='ArrowRight') DF.sel=Math.max(0, Math.min(9, DF.sel+(k==='ArrowLeft' ? 1 : -1)));
+  else if (k==='ArrowUp' || k==='ArrowDown'){
+    const cur=Math.floor(dfShown()/10**DF.sel)%10, d=Math.max(0, Math.min(9, cur+(k==='ArrowUp' ? 1 : -1)));
+    if (d !== cur) dfSet(DF.sel, d, 400);
+  }
+  else if (/^[0-9]$/.test(k)){ if (dfSet(DF.sel, +k, 1500) && DF.sel > 0) DF.sel--; } // typing goes on to the next digit
+  else if (k==='.' || k===',') DF.sel=5;
+  else if (k==='Enter') dfApply();
+  else if (k==='Escape'){ clearTimeout(DF.timer); DF.pending=0; }
+  else return;
+  e.preventDefault();
+  dfRender();
+});
 
 //---------------------------------------------------------------- slot boxes
 // built once; every line is always there, empty or not, so a call starting or ending moves nothing
