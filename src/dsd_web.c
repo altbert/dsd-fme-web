@@ -332,6 +332,12 @@ static void set_mode (dsd_opts * opts, dsd_state * state, const char * m)
     opts->pulse_digi_out_channels = 1;
     sprintf (opts->output_name, "Analog Monitor");
   }
+
+  //P25p1's ring buffers are shorter (36 and 15). An index left past the new end never wraps,
+  //because getFrameSync only wraps it on ==, so its writes run off sbuf through the rest of
+  //dsd_state until samplesPerSymbol is hit and getSymbol divides by zero
+  if (state->sidx >= opts->ssize) state->sidx = 0;
+  if (state->midx >= opts->msize) state->midx = 0;
 }
 
 int web_mode_valid (const char * key)
