@@ -166,7 +166,8 @@ branding, NXDN RAN/cipher) and the event history.
 squelch, and the RIGCTL SetMod bandwidth. The squelch gates NXDN, dPMR and M17
 sync, the analog monitor, the band scan and the bookmark scan. **Auto floor**, on by default with an RTL-SDR,
 keeps it a margin (+4 dB unless you pick another) over the noise floor measured
-across the whole spectrum, so it follows gain and AGC changes and holds on a
+across the whole spectrum, so it follows retunes (each hop of the bookmark scan
+too), gain and AGC changes, and holds on a
 channel that never goes quiet. A squelch given on the command line
 (`-i rtl:…:sq`) starts with Auto floor off. Off, the level stays where you put
 it: step it with the box's arrows (applied as you go), type one and press *Set*

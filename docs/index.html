@@ -361,7 +361,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   <h3>RF</h3>
   <ul>
     <li>RTL-SDR: <b>LNA gain</b>, <span class="k">Tuner AGC</span> (the tuner sets its own gain; the slider is off meanwhile), <span class="k">RTL AGC</span> (digital gain that lifts noise too, so the squelch works poorly with it), <b>PPM</b> correction, sample <b>Volume</b> (×1–3), <b>Bandwidth</b> (4–24 kHz) and <b>Sample rate</b> (0.25–3.2 MSPS; above 2.4 most dongles drop samples).</li>
-    <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio, the band scan and the bookmark scan.</li>
+    <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows retunes and gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio, the band scan and the bookmark scan.</li>
     <li><b>SetMod BW</b>: the bandwidth sent over rigctl (SDR++).</li>
   </ul>
   <h3>Trunk</h3>

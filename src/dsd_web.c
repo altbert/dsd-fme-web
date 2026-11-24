@@ -170,6 +170,8 @@ static struct
   spectrum_frame sq_sf;
   uint64_t sq_seq;
   int sq_frames, sq_ffts, sq_bins;    //spectra summed in sq_acc, the FFTs in them, their size
+  int sq_new;                         //no floor taken since the last retune or RF change
+  double sq_floor_t;                  //when the last one was taken
   uint64_t sq_center;
   uint32_t sq_rate;
   double sq_t0;                       //data time of the first one
@@ -1520,6 +1522,15 @@ static float sc_view_level (long long freq, float nf)
   return s > 0 ? 10.0f * log10f ((float)(s / ((2 * h + 1) * (double)nf))) : -999;
 }
 
+//Auto floor is still setting the squelch for this tuning (from its first settled spectrum, and the audio
+//needs a moment to be measured against it): a bookmark isn't found quiet under the last one's floor. Up
+//to 1 s after the retune, so a missing spectrum doesn't hold the scan
+static int sq_pending (dsd_opts * opts, double now)
+{
+  if (!W.sq_auto || opts->audio_in_type != 3 || now - W.sq_reset_t >= 1.0) return 0;
+  return W.sq_new || now - W.sq_floor_t < 0.1;
+}
+
 //dB a signal has to stand over the noise floor on the spectrum: the squelch margin, at least 3
 static float sc_thr (void)
 {
@@ -1643,7 +1654,7 @@ static void run_bm_scan (dsd_opts * opts, dsd_state * state)
     if (!sync && !open)
     {
       sc_skip_set (id, 0); //found quiet: no longer passed over
-      if (!W.sc_held && now - W.sc_check >= SC_DWELL) sc_next (opts, state);
+      if (!W.sc_held && now - W.sc_check >= SC_DWELL && !sq_pending (opts, now)) sc_next (opts, state);
       return;
     }
     if (sc_skipped (id) && !W.sc_held)
@@ -1679,8 +1690,9 @@ static void run_bm_scan (dsd_opts * opts, dsd_state * state)
 // most bins are noise) converts into the RMS a channel with only noise on it
 // shows: through the window's noise bandwidth and the demod's decimation
 // filter (rtl_dev_noise_gain). It follows gain and AGC changes and holds on a
-// channel that never goes quiet. Channel floor takes the tuned frequency's own
-// quiet level instead, once. The band scan sets a squelch for each carrier it
+// channel that never goes quiet; a retune gets a floor from its first settled
+// spectrum, which the bookmark scan waits for on each hop. Channel floor takes
+// the tuned frequency's own quiet level instead, once. The band scan sets a squelch for each carrier it
 // probes and puts this one back when it stops; Auto floor waits for it.
 //----------------------------------------------------------------------------
 
@@ -1703,6 +1715,7 @@ static void sq_restart (void)
   W.sq_reset_t = spectrum_now ();
   W.sq_frames = 0;
   W.sq_chan = 0;
+  W.sq_new = 1;
 }
 
 #ifdef USE_RTLSDR
@@ -1721,6 +1734,8 @@ static void sq_floor (double bin_unit)
   double fl = p / (q * q * q);
   W.sq_frames = 0;
   if (!(fl > 0) || !(bin_unit > 0)) return;
+  W.sq_new = 0;
+  W.sq_floor_t = spectrum_now ();
   W.sq_floor_db = (float)(10.0 * log10 (fl));
   W.sq_floor = (float)sqrt (rtl_dev_noise_gain () * fl / (2.0 * bin_unit)); //per I or Q, as rms() reads it
 }
@@ -1731,15 +1746,15 @@ static void run_squelch (dsd_opts * opts)
 #ifdef USE_RTLSDR
   if (opts->audio_in_type != 3) return;
   double now = spectrum_now ();
-  if (now - W.sq_t < 0.1) return;
-  W.sq_t = now;
-
+  //a retune restarts the measurements at once, so the settle time counts from the retune itself
   long f = current_freq (opts);
   if (f != W.sq_freq)
   {
     W.sq_freq = f;
     sq_restart ();
   }
+  if (now - W.sq_t < 0.1) return;
+  W.sq_t = now;
 
   //the tuned frequency's quiet level: the lowest RMS since the retune, creeping up (~10 s) so one
   //dip doesn't hold it down for good; right after a retune the RTL hands over muted samples
@@ -1769,10 +1784,11 @@ static void run_squelch (dsd_opts * opts)
     for (int i = 0; i < sf->bins; i++) W.sq_acc[i] += sf->power[i];
     W.sq_frames++;
     W.sq_ffts += sf->avg;
-    //the percentile over thousands of bins is steady from a few frames on, so the first floor
-    //comes quickly (the startup squelch may sit under the noise); later ones cover a second
-    int first = W.sq_floor <= 0;
-    if (W.sq_frames >= (first ? 3 : 4) && sf->data_time - W.sq_t0 >= (first ? 0.15 : 1.0)) sq_floor (sf->bin_unit);
+    //the percentile over thousands of bins is steady within one frame, so the first floor after a
+    //retune or an RF change comes from its first settled frame, about 0.6 s after it (the bookmark
+    //scan's hops wait for it, sq_pending), and soon at startup, whose squelch may sit under the noise.
+    //Later ones cover a second
+    if (W.sq_new || W.sq_floor <= 0 || (W.sq_frames >= 4 && sf->data_time - W.sq_t0 >= 1.0)) sq_floor (sf->bin_unit);
   }
 
   if (W.bs_state != BS_OFF)
