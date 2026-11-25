@@ -50,6 +50,9 @@ enum { SC_OFF = 0, SC_HOP, SC_LISTEN };
 #define AT_HOLD     5.0   //...once it has the carrier centred (what a carrier sends moves the center of 1 s by a kHz)...
 #define PK_MEASURE  0.3   //...and for a step (one frame is too lumpy for a 4FSK carrier's extent and center)
 #define PK_WAIT     4.0   //seconds a step waits for spectra of the tuned frequency
+#define SK_OVERLAP  12500 //Hz the views of a seek overlap by, so a carrier on the edge of one is in the next
+#define RTL_FMIN    24000000LL    //RTL-SDR tuning range, for the band scan and the seek
+#define RTL_FMAX    1800000000LL
 
 typedef struct
 {
@@ -99,8 +102,15 @@ static struct
   //Previous / Next: step to the neighbouring carrier in the spectrum
   int pk_steps;          //steps asked for and not made yet, + up, - down
   int pk_client;         //browser that asked, for the line under the buttons
-  double pk_t;           //when the step waited for was asked for (or the one before it made)
+  double pk_t;           //when the step or seek view waited for was asked for (or the one before it made)
   spec_sum pk_sum;
+
+  //« »: seek, as Previous / Next, hopping a view on when none is in this one
+  int sk_dir;            //running: +1 up, -1 down, 0 none
+  int sk_hops;           //views it hopped to
+  int sk_until;          //Until found: it hops on until a carrier turns up, else one hop a press
+  long long sk_limit;    //how far the views searched reach: their top going up, their bottom going down
+  int sk_client;
 
   //auto decode (the sync detector hears what the channel carries, the decoder is switched to it)
   int auto_decode;
@@ -682,14 +692,28 @@ static void select_decoder (dsd_opts * opts, dsd_state * state, const char * key
   web_log ("Decoder: %s", opts->output_name);
 }
 
-//move to a new channel (auto-tune's small nudges use do_tune and keep the probe going)
-static void retune (dsd_opts * opts, dsd_state * state, long freq)
+//move to a new channel (auto-tune's small nudges use do_tune and keep the probe going); quiet: without
+//the log line, for a seek's hops
+static void retune_quiet (dsd_opts * opts, dsd_state * state, long freq)
 {
   do_tune (opts, state, freq);
   noCarrier (opts, state);
   web_act_retuned ();
   if (W.auto_decode) ad_restart (opts, state, 1);
+}
+
+static void retune (dsd_opts * opts, dsd_state * state, long freq)
+{
+  retune_quiet (opts, state, freq);
   web_log ("Tuned to %.6f MHz", freq / 1e6);
+}
+
+//Previous / Next steps not made yet and a running seek: dropped when the receiver is tuned some other
+//way, or a scan or trunking starts (they would stop it)
+static void peak_cancel (void)
+{
+  W.pk_steps = 0;
+  W.sk_dir = 0;
 }
 
 static void tune_bookmark (dsd_opts * opts, dsd_state * state, const web_bookmark * bm)
@@ -1172,7 +1196,7 @@ static void trunk_start (dsd_opts * opts, dsd_state * state)
   }
   bs_stop (opts, state, " (trunking enabled)");
   sc_stop (" (trunking enabled)");
-  W.pk_steps = 0; //a Previous / Next step still to make would stop it
+  peak_cancel ();
   long long cc[6];
   int ncc = web_p25_cc_list (cc, 6);
   int st = state->lastsynctype;
@@ -1248,7 +1272,7 @@ static void bs_start (dsd_opts * opts, dsd_state * state, jv * cmd)
 {
   W.bs_msg[0] = 0;
   if (W.bs_state != BS_OFF) return;
-  W.pk_steps = 0; //a Previous / Next step still to make would stop the scan
+  peak_cancel ();
 #ifdef USE_RTLSDR
   if (opts->audio_in_type != 3)
   {
@@ -1261,8 +1285,8 @@ static void bs_start (dsd_opts * opts, dsd_state * state, jv * cmd)
   for (jv * r = jv_first (arr); r && n < BS_MAX_RANGES; r = r->next)
   {
     long long a = llround (jv_val (jv_at (r, 0))), b = llround (jv_val (jv_at (r, 1)));
-    if (a < 24000000) a = 24000000;           //RTL-SDR tuning range
-    if (b > 1800000000LL) b = 1800000000LL;
+    if (a < RTL_FMIN) a = RTL_FMIN;
+    if (b > RTL_FMAX) b = RTL_FMAX;
     if (b - a < 10000) continue;
     lo[n] = a; hi[n] = b; n++;
   }
@@ -1690,7 +1714,7 @@ static void sc_start (dsd_opts * opts, dsd_state * state, jv * cmd)
   sc_opts (cmd);
   if (W.sc_state != SC_OFF) return;
   W.sc_msg[0] = 0;
-  W.pk_steps = 0; //a Previous / Next step still to make would stop the scan
+  peak_cancel ();
   if (opts->audio_in_type != 3 && opts->use_rigctl != 1)
   {
     sc_fail ("needs a receiver DSD-FME can retune: the RTL-SDR input (-i rtl) or rigctl (-U).");
@@ -2206,7 +2230,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       bs_stop (opts, state, " (tuned by hand)");
       sc_stop (" (tuned by hand)");
       trunk_stop (opts, state, 0, " (tuned by hand)"); //it would hunt its way back to the control channel
-      W.pk_steps = 0; //Previous / Next steps not made yet would go on from here
+      peak_cancel (); //steps or a seek not done yet would go on from here
       retune (opts, state, f);
     }
   }
@@ -2221,12 +2245,40 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       bs_stop (opts, state, " (tuned by hand)");
       sc_stop (" (tuned by hand)");
       trunk_stop (opts, state, 0, " (tuned by hand)");
+      W.sk_dir = 0; //a seek stops here, the step goes on from where it got to
       if (W.pk_steps == 0) { W.pk_t = spectrum_now (); W.pk_sum.frames = 0; } //spectra from after the press
       W.pk_steps += d > 0 ? 1 : -1;
       if (W.pk_steps > 4) W.pk_steps = 4;
       if (W.pk_steps < -4) W.pk_steps = -4;
       W.pk_client = client;
     }
+  }
+  else if (!strcmp (c, "seek"))
+  {
+    int d = (int)jv_int (cmd, "dir", 0);
+    if (d) d = d > 0 ? 1 : -1;
+    if (opts->audio_in_type != 3) cmd_result (client, "peak", 0, "Seek needs the RTL-SDR input, the only one with a spectrum.");
+    else if (d && d == W.sk_dir) //the same button again
+    {
+      W.sk_dir = 0;
+      cmd_result (client, "peak", 1, "Seek stopped at %.6f MHz.", current_freq (opts) / 1e6);
+    }
+    else if (d) //the other one turns it round
+    {
+      bs_stop (opts, state, " (tuned by hand)");
+      sc_stop (" (tuned by hand)");
+      trunk_stop (opts, state, 0, " (tuned by hand)");
+      W.pk_steps = 0;
+      W.sk_dir = d;
+      W.sk_hops = 0;
+      W.sk_client = client;
+      W.pk_t = spectrum_now ();
+      W.pk_sum.frames = 0; //spectra from after the press
+    }
+  }
+  else if (!strcmp (c, "seek_until"))
+  {
+    W.sk_until = jv_bool (cmd, "enable", 0);
   }
   else if (!strcmp (c, "mode"))
   {
@@ -2375,7 +2427,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       opts->p25_trunk = 1;
       bs_stop (opts, state, " (trunking enabled)");
       sc_stop (" (trunking enabled)");
-      W.pk_steps = 0;
+      peak_cancel ();
       opts->scanner_mode = 0;
       update_analog (opts, state); //no analog fallback while trunking
       web_log ("Trunking enabled");
@@ -2650,7 +2702,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       bs_stop (opts, state, " (bookmark tuned)");
       sc_stop (" (bookmark tuned)");
       trunk_stop (opts, state, 0, " (bookmark tuned)");
-      W.pk_steps = 0;
+      peak_cancel ();
       tune_bookmark (opts, state, &bm);
     }
   }
@@ -2841,6 +2893,11 @@ static void run_key_hunt (dsd_opts * opts, dsd_state * state)
 // their clean part (-15 %..+45 % of the span, as the band scan). Steps
 // asked for in a row are made one at a time, each once the spectrum shows
 // the last one settled.
+//
+// Seek (« »): the same search, and with no carrier in view it hops a view
+// on (60 % of the span, the views overlapping by SK_OVERLAP) and searches
+// there: once a press, or until a carrier turns up with Until found on.
+// It stays where it ended when it finds none, or at the tuner's limit.
 //----------------------------------------------------------------------------
 
 //add the newest spectrum to s when it is a new one of the tuned frequency, from after the last retune
@@ -2882,7 +2939,7 @@ static void run_auto_tune (dsd_opts * opts, dsd_state * state)
 #ifdef USE_RTLSDR
   if (!W.auto_tune || opts->audio_in_type != 3) return;
   spec_sum * s = &W.at_sum;
-  if (opts->p25_trunk || opts->scanner_mode) { s->frames = 0; return; } //don't fight trunk/scan tuners
+  if (opts->p25_trunk || opts->scanner_mode || W.sk_dir) { s->frames = 0; return; } //don't fight trunk/scan tuners or a seek
   if (spec_sum_add (s, opts) < (W.at_lock ? AT_HOLD : AT_MEASURE)) return;
   long long cur = s->center, reach = W.at_lock ? AT_FOLLOW : AT_REACH;
   bs_peak pk[8];
@@ -2939,6 +2996,75 @@ static void run_peak_step (dsd_opts * opts, dsd_state * state)
   retune (opts, state, (long)pk[best].freq); //the press stopped the scans and trunking, and starting one drops the steps
   cmd_result_tuned (W.pk_client, "peak", pk[best].freq, "%s: %.6f MHz, %.0f dB, %.1f kHz wide.",
                     up ? "Next" : "Previous", pk[best].freq / 1e6, pk[best].snr, pk[best].width / 1000.0);
+}
+
+static void run_seek (dsd_opts * opts, dsd_state * state)
+{
+  if (!W.sk_dir) return;
+  if (opts->audio_in_type != 3) { W.sk_dir = 0; return; }
+  double now = spectrum_now ();
+  spec_sum * s = &W.pk_sum;
+  if (spec_sum_add (s, opts) < PK_MEASURE)
+  {
+    if (now - W.pk_t > PK_WAIT)
+    {
+      W.sk_dir = 0;
+      s->frames = 0;
+      cmd_result (W.sk_client, "peak", 0, "No spectrum of the tuned frequency to search.");
+    }
+    return;
+  }
+  int up = W.sk_dir > 0;
+  long long cur = s->center, rate = (long long)s->rate;
+  long long top = cur + (long long)(0.45 * rate), bottom = cur - (long long)(0.15 * rate); //the clean part
+
+  //the part of this view not searched yet: past the carrier tuned to, then past the view before
+  long long lo = up ? (W.sk_hops ? W.sk_limit - SK_OVERLAP : cur + PK_GAP) : bottom;
+  long long hi = up ? top : (W.sk_hops ? W.sk_limit + SK_OVERLAP : cur - PK_GAP);
+  bs_peak pk[BS_MAX_PEAKS];
+  int n = bs_find_peaks (s->sum, s->bins, cur, s->rate, lo, hi, PK_THR_DB, s->frames, pk, BS_MAX_PEAKS);
+  s->frames = 0;
+  int best = -1; //the nearest to where the seek began: the lowest going up, the highest going down
+  for (int i = 0; i < n; i++)
+    if (best < 0 || (up ? pk[i].freq < pk[best].freq : pk[i].freq > pk[best].freq)) best = i;
+  if (best >= 0)
+  {
+    char hops[32] = "";
+    if (W.sk_hops) snprintf (hops, sizeof(hops), ", after %d hop%s", W.sk_hops, W.sk_hops == 1 ? "" : "s");
+    W.sk_dir = 0;
+    retune (opts, state, (long)pk[best].freq);
+    cmd_result_tuned (W.sk_client, "peak", pk[best].freq, "Seek %s: %.6f MHz, %.0f dB, %.1f kHz wide%s.", up ? "up" : "down",
+                      pk[best].freq / 1e6, pk[best].snr, pk[best].width / 1000.0, hops);
+    return;
+  }
+
+  //none: it stays here at the end of the tuner's range, and after one hop unless Until found is on
+  W.sk_limit = up ? top : bottom;
+  if (up ? W.sk_limit >= RTL_FMAX : W.sk_limit <= RTL_FMIN)
+  {
+    W.sk_dir = 0;
+    cmd_result (W.sk_client, "peak", 1, "No signal %s to %.6f MHz, the end of the tuner's range.", up ? "up" : "down",
+                W.sk_limit / 1e6);
+    return;
+  }
+  if (W.sk_hops && !W.sk_until)
+  {
+    W.sk_dir = 0;
+    cmd_result (W.sk_client, "peak", 1, "No signal %s to %.6f MHz: press %s again to go on.", up ? "up" : "down",
+                W.sk_limit / 1e6, up ? "»" : "«");
+    return;
+  }
+
+  //a view on, its clean part starting where this one's ended
+  long long next = up ? W.sk_limit + (long long)(0.15 * rate) - SK_OVERLAP : W.sk_limit - (long long)(0.45 * rate) + SK_OVERLAP;
+  if (up && next + (long long)(0.45 * rate) > RTL_FMAX) next = RTL_FMAX - (long long)(0.45 * rate);
+  if (!up && next - (long long)(0.15 * rate) < RTL_FMIN) next = RTL_FMIN + (long long)(0.15 * rate);
+  W.sk_hops++;
+  W.pk_t = now;
+  retune_quiet (opts, state, (long)next);
+  char msg[96];
+  snprintf (msg, sizeof(msg), "Seeking %s: %.6f MHz… press %s to stop.", up ? "up" : "down", next / 1e6, up ? "»" : "«");
+  cmd_reply_tuned (W.sk_client, "peak", 1, next, msg);
 }
 
 //----------------------------------------------------------------------------
@@ -3211,6 +3337,7 @@ static void build_status (dsd_opts * opts, dsd_state * state, jb * b)
   //auto features + filters + keys
   jb_obj (b, "flags");
   jb_bool (b, "auto_tune", W.auto_tune);
+  jb_bool (b, "seek_until", W.sk_until);
   jb_bool (b, "auto_decode", W.auto_decode);
   jb_bool (b, "lpf", opts->use_lpf);
   jb_bool (b, "hpf", opts->use_hpf);
@@ -3462,6 +3589,7 @@ void web_poll (dsd_opts * opts, dsd_state * state)
 
   update_analog (opts, state);
   run_peak_step (opts, state);
+  run_seek (opts, state);
   run_auto_tune (opts, state);
   run_auto_decode (opts, state);
   run_band_scan (opts, state);

@@ -360,6 +360,7 @@ function renderStatus(m){
   renderTrunk(m);
   reflect('tg-scan', tr.scanner);
   reflect('tg-autotune', fl.auto_tune); reflect('tg-autodec', fl.auto_decode); reflect('tg-autoana', fl.auto_analog);
+  reflect('tg-skuntil', fl.seek_until);
   reflect('tg-hpfd', fl.hpfd); reflect('tg-hpf', fl.hpf); reflect('tg-lpf', fl.lpf); reflect('tg-pbf', fl.pbf);
   reflect('tg-payload', fl.payload); reflect('tg-monitor', fl.monitor); reflect('tg-inv', fl.inverted);
   reflect('tg-s1', m.slot1 && m.slot1.on); reflect('tg-s2', m.slot2 && m.slot2.on);
@@ -388,7 +389,7 @@ function renderStatus(m){
   // squelch: Auto floor and Channel floor need the RTL spectrum; the box shows the running level unless it is being edited
   const rtl = inp.type === 'rtl';
   reflect('tg-sqauto', inp.sql_auto); $('tg-sqauto').disabled = !rtl; $('btn-sqchan').disabled = !rtl;
-  $('btn-pkprev').disabled = $('btn-pknext').disabled = !rtl; // Previous / Next search the RTL spectrum
+  for (const id of ['btn-skdown','btn-pkprev','btn-pknext','btn-skup','tg-skuntil']) $(id).disabled = !rtl; // they search the RTL spectrum
   if (document.activeElement !== $('rtlsq')) $('rtlsq').value = inp.squelch;
   $('rtlsq').step = [1,2,5,10,20,50,100,200,500].filter(s => s <= inp.squelch/40).pop() || 1; // an arrow press moves it ~0.2-0.5 dB
   if (inp.sql_margin != null && document.activeElement !== $('sqmargin')) $('sqmargin').value = String(inp.sql_margin);
@@ -1846,6 +1847,10 @@ $('tunefreq').addEventListener('keydown',e=>{ if(e.key==='Enter'){ const f=parse
 // the nearest carrier below / above in the spectrum (dsd_web.c, run_peak_step); presses in a row step on
 $('btn-pkprev').onclick=()=>send({cmd:'peak', dir:-1});
 $('btn-pknext').onclick=()=>send({cmd:'peak', dir:1});
+// seek: the same, hopping a view on when none is in this one (run_seek); the same button again stops it
+$('btn-skdown').onclick=()=>send({cmd:'seek', dir:-1});
+$('btn-skup').onclick=()=>send({cmd:'seek', dir:1});
+$('tg-skuntil').onclick=()=>{ const on=!$('tg-skuntil').classList.contains('on'); send({cmd:'seek_until', enable:on}); reflect('tg-skuntil', on); };
 // 851.0125M, 154875k, 154.875 MHz, 851012500 (Hz) or 154.875 (MHz); commas are thousands
 // separators (851,012,500) unless there is a single one and no dot (154,875 = 154.875)
 function parseFreq(s){ s=(s||'').trim().toLowerCase().replace(/\s+/g,'').replace(/hz$/,''); if(!s) return null; let mult=1;

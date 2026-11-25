@@ -14,7 +14,7 @@ dsd-fme -i rtl --web 8080      # then open http://localhost:8080/
 ## What's new in this fork
 
 - **Web server inside dsd-fme**: `--web [bind:]port`, with an optional `--web-pass`. The page is embedded in the binary, so there's nothing else to install or run.
-- **Spectrum and waterfall** from the RTL-SDR, with the demodulator's channel shaded around the tuned frequency: click to tune, step to the next signal down or up, auto-tune that keeps the signal centred, auto-decode, and a band scan that saves what it finds as bookmarks.
+- **Spectrum and waterfall** from the RTL-SDR, with the demodulator's channel shaded around the tuned frequency: click to tune, step or seek to the next signal down or up, auto-tune that keeps the signal centred, auto-decode, and a band scan that saves what it finds as bookmarks.
 - **Receiver panel**: 7-segment frequency and TG/SRC readouts, per-slot call info (talker alias from DMR, NXDN and P25, GPS, last data) and the site/system picture.
 - **Activity log**: calls, decoded packet data (LRRP, ARS, text messages, P25 packet data…) and signalling, with filters. Analog FM transmissions show up too, with their CTCSS tone or DCS code and the DTMF ANI radios send at key-up.
 - **Radios and map**: every radio heard, positions on an OpenStreetMap map, radios on air pulse.

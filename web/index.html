@@ -151,9 +151,9 @@ canvas{display:block;width:100%}
 #bwband{position:absolute;top:0;bottom:0;left:50%;transform:translateX(-50%);min-width:3px;pointer-events:none;display:none;
   background:rgba(255,176,46,.08);border-left:1px solid rgba(255,176,46,.45);border-right:1px solid rgba(255,176,46,.45)}
 .tune{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
-.tune-in,.tune-auto{display:flex;align-items:center;gap:6px}
+.tune-in,.tune-step,.tune-auto{display:flex;align-items:center;gap:6px}
 #tunefreq{width:210px}
-#btn-pkprev .i{transform:rotate(90deg)} #btn-pknext .i{transform:rotate(-90deg)}
+#btn-skdown .i,#btn-pkprev .i{transform:rotate(90deg)} #btn-pknext .i,#btn-skup .i{transform:rotate(-90deg)}
 #res-peak{margin:2px 0 0} #res-peak+.fftrow{margin-top:6px}
 #ad-stat{flex:1 1 200px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1.4em}
 .fftrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-top:10px}
@@ -551,6 +551,7 @@ canvas{display:block;width:100%}
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
   <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 5.5v13l11-6.5z"/></symbol>
   <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chev2" viewBox="0 0 24 24"><path d="m6 6 6 6 6-6M6 12l6 6 6-6"/></symbol>
   <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5H5V6h5"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-pause" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M7 5.5h3.5v13H7zM13.5 5.5H17v13h-3.5z"/></symbol>
@@ -603,8 +604,13 @@ canvas{display:block;width:100%}
             <input id="tunefreq" aria-label="Frequency" placeholder="e.g. 851.0125M or 154987500" enterkeyhint="go">
             <button class="p sm" id="btn-tune">Tune</button>
             <button class="sm icon" id="btn-bm" title="Bookmark this frequency" aria-label="Bookmark this frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
+          </div>
+          <div class="tune-step">
+            <button class="sm icon" id="btn-skdown" title="Seek down: the next signal down, a view further down if none is in this one" aria-label="Seek down"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
             <button class="sm icon" id="btn-pkprev" title="Tune to the next signal down" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
             <button class="sm icon" id="btn-pknext" title="Tune to the next signal up" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-skup" title="Seek up: the next signal up, a view further up if none is in this one" aria-label="Seek up"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
+            <button class="tgl sm" id="tg-skuntil" title="Seek hops on until it finds a signal, instead of one view a press">Until found</button>
           </div>
           <div class="tune-auto">
             <button class="tgl sm" id="tg-autotune" title="Keep the signal you're on centred">Auto-tune</button>

@@ -57,7 +57,7 @@ DSD-FME decodes what SDR++ demodulates, and retunes SDR++ when you type a
 frequency, pick or scan bookmarks, or follow trunked calls (this rigctl path
 hasn't been tested from the web page yet). All decoding and its views work:
 readouts, slots, activity log, packet data, radios, map, keys, browser audio
-and recordings. The spectrum and waterfall (with click-to-tune, ‹ › and
+and recordings. The spectrum and waterfall (with click-to-tune, ‹ › « » and
 auto-tune), the band scan, the squelch's Auto floor and the RTL settings in the
 RF tab need raw IQ samples, which DSD-FME only gets from an RTL-SDR; SDR++ has
 its own waterfall and squelch.
@@ -99,7 +99,15 @@ the row gives the carrier's frequency, its level in dB over the noise floor
 and its width, or says there is none in view: only the clean part of the
 capture is searched, about 150 kHz down and 450 kHz up at the default 1 MSPS.
 Presses in a row step on, each once the spectrum shows the last step settled
-(about a second). **Auto-tune** keeps the signal you're on centred: from a
+(about a second). **« »** around them seek: they search the same way, and with
+no signal in view they hop a view on (60 % of the span, about 600 kHz at
+1 MSPS, overlapping the last by 12.5 kHz) and search that one, so presses in
+a row go through the whole spectrum without gaps. A press makes one hop and
+stays there when it finds nothing (the line says how far it searched; press
+again to go on); with **Until found** on it keeps hopping, about a second a
+view, until a signal turns up or the tuner's range ends (24 and 1800 MHz).
+The same button again stops a seek, the other one turns it round, and ‹ ›, a
+typed frequency or any other tuning stops it too. **Auto-tune** keeps the signal you're on centred: from a
 second of spectrum it takes the carrier nearest the tuned frequency, within
 7 kHz, and retunes onto its centre when that is 1 kHz or more off. From then
 on it only follows that carrier's drift, judged on 5 s of spectrum at a time
@@ -148,7 +156,7 @@ them are quiet the receiver stays where it is, so channels within a few hundred
 kHz of each other are watched without retuning. A retune and its check take
 about 0.75 s at the default sample rate, longer at 0.25 MSPS. With SDR++ over
 rigctl, set its squelch: the scan takes audio that isn't silent for an open
-channel. Tuning by hand (‹ › too), clicking a bookmark, choosing a decoder, Auto-decode,
+channel. Tuning by hand (‹ › « » too), clicking a bookmark, choosing a decoder, Auto-decode,
 Auto-tune, the band scan and trunking stop the scan. *Select all* selects
 every bookmark the search and group filter show, *Unselect all* unselects them
 all; export and import keep the selection. Hang and the band scan's settings
