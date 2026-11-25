@@ -182,7 +182,7 @@ dsd-fme -i rtl --web 8080</pre>
     <h2>What it adds to DSD-FME</h2>
     <ul>
       <li><b>A web server inside dsd-fme</b>: the page is built into the binary, with an optional password. Nothing else to install.</li>
-      <li><b>Spectrum and waterfall</b> from the RTL-SDR: click to tune, auto-tune, auto-decode, and a band scan that saves what it finds as bookmarks.</li>
+      <li><b>Spectrum and waterfall</b> from the RTL-SDR: click to tune, step to the next signal down or up, auto-tune, auto-decode, and a band scan that saves what it finds as bookmarks.</li>
       <li><b>Activity log</b>: calls, LRRP positions, ARS registrations, text messages, P25 packet data, and analog FM with its CTCSS tone, DCS code and DTMF ANI.</li>
       <li><b>Radios and map</b>: every radio heard, positions on an OpenStreetMap map.</li>
       <li><b>Trunking</b>: follows calls from a P25 control channel, with skip, hold and block per talkgroup.</li>
@@ -287,7 +287,8 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
       <p>Live view from the RTL-SDR. The shaded band is the channel the demodulator hears. Click anywhere to tune there.</p>
       <ul>
         <li>Type a frequency (<code>851.0125M</code>, <code>154987500</code>) and press <span class="k">Tune</span>. <span class="k">★</span> bookmarks it.</li>
-        <li><span class="k">Auto-tune</span> moves onto the strongest nearby signal and keeps it centered.</li>
+        <li><span class="k">‹</span> <span class="k">›</span> tune to the next signal down or up in the spectrum. The line under them gives its frequency, level and width, or says there is none in view.</li>
+        <li><span class="k">Auto-tune</span> keeps the signal you're on centered. It only follows that one, so it stays put when the channel goes quiet.</li>
         <li><span class="k">Auto-decode</span> listens for every protocol's sync at once and switches the decoder to the one it hears, usually within a second.</li>
         <li><span class="k">Analog</span> (on at first) plays analog FM whenever there is no digital sync, in AUTO and Auto-decode. Set the squelch so noise stays muted.</li>
         <li><b>FFT</b>, <b>FPS</b>, <b>Average</b> and <b>Range</b> set the detail, speed, smoothing and contrast.</li>
@@ -297,7 +298,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
       <h3>Decode</h3>
       <p>The 7-segment readout shows the tuned frequency and bookmark name, the system, frame type and modulation. The meters show the demodulated signal level while in sync, and the RF level against the squelch.</p>
       <p>To tune from the readout, click a digit of the frequency, then type it or step it with <span class="k">↑</span> <span class="k">↓</span>: the digits after it go to 0. <span class="k">←</span> <span class="k">→</span> pick another digit. It tunes once you stop; <span class="k">Enter</span> tunes at once, <span class="k">Esc</span> undoes.</p>
-      <p>One box per slot shows the call: talkgroup and source, group or private, how long it has lasted, talker alias, GPS position, encryption and the last data received.</p>
+      <p>One box per slot shows the call: talkgroup and source, group or private, how long it has lasted, talker alias (DMR, NXDN, P25), GPS position, encryption and the last data received.</p>
       <p>The system box shows the site once a repeater or control channel identifies itself: P25 WACN/SYS/NAC/RFSS/site, DMR color code and system, NXDN RAN. On analog FM, the <b>Tone</b> row shows the CTCSS tone, DCS code and DTMF ANI.</p>
     </div>
     <div class="panel">

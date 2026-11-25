@@ -153,6 +153,8 @@ canvas{display:block;width:100%}
 .tune{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
 .tune-in,.tune-auto{display:flex;align-items:center;gap:6px}
 #tunefreq{width:210px}
+#btn-pkprev .i{transform:rotate(90deg)} #btn-pknext .i{transform:rotate(-90deg)}
+#res-peak{margin:2px 0 0} #res-peak+.fftrow{margin-top:6px}
 #ad-stat{flex:1 1 200px;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:1.4em}
 .fftrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-top:10px}
 .fftrow input[type=number]{width:60px}
@@ -199,6 +201,7 @@ canvas{display:block;width:100%}
 .slot .ln{height:18px;line-height:18px;font-size:13px;color:var(--silk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .slot .ln.tags{display:flex;gap:5px;align-items:center}
 .slot .ln.l3{color:var(--silk-3);font-size:12.5px}
+.slot .ln .k{color:var(--silk-3);font-size:11.5px;margin-right:3px}
 .slot .gps{all:unset;cursor:pointer;color:var(--link);display:inline-flex;align-items:center;gap:4px;max-width:100%}
 .slot .gps:focus-visible{outline:2px solid var(--link);outline-offset:1px}
 .meters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 18px;margin-top:10px}
@@ -483,7 +486,7 @@ canvas{display:block;width:100%}
   .spec-wrap{margin:8px 12px 0}
   #spec{height:110px} #wf{height:170px}
   .card>h2 .meta{gap:8px;font-size:12.5px}
-  .tune-in{flex:1 1 100%} #tunefreq{flex:1;width:auto}
+  .tune-in{flex:1 1 100%;min-width:0} #tunefreq{flex:1;width:auto;min-width:0}
   #ad-stat{flex-basis:100%}
   .fftrow{gap:8px 14px}
   .acts,#events{height:420px}
@@ -600,14 +603,17 @@ canvas{display:block;width:100%}
             <input id="tunefreq" aria-label="Frequency" placeholder="e.g. 851.0125M or 154987500" enterkeyhint="go">
             <button class="p sm" id="btn-tune">Tune</button>
             <button class="sm icon" id="btn-bm" title="Bookmark this frequency" aria-label="Bookmark this frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
+            <button class="sm icon" id="btn-pkprev" title="Tune to the next signal down" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-pknext" title="Tune to the next signal up" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
           </div>
           <div class="tune-auto">
-            <button class="tgl sm" id="tg-autotune" title="Snap to the strongest nearby signal">Auto-tune</button>
+            <button class="tgl sm" id="tg-autotune" title="Keep the signal you're on centred">Auto-tune</button>
             <button class="tgl sm" id="tg-autodec" title="Detect the protocol and switch to its decoder">Auto-decode</button>
             <button class="tgl sm on" id="tg-autoana" title="In AUTO and Auto-decode, play analog FM when there's no sync">Analog</button>
           </div>
           <span class="hint" id="ad-stat"></span>
         </div>
+        <div class="hint res" id="res-peak" role="status"></div>
         <div class="fftrow">
           <label class="pair">FFT <select id="fftsize">
             <option>1024</option><option>2048</option><option selected>4096</option>

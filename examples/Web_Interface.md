@@ -57,7 +57,7 @@ DSD-FME decodes what SDR++ demodulates, and retunes SDR++ when you type a
 frequency, pick or scan bookmarks, or follow trunked calls (this rigctl path
 hasn't been tested from the web page yet). All decoding and its views work:
 readouts, slots, activity log, packet data, radios, map, keys, browser audio
-and recordings. The spectrum and waterfall (with click-to-tune and
+and recordings. The spectrum and waterfall (with click-to-tune, ‹ › and
 auto-tune), the band scan, the squelch's Auto floor and the RTL settings in the
 RF tab need raw IQ samples, which DSD-FME only gets from an RTL-SDR; SDR++ has
 its own waterfall and squelch.
@@ -88,8 +88,24 @@ type it or step it with the up and down arrow keys, and the digits after it go
 to 0; left and right pick another digit, `.` the first one after the point.
 Typing moves on to the next digit, so a whole frequency can be typed from the
 left. It tunes once you stop (0.4 s after an arrow, 1.5 s after a typed digit);
-Enter tunes at once, Escape undoes the change. **Auto-tune** snaps the dongle onto the strongest nearby peak and
-keeps it centred. **Auto-decode** listens on the tuned channel for the frame
+Enter tunes at once, Escape undoes the change. **‹ ›** (after ★) tune to the
+next signal down or up: the nearest carrier past the one you're on, in 0.3 s
+of spectrum taken after the press. Carriers count as the band scan counts
+them: narrowband (2.5 to 40 kHz wide) and 8 dB or more over the noise floor,
+and a weaker one on the next 6.25 kHz channel still counts. The width floor
+keeps out the RTL's own narrow spurs, so an FM carrier that carries nothing
+but its CTCSS tone at that moment can be passed over too. The line under
+the row gives the carrier's frequency, its level in dB over the noise floor
+and its width, or says there is none in view: only the clean part of the
+capture is searched, about 150 kHz down and 450 kHz up at the default 1 MSPS.
+Presses in a row step on, each once the spectrum shows the last step settled
+(about a second). **Auto-tune** keeps the signal you're on centred: from a
+second of spectrum it takes the carrier nearest the tuned frequency, within
+7 kHz, and retunes onto its centre when that is 1 kHz or more off. From then
+on it only follows that carrier's drift, judged on 5 s of spectrum at a time
+(what a carrier sends moves the centre of a single second by about a kHz), so
+it stays put when the channel goes quiet instead of moving to another one;
+tuning again, by hand or with ‹ ›, starts it over. **Auto-decode** listens on the tuned channel for the frame
 syncs of every protocol DSD-FME decodes at once (P25 Phase 1 and 2, DMR,
 X2-TDMA, YSF, D-STAR, NXDN48/96, dPMR, M17, ProVoice and EDACS) and switches
 the decoder straight to the one it hears, usually within a second, then holds
@@ -132,7 +148,7 @@ them are quiet the receiver stays where it is, so channels within a few hundred
 kHz of each other are watched without retuning. A retune and its check take
 about 0.75 s at the default sample rate, longer at 0.25 MSPS. With SDR++ over
 rigctl, set its squelch: the scan takes audio that isn't silent for an open
-channel. Tuning by hand, clicking a bookmark, choosing a decoder, Auto-decode,
+channel. Tuning by hand (‹ › too), clicking a bookmark, choosing a decoder, Auto-decode,
 Auto-tune, the band scan and trunking stop the scan. *Select all* selects
 every bookmark the search and group filter show, *Unselect all* unselects them
 all; export and import keep the selection. Hang and the band scan's settings
@@ -160,7 +176,10 @@ dPMR, YSF, D-STAR, M17, ProVoice, EDACS), modulation, signal inversion, TDMA
 slot on/off, digital/analog gain and the audio filters. Live call info is shown
 per slot (TG/SRC, group/private, burst type, errors, ENC alg/key, talker alias,
 GPS), plus site/system context (P25 WACN/SYS/NAC/RFSS/SITE, DMR colour code and
-branding, NXDN RAN/cipher) and the event history.
+branding, NXDN RAN/cipher) and the event history. The talker alias shows on
+the slot's *Alias* line while the talker is on air: DMR's (Tait's too),
+NXDN's, and the P25 aliases of Motorola and L3Harris radios, which the
+calls in the activity log and the radios list also get.
 
 **RF** — RTL gain / PPM / sample volume / bandwidth / sample rate, the RMS
 squelch, and the RIGCTL SetMod bandwidth. The squelch gates NXDN, dPMR and M17

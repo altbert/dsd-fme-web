@@ -40,12 +40,34 @@ enum { BS_OFF = 0, BS_TUNE, BS_PROBE, BS_FOUND, BS_FIXED };
 #define SC_MAX_SKIP 64
 enum { SC_OFF = 0, SC_HOP, SC_LISTEN };
 
+//auto-tune and Previous / Next (both take carriers the way the band scan finds them)
+#define PK_THR_DB   8.0f  //dB a carrier stands over the noise floor (the band scan's default is 10)
+#define PK_GAP      3000  //Hz: a carrier closer than this to the tuned frequency is the one tuned to
+#define AT_REACH    7000  //Hz: auto-tune centres a carrier this close to the tuned frequency...
+#define AT_FOLLOW   2500  //...and once centred follows only its drift, so it never moves to another channel
+#define AT_DEADBAND 1000  //Hz off centre left alone (a carrier's measured center moves by a few hundred Hz)
+#define AT_MEASURE  1.0   //seconds of settled spectra summed for each look...
+#define AT_HOLD     5.0   //...once it has the carrier centred (what a carrier sends moves the center of 1 s by a kHz)...
+#define PK_MEASURE  0.3   //...and for a step (one frame is too lumpy for a 4FSK carrier's extent and center)
+#define PK_WAIT     4.0   //seconds a step waits for spectra of the tuned frequency
+
 typedef struct
 {
   long long freq; //Hz, power weighted center
   float snr;      //dB over the noise floor
   int width;      //Hz at -6 dB
 } bs_peak;
+
+//spectra of the tuned frequency, summed (auto-tune, Previous / Next); a retune (do_tune) empties it
+typedef struct
+{
+  int frames, bins;
+  uint32_t rate;
+  long long center;
+  double t0, t1;         //when the first spectrum summed began, and the newest one ended
+  uint64_t seq;
+  float sum[16384];
+} spec_sum;
 
 //an unbroken sync being watched: when it began, the window it is judged on (see hold_ok)
 typedef struct
@@ -67,9 +89,18 @@ static struct
   double last_status;
   double status_interval;
 
-  //auto tune (snap the dongle onto the strongest nearby peak on a fixed freq)
+  double last_tune;      //the last retune through do_tune (spectrum_now): spectra from before it are stale
+
+  //auto tune: keep the carrier on the tuned channel centred
   int auto_tune;
-  double last_autotune;
+  int at_lock;           //it has a carrier centred: only that one's drift is followed, until the next retune
+  spec_sum at_sum;
+
+  //Previous / Next: step to the neighbouring carrier in the spectrum
+  int pk_steps;          //steps asked for and not made yet, + up, - down
+  int pk_client;         //browser that asked, for the line under the buttons
+  double pk_t;           //when the step waited for was asked for (or the one before it made)
+  spec_sum pk_sum;
 
   //auto decode (the sync detector hears what the channel carries, the decoder is switched to it)
   int auto_decode;
@@ -214,8 +245,9 @@ static void web_log (const char * fmt, ...)
   web_broadcast (WEB_KIND_CONSOLE, WS_OP_TEXT, line, strlen (line), WEB_SUB_CONSOLE);
 }
 
-//the result of an action, for the line under its button in the browser that asked
-static void cmd_reply (int client, const char * what, int ok, const char * msg)
+//the result of an action, for the line under its button in the browser that asked; freq is where the
+//action tuned, for the page's frequency box (0: it didn't)
+static void cmd_reply_tuned (int client, const char * what, int ok, long long freq, const char * msg)
 {
   jb b; jb_init (&b);
   jb_obj (&b, NULL);
@@ -223,21 +255,40 @@ static void cmd_reply (int client, const char * what, int ok, const char * msg)
   jb_str (&b, "for", what);
   jb_bool (&b, "ok", ok);
   jb_str (&b, "msg", msg);
+  if (freq > 0) jb_int (&b, "freq", freq);
   jb_obj_end (&b);
   web_send (client, WEB_KIND_CTRL, WS_OP_TEXT, b.buf, b.len);
   jb_free (&b);
 }
 
+static void cmd_reply (int client, const char * what, int ok, const char * msg)
+{
+  cmd_reply_tuned (client, what, ok, 0, msg);
+}
+
 //...and in the log too
-static void __attribute__ ((format (printf, 4, 5))) cmd_result (int client, const char * what, int ok, const char * fmt, ...)
+static void cmd_vresult (int client, const char * what, int ok, long long freq, const char * fmt, va_list ap)
 {
   char msg[1024];
+  vsnprintf (msg, sizeof(msg), fmt, ap);
+  web_log ("%s", msg);
+  cmd_reply_tuned (client, what, ok, freq, msg);
+}
+
+static void __attribute__ ((format (printf, 4, 5))) cmd_result (int client, const char * what, int ok, const char * fmt, ...)
+{
   va_list ap;
   va_start (ap, fmt);
-  vsnprintf (msg, sizeof(msg), fmt, ap);
+  cmd_vresult (client, what, ok, 0, fmt, ap);
   va_end (ap);
-  web_log ("%s", msg);
-  cmd_reply (client, what, ok, msg);
+}
+
+static void __attribute__ ((format (printf, 4, 5))) cmd_result_tuned (int client, const char * what, long long freq, const char * fmt, ...)
+{
+  va_list ap;
+  va_start (ap, fmt);
+  cmd_vresult (client, what, 1, freq, fmt, ap);
+  va_end (ap);
 }
 
 //the live decoder frequency the dongle / rig is parked on
@@ -260,6 +311,11 @@ static void do_tune (dsd_opts * opts, dsd_state * state, long freq)
   opts->rtlsdr_center_freq = (uint32_t)freq;
   state->last_cc_sync_time = time (NULL);
   web_analog_retuned (opts); //the tone of the last channel is not this one's
+  //auto-tune and the peak steps only read spectra from after this: one from before a retune by hand
+  //would take the dongle back to a carrier near where it was
+  W.last_tune = spectrum_now ();
+  W.at_lock = 0;
+  W.at_sum.frames = W.pk_sum.frames = 0;
 }
 
 //----------------------------------------------------------------------------
@@ -673,13 +729,26 @@ static float select_kth (float * a, int n, int k)
   return a[k];
 }
 
-//narrowband carriers whose center is in [flo, fhi], strongest first
+//narrowband carriers whose center is in [flo, fhi], strongest first. dc 0: p holds spectra of a band
+//scan window, tuned between channels, and anything within 2 kHz of the tuned frequency is the IQ
+//conversion's DC tone; dc > 0: p sums dc spectra of a tuning that may sit on a carrier, which counts,
+//and the tone (spectrum_dc_power) is taken off instead
 static int bs_find_peaks (const float * p, int n, long long center, uint32_t rate, long long flo, long long fhi,
-                          float thr_db, bs_peak * out, int max)
+                          float thr_db, int dc, bs_peak * out, int max)
 {
-  static float sm[16384], tmp[16384], ped[4096];
+  static float sm[16384], tmp[16384], ped[4096], q[16384];
   if (n < 64 || n > 16384 || rate == 0) return 0;
   double hz = (double)rate / n;
+  if (dc > 0)
+  {
+    memcpy (q, p, sizeof(float) * n);
+    for (int k = -3; k <= 3; k++)
+    {
+      float v = q[n / 2 + k] - (float)(dc * spectrum_dc_power (k));
+      q[n / 2 + k] = v > 0 ? v : 0;
+    }
+    p = q;
+  }
 
   //~1.5 kHz smoothing evens out noise and the ripple on top of 4FSK carriers
   int h = (int)(750.0 / hz);
@@ -697,6 +766,8 @@ static int bs_find_peaks (const float * p, int n, long long center, uint32_t rat
   float thr = nf * powf (10.0f, thr_db / 10.0f);
   int sep = (int)(6250.0 / hz); //at most one carrier per 6.25 kHz
   if (sep < 1) sep = 1;
+  int top = (int)(1500.0 / hz); //dc > 0: the highest point within 1.5 kHz...
+  if (top < 1) top = 1;
 
   //only -15%..+45% of the span around the tuned frequency: the left quarter is the top of the
   //capture wrapped around, and the capture edges (-25% / +75%) roll off
@@ -708,9 +779,20 @@ static int bs_find_peaks (const float * p, int n, long long center, uint32_t rat
   for (int i = lo; i < hi && k < max; i++)
   {
     if (sm[i] < thr) continue;
-    int peak = 1;
-    for (int j = i - sep; j <= i + sep && peak; j++)
+    int peak = 1, reach = dc > 0 ? top : sep;
+    for (int j = i - reach; j <= i + reach && peak; j++)
       if (j >= 0 && j < n && j != i && (sm[j] > sm[i] || (sm[j] == sm[i] && j < i))) peak = 0;
+    //...and a dip of 3 dB or more down to anything higher within 6.25 kHz: a carrier on a 6.25 kHz
+    //channel counts next to a stronger one, a lump on the side of a carrier doesn't
+    for (int side = -1; side <= 1 && peak && dc > 0; side += 2)
+    {
+      float low = sm[i];
+      for (int j = i + side; j >= 0 && j < n && abs (j - i) <= sep; j += side)
+      {
+        if (sm[j] < low) low = sm[j];
+        if (sm[j] > sm[i]) { if (low > sm[i] * 0.5f) peak = 0; break; }
+      }
+    }
     if (!peak) continue;
 
     //-6 dB extent, stopping where the slope turns back up into a neighbor
@@ -736,9 +818,9 @@ static int bs_find_peaks (const float * p, int n, long long center, uint32_t rat
     for (int j = a; j <= b; j++) { s += p[j]; sf += (double)p[j] * j; }
     long long f = center + llround ((sf / s - n / 2.0) * hz);
     if (f < flo || f > fhi) continue;
-    //DC tones: the IQ conversion leaves one right at the tuned frequency (windows are tuned
-    //between channels for that reason), and the dongle has its own at its center, +rate/4
-    if (llabs (f - center) < 2000 || llabs (f - (center + (long long)rate / 4)) < 2000) continue;
+    //DC tones: the IQ conversion leaves one right at the tuned frequency (band scan windows are
+    //tuned between channels for that reason), and the dongle has its own at its center, +rate/4
+    if ((dc == 0 && llabs (f - center) < 2000) || llabs (f - (center + (long long)rate / 4)) < 2000) continue;
     out[k].freq = f;
     out[k].snr = 10.0f * log10f (sm[i] / nf);
     out[k].width = width;
@@ -1090,6 +1172,7 @@ static void trunk_start (dsd_opts * opts, dsd_state * state)
   }
   bs_stop (opts, state, " (trunking enabled)");
   sc_stop (" (trunking enabled)");
+  W.pk_steps = 0; //a Previous / Next step still to make would stop it
   long long cc[6];
   int ncc = web_p25_cc_list (cc, 6);
   int st = state->lastsynctype;
@@ -1165,6 +1248,7 @@ static void bs_start (dsd_opts * opts, dsd_state * state, jv * cmd)
 {
   W.bs_msg[0] = 0;
   if (W.bs_state != BS_OFF) return;
+  W.pk_steps = 0; //a Previous / Next step still to make would stop the scan
 #ifdef USE_RTLSDR
   if (opts->audio_in_type != 3)
   {
@@ -1277,7 +1361,7 @@ static void run_band_scan (dsd_opts * opts, dsd_state * state)
 
     bs_peak found[BS_MAX_PEAKS];
     int n = bs_find_peaks (W.bs_acc, W.bs_nbins, W.bs_tuned, W.sf.rate, W.bs_plo, W.bs_phi,
-                           W.bs_thr_db, found, BS_MAX_PEAKS);
+                           W.bs_thr_db, 0, found, BS_MAX_PEAKS);
     W.bs_npeaks = 0;
     for (int i = 0; i < n; i++)
     {
@@ -1606,6 +1690,7 @@ static void sc_start (dsd_opts * opts, dsd_state * state, jv * cmd)
   sc_opts (cmd);
   if (W.sc_state != SC_OFF) return;
   W.sc_msg[0] = 0;
+  W.pk_steps = 0; //a Previous / Next step still to make would stop the scan
   if (opts->audio_in_type != 3 && opts->use_rigctl != 1)
   {
     sc_fail ("needs a receiver DSD-FME can retune: the RTL-SDR input (-i rtl) or rigctl (-U).");
@@ -2121,7 +2206,26 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       bs_stop (opts, state, " (tuned by hand)");
       sc_stop (" (tuned by hand)");
       trunk_stop (opts, state, 0, " (tuned by hand)"); //it would hunt its way back to the control channel
+      W.pk_steps = 0; //Previous / Next steps not made yet would go on from here
       retune (opts, state, f);
+    }
+  }
+  else if (!strcmp (c, "peak"))
+  {
+    int d = (int)jv_int (cmd, "dir", 0);
+    if (opts->audio_in_type != 3) cmd_result (client, "peak", 0, "Previous and Next need the RTL-SDR input, the only one with a spectrum.");
+    else if (d)
+    {
+      //a tune by hand: the scans and trunking stop now, or their hops would leave the step no
+      //settled spectrum to search
+      bs_stop (opts, state, " (tuned by hand)");
+      sc_stop (" (tuned by hand)");
+      trunk_stop (opts, state, 0, " (tuned by hand)");
+      if (W.pk_steps == 0) { W.pk_t = spectrum_now (); W.pk_sum.frames = 0; } //spectra from after the press
+      W.pk_steps += d > 0 ? 1 : -1;
+      if (W.pk_steps > 4) W.pk_steps = 4;
+      if (W.pk_steps < -4) W.pk_steps = -4;
+      W.pk_client = client;
     }
   }
   else if (!strcmp (c, "mode"))
@@ -2271,6 +2375,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       opts->p25_trunk = 1;
       bs_stop (opts, state, " (trunking enabled)");
       sc_stop (" (trunking enabled)");
+      W.pk_steps = 0;
       opts->scanner_mode = 0;
       update_analog (opts, state); //no analog fallback while trunking
       web_log ("Trunking enabled");
@@ -2441,6 +2546,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
     W.auto_tune = jv_bool (cmd, "enable", 0);
     if (W.auto_tune) bs_stop (opts, state, " (auto-tune enabled)");
     if (W.auto_tune) sc_stop (" (auto-tune enabled)");
+    W.at_lock = 0; W.at_sum.frames = 0; //it starts over: the carrier within reach of where it is now
     web_log ("Auto-tune %s", W.auto_tune ? "enabled" : "disabled");
   }
   else if (!strcmp (c, "auto_decode"))
@@ -2544,6 +2650,7 @@ static void apply_command (dsd_opts * opts, dsd_state * state, int client, jv * 
       bs_stop (opts, state, " (bookmark tuned)");
       sc_stop (" (bookmark tuned)");
       trunk_stop (opts, state, 0, " (bookmark tuned)");
+      W.pk_steps = 0;
       tune_bookmark (opts, state, &bm);
     }
   }
@@ -2720,47 +2827,118 @@ static void run_key_hunt (dsd_opts * opts, dsd_state * state)
 }
 
 //----------------------------------------------------------------------------
-// Auto tune: snap the dongle onto the strongest peak near the band center
+// Auto tune: keep the carrier on the tuned channel centred. It sums a second
+// of spectra, takes the carrier nearest the tuned frequency within AT_REACH
+// and retunes onto its center when that is AT_DEADBAND or more off. Once it
+// has a carrier centred it only follows that one (AT_FOLLOW), on AT_HOLD of
+// spectra at a time, so it stays put when the channel goes quiet instead of
+// moving to another one; the next retune starts it over. The carrier finder is the band scan's,
+// with the tuned frequency's DC tone taken off, so a carrier sitting there
+// counts like any other.
+//
+// Previous / Next: tune to the nearest carrier below or above the tuned
+// frequency, in PK_MEASURE of spectra summed after the press and within
+// their clean part (-15 %..+45 % of the span, as the band scan). Steps
+// asked for in a row are made one at a time, each once the spectrum shows
+// the last one settled.
 //----------------------------------------------------------------------------
+
+//add the newest spectrum to s when it is a new one of the tuned frequency, from after the last retune
+//settled; returns the seconds of signal summed in s, 0 while there are none
+static double spec_sum_add (spec_sum * s, dsd_opts * opts)
+{
+  W.sf.power = W.sf_power;
+  if (spectrum_copy_latest (&W.sf, 16384) && W.sf.bins >= 64 && W.sf.rate && W.sf.seq != s->seq
+      && (long long)W.sf.center == (long long)current_freq (opts) && W.sf.start_time >= W.last_tune + BS_SETTLE)
+  {
+    if (!s->frames || s->bins != W.sf.bins || s->rate != W.sf.rate || s->center != (long long)W.sf.center)
+    {
+      memset (s->sum, 0, sizeof(float) * W.sf.bins);
+      s->frames = 0;
+      s->bins = W.sf.bins;
+      s->rate = W.sf.rate;
+      s->center = (long long)W.sf.center;
+      s->t0 = W.sf.start_time;
+    }
+    for (int i = 0; i < s->bins; i++) s->sum[i] += W.sf.power[i];
+    s->frames++;
+    s->seq = W.sf.seq;
+    s->t1 = W.sf.data_time;
+  }
+  return s->frames ? s->t1 - s->t0 : 0;
+}
+
+//of the carriers found, the one nearest the tuned frequency cur, -1 none
+static int nearest_peak (const bs_peak * pk, int n, long long cur)
+{
+  int best = -1;
+  for (int i = 0; i < n; i++)
+    if (best < 0 || llabs (pk[i].freq - cur) < llabs (pk[best].freq - cur)) best = i;
+  return best;
+}
 
 static void run_auto_tune (dsd_opts * opts, dsd_state * state)
 {
 #ifdef USE_RTLSDR
   if (!W.auto_tune || opts->audio_in_type != 3) return;
-  if (opts->p25_trunk || opts->scanner_mode) return; //don't fight trunk/scan tuners
-  double now = spectrum_now ();
-  if (now - W.last_autotune < 2.0) return;
-
-  W.sf.power = W.sf_power;
-  //a frame from before the last snap (or still settling from it) would snap the same way again
-  if (!spectrum_copy_latest (&W.sf, 16384) || W.sf.start_time < W.last_autotune + BS_SETTLE) return;
-  int n = W.sf.bins;
-  if (n < 16) return;
-
-  //search a window around center, skip the DC spike
-  int lo = n / 2 - n / 6, hi = n / 2 + n / 6;
-  int guard = n / 128 + 1;
-  int best = -1;
-  float bestv = 0, noise = 0;
-  for (int i = lo; i < hi; i++) noise += W.sf.power[i];
-  noise /= (hi - lo);
-  for (int i = lo; i < hi; i++)
+  spec_sum * s = &W.at_sum;
+  if (opts->p25_trunk || opts->scanner_mode) { s->frames = 0; return; } //don't fight trunk/scan tuners
+  if (spec_sum_add (s, opts) < (W.at_lock ? AT_HOLD : AT_MEASURE)) return;
+  long long cur = s->center, reach = W.at_lock ? AT_FOLLOW : AT_REACH;
+  bs_peak pk[8];
+  int n = bs_find_peaks (s->sum, s->bins, cur, s->rate, cur - reach, cur + reach, PK_THR_DB, s->frames, pk, 8);
+  s->frames = 0;
+  int best = nearest_peak (pk, n, cur);
+  if (best < 0) return; //nothing on the channel (between transmissions, say): stay
+  long long off = pk[best].freq - cur;
+  if (llabs (off) >= AT_DEADBAND)
   {
-    if (abs (i - n / 2) < guard) continue;
-    if (W.sf.power[i] > bestv) { bestv = W.sf.power[i]; best = i; }
+    do_tune (opts, state, (long)pk[best].freq);
+    web_log ("Auto-tune: centred %+.1f kHz, on %.6f MHz", off / 1000.0, pk[best].freq / 1e6);
   }
-  if (best < 0 || bestv < noise * 8.0f) return; //need a clear peak (~9 dB)
-
-  double hz_per_bin = (double)W.sf.rate / n;
-  long offset = (long)((best - n / 2) * hz_per_bin);
-  if (labs (offset) < (long)hz_per_bin * 2) { W.last_autotune = now; return; } //already centered
-  long target = (long)W.sf.center + offset;
-  do_tune (opts, state, target);
-  W.last_autotune = now;
-  web_log ("Auto-tune: snapped %+ld kHz to %.6f MHz", offset / 1000, target / 1e6);
+  W.at_lock = 1;
 #else
   UNUSED2(opts, state);
 #endif
+}
+
+static void run_peak_step (dsd_opts * opts, dsd_state * state)
+{
+  if (!W.pk_steps) return;
+  if (opts->audio_in_type != 3) { W.pk_steps = 0; return; }
+  double now = spectrum_now ();
+  spec_sum * s = &W.pk_sum;
+  if (spec_sum_add (s, opts) < PK_MEASURE)
+  {
+    if (now - W.pk_t > PK_WAIT)
+    {
+      W.pk_steps = 0;
+      s->frames = 0;
+      cmd_result (W.pk_client, "peak", 0, "No spectrum of the tuned frequency to search.");
+    }
+    return;
+  }
+  int up = W.pk_steps > 0;
+  W.pk_steps += up ? -1 : 1;
+  W.pk_t = now;
+
+  //past the carrier tuned to (PK_GAP); bs_find_peaks keeps to the clean part of the span. Each press
+  //sums spectra of its own: older ones could hold a carrier that has gone since
+  long long cur = s->center;
+  bs_peak pk[BS_MAX_PEAKS];
+  int n = bs_find_peaks (s->sum, s->bins, cur, s->rate, up ? cur + PK_GAP : cur - (long long)s->rate,
+                         up ? cur + (long long)s->rate : cur - PK_GAP, PK_THR_DB, s->frames, pk, BS_MAX_PEAKS);
+  s->frames = 0;
+  int best = nearest_peak (pk, n, cur);
+  if (best < 0)
+  {
+    W.pk_steps = 0;
+    cmd_result (W.pk_client, "peak", 1, "No signal %s %.6f MHz in view.", up ? "above" : "below", cur / 1e6);
+    return;
+  }
+  retune (opts, state, (long)pk[best].freq); //the press stopped the scans and trunking, and starting one drops the steps
+  cmd_result_tuned (W.pk_client, "peak", pk[best].freq, "%s: %.6f MHz, %.0f dB, %.1f kHz wide.",
+                    up ? "Next" : "Previous", pk[best].freq / 1e6, pk[best].snr, pk[best].width / 1000.0);
 }
 
 //----------------------------------------------------------------------------
@@ -2870,8 +3048,9 @@ static const char * burst_label (unsigned int b)
 
 static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int on)
 {
-  char enc[64];
+  char enc[64], alias[200];
   web_enc_name (state, slot, enc, sizeof(enc));
+  web_talker_alias (state, slot, alias, sizeof(alias));
   jb_obj (b, key);
   jb_str (b, "enc", enc);
   if (slot == 0)
@@ -2884,7 +3063,7 @@ static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int
     jb_str (b, "call", state->call_string[0]);
     jb_str (b, "gps", web_call_gps (0));
     jb_str (b, "data", state->dmr_lrrp_gps[0]);
-    jb_str (b, "alias", state->generic_talker_alias[0]);
+    jb_str (b, "alias", alias);
     jb_int (b, "gi", state->gi[0]);
     jb_int (b, "err", state->errs & 0xF);
     jb_int (b, "err2", state->errs2 & 0xF);
@@ -2900,7 +3079,7 @@ static void add_slot (jb * b, const char * key, dsd_state * state, int slot, int
     jb_str (b, "call", state->call_string[1]);
     jb_str (b, "gps", web_call_gps (1));
     jb_str (b, "data", state->dmr_lrrp_gps[1]);
-    jb_str (b, "alias", state->generic_talker_alias[1]);
+    jb_str (b, "alias", alias);
     jb_int (b, "gi", state->gi[1]);
     jb_int (b, "err", state->errsR & 0xF);
     jb_int (b, "err2", state->errs2R & 0xF);
@@ -3282,6 +3461,7 @@ void web_poll (dsd_opts * opts, dsd_state * state)
   }
 
   update_analog (opts, state);
+  run_peak_step (opts, state);
   run_auto_tune (opts, state);
   run_auto_decode (opts, state);
   run_band_scan (opts, state);

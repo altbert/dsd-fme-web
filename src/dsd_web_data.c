@@ -575,6 +575,34 @@ static const char * alg_name (int alg)
   return NULL;
 }
 
+//just the name in an alias string the decoder keeps: "Talker Alias: NAME; " (DMR), "NAME; FQ-SUID:
+//...;" (Motorola P25) or "NAME"
+static void alias_name (char * out, size_t n, const char * in, size_t max)
+{
+  char t[512];
+  trim_id (t, sizeof(t), in, max);
+  const char * s = t;
+  if (!strncmp (s, "Talker Alias:", 13)) s += 13;
+  while (*s == ' ') s++;
+  size_t k = 0;
+  while (s[k] && s[k] != ';' && k + 1 < n) { out[k] = s[k]; k++; }
+  while (k && out[k-1] == ' ') k--;
+  out[k] = 0;
+}
+
+//the talker alias of a slot's call, "" when there is none. The DMR (Tait's too) and NXDN aliases go
+//into generic_talker_alias, the P25 ones (Motorola, L3Harris) and Tait's ISO7 only into the newest
+//event history entry, while it is the current talker's
+void web_talker_alias (dsd_state * state, int slot, char * out, size_t n)
+{
+  alias_name (out, n, state->generic_talker_alias[slot], sizeof(state->generic_talker_alias[slot]));
+  if (out[0]) return;
+  const Event_History * e = &state->event_history_s[slot].Event_History_Items[0];
+  uint32_t src = (uint32_t)(slot ? state->lastsrcR : state->lastsrc);
+  if (src && e->source_id == src && strncmp (e->alias, "BUMBLEBEETUNA", 13) != 0)
+    alias_name (out, n, e->alias, sizeof(e->alias));
+}
+
 //encryption on a slot's call, by name: the ALG id where the protocol sends one, otherwise
 //what its privacy flags imply (DMR Basic Privacy carries no ALG, only the service options bit).
 //Empty when the call is clear or nothing is decoding.
@@ -686,7 +714,7 @@ static void call_snapshot (dsd_opts * opts, dsd_state * state, int slot, call_sn
     int so = slot ? state->dmr_soR : state->dmr_so;
     c->emerg = so != 0x100 && (so & 0x80);
     c->gi = state->gi[slot];
-    trim_id (c->alias, sizeof(c->alias), state->generic_talker_alias[slot], sizeof(state->generic_talker_alias[slot]));
+    web_talker_alias (state, slot, c->alias, sizeof(c->alias));
     trim_id (c->gps, sizeof(c->gps), state->dmr_embedded_gps[slot], sizeof(state->dmr_embedded_gps[slot]));
     if (state->dmr_color_code < 16) snprintf (c->sys, sizeof(c->sys), "CC %u", state->dmr_color_code);
   }
@@ -701,7 +729,7 @@ static void call_snapshot (dsd_opts * opts, dsd_state * state, int slot, call_sn
     if (st >= 35 && !(burst == 20 || burst == 21)) return;
     if (!(c->src || c->tg)) return;
     c->gi = state->gi[slot];
-    trim_id (c->alias, sizeof(c->alias), state->generic_talker_alias[slot], sizeof(state->generic_talker_alias[slot]));
+    web_talker_alias (state, slot, c->alias, sizeof(c->alias));
     unsigned long long nac = state->nac ? (unsigned long long)state->nac : state->p2_cc;
     if (nac) snprintf (c->sys, sizeof(c->sys), "NAC %03llX", nac);
   }
@@ -712,6 +740,7 @@ static void call_snapshot (dsd_opts * opts, dsd_state * state, int slot, call_sn
     c->tg = state->nxdn_last_tg;
     if (!(c->src || c->tg)) return;
     c->gi = state->gi[0];
+    web_talker_alias (state, 0, c->alias, sizeof(c->alias));
     snprintf (c->sys, sizeof(c->sys), "RAN %u", state->nxdn_last_ran);
   }
   else if (st == 30 || st == 31)

@@ -59,7 +59,11 @@ function handleJSON(m){
   else if (m.type === 'bm_error'){ bmMsg('Not saved: '+m.msg+'.', true); }
   else if (m.type === 'bm_imported'){ bmMsg(m.msg); }
   else if (m.type === 'settings'){ settingsSet(m); }
-  else if (m.type === 'result'){ resMsg('res-'+m.for, m.msg, !m.ok); if (m.for === 'rec' && !m.ok) renderActs(); } // a failed Keep: its button again
+  else if (m.type === 'result'){
+    resMsg('res-'+m.for, m.msg, !m.ok);
+    if (m.for === 'rec' && !m.ok) renderActs(); // a failed Keep: its button again
+    if (m.freq && document.activeElement !== $('tunefreq')) $('tunefreq').value = fmtMHz(m.freq); // where Previous / Next tuned
+  }
 }
 
 function setConn(txt, cls){ const b=$('st-conn'); b.textContent=txt; b.className='badge '+cls; }
@@ -384,6 +388,7 @@ function renderStatus(m){
   // squelch: Auto floor and Channel floor need the RTL spectrum; the box shows the running level unless it is being edited
   const rtl = inp.type === 'rtl';
   reflect('tg-sqauto', inp.sql_auto); $('tg-sqauto').disabled = !rtl; $('btn-sqchan').disabled = !rtl;
+  $('btn-pkprev').disabled = $('btn-pknext').disabled = !rtl; // Previous / Next search the RTL spectrum
   if (document.activeElement !== $('rtlsq')) $('rtlsq').value = inp.squelch;
   $('rtlsq').step = [1,2,5,10,20,50,100,200,500].filter(s => s <= inp.squelch/40).pop() || 1; // an arrow press moves it ~0.2-0.5 dB
   if (inp.sql_margin != null && document.activeElement !== $('sqmargin')) $('sqmargin').value = String(inp.sql_margin);
@@ -511,8 +516,8 @@ function slotSet(i, s, d, used){
     el.classList.remove('active');
     setTxt(q('nm'), 'Slot '+i); setTxt(q('tm'), ''); setTxt(q('bu'), ''); setTxt(q('tg'), ''); setTxt(q('sr'), '');
     setHTML(q('tags'), s ? '<span class="hint">No second timeslot on this channel</span>' : '');
-    for (const c of ['l1','l3']) setTxt(q(c), '', '');
-    setHTML(q('l2'), ''); // through setHTML, or the same position coming back later would not be drawn
+    setTxt(q('l3'), '', ''); q('l1').title = '';
+    setHTML(q('l1'), ''); setHTML(q('l2'), ''); // through setHTML, or the same alias or position coming back later would not be drawn
     return;
   }
   const act = !!(s.tg || s.src), lc = d.carrier && act ? liveCalls.get(d.stereo ? i : 0) : null;
@@ -525,8 +530,11 @@ function slotSet(i, s, d, used){
   //the decoder keeps the call type after the call; only show it while the slot has ids
   setHTML(q('tags'), !act ? '' : (s.gi===0?'<span class="tag grp">Group</span>':(s.gi===1?'<span class="tag prv">Private</span>':''))+
     (s.enc?'<span class="tag enc">'+icon('lock')+escH(s.enc)+(algId?', alg '+hex(s.alg)+' key '+escH(s.key):'')+'</span>':''));
-  const l1=[(s.alias||'').trim(), (s.call||'').trim()].filter(x=>x).join(' · ');
-  setTxt(q('l1'), l1, l1);
+  // the talker alias, labelled (DMR, NXDN and P25 send one), then the call's own text; both come over the air
+  const al=(s.alias||'').trim(), call=(s.call||'').trim();
+  setHTML(q('l1'), (al ? '<span class="k">Alias</span> '+escH(al) : '')+(al && call ? ' · ' : '')+escH(call));
+  const l1t=[al, call].filter(x=>x).join(' · ');
+  if (q('l1').title !== l1t) q('l1').title = l1t;
   const gps=(s.gps||'').trim();
   setHTML(q('l2'), !gps ? '' : (lc && lc.lat!=null ? '<button class="gps" data-lat="'+lc.lat+'" data-lon="'+lc.lon+'" title="Show on the map">'+icon('pin')+'<span class="ell">'+escH(gps)+'</span></button>' : icon('pin')+' '+escH(gps)));
   const data=(s.data||'').trim();
@@ -1835,6 +1843,9 @@ function bindToggle(id, cmd, key){ $(id).onclick=()=>{ const on=!$(id).classList
 
 $('btn-tune').onclick=()=>{ const f=parseFreq($('tunefreq').value); if(f) tuneTo(f); };
 $('tunefreq').addEventListener('keydown',e=>{ if(e.key==='Enter'){ const f=parseFreq($('tunefreq').value); if(f) tuneTo(f);} });
+// the nearest carrier below / above in the spectrum (dsd_web.c, run_peak_step); presses in a row step on
+$('btn-pkprev').onclick=()=>send({cmd:'peak', dir:-1});
+$('btn-pknext').onclick=()=>send({cmd:'peak', dir:1});
 // 851.0125M, 154875k, 154.875 MHz, 851012500 (Hz) or 154.875 (MHz); commas are thousands
 // separators (851,012,500) unless there is a single one and no dot (154,875 = 154.875)
 function parseFreq(s){ s=(s||'').trim().toLowerCase().replace(/\s+/g,'').replace(/hz$/,''); if(!s) return null; let mult=1;

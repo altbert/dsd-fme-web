@@ -197,6 +197,7 @@ void web_act_send (int client);                         //everything kept, for a
 void web_act_clear (void);
 void web_act_retuned (void);                            //new frequency: forget the P25 site picture
 void web_enc_name (dsd_state * state, int slot, char * out, size_t n); //encryption on a slot's call, "" if clear
+void web_talker_alias (dsd_state * state, int slot, char * out, size_t n); //talker alias of a slot's call, "" if none
 const char * web_call_gps (int slot); //GPS sent during the slot's current call, "" if none
 int  web_offer_bp_key (int key); //a Basic Privacy key found in packet data; 1 if Auto-find took it (dsd_web.c)
 void web_trunk_json (jb * b);    //inside the status "trunk" object: the followed call, the last one, tallies, skips
