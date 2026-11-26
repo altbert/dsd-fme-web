@@ -603,19 +603,19 @@ canvas{display:block;width:100%}
           <div class="tune-in">
             <input id="tunefreq" aria-label="Frequency" placeholder="e.g. 851.0125M or 154987500" enterkeyhint="go">
             <button class="p sm" id="btn-tune">Tune</button>
-            <button class="sm icon" id="btn-bm" title="Bookmark the tuned frequency" aria-label="Bookmark the tuned frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
+            <button class="sm icon" id="btn-bm" title="Bookmark this frequency" aria-label="Bookmark this frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
           </div>
           <div class="tune-step">
-            <button class="sm icon" id="btn-skdown" title="Seek down: next signal below, or one span lower if there is none" aria-label="Seek down"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
-            <button class="sm icon" id="btn-pkprev" title="Tune to the next signal below" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
-            <button class="sm icon" id="btn-pknext" title="Tune to the next signal above" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
-            <button class="sm icon" id="btn-skup" title="Seek up: next signal above, or one span higher if there is none" aria-label="Seek up"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
-            <button class="tgl sm" id="tg-skuntil" title="Seek keeps going until it finds a signal, not one span per press">Until found</button>
+            <button class="sm icon" id="btn-skdown" title="Seek down: span lower if none found" aria-label="Seek down"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
+            <button class="sm icon" id="btn-pkprev" title="Tune to the next signal down" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-pknext" title="Tune to the next signal up" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-skup" title="Seek up: one span higher if none found" aria-label="Seek up"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
+            <button class="tgl sm" id="tg-skuntil" title="Seek keeps going until it finds a signal">Until found</button>
           </div>
           <div class="tune-auto">
             <button class="tgl sm" id="tg-autotune" title="Keep the tuned signal centred">Auto-tune</button>
             <button class="tgl sm" id="tg-autodec" title="Detect the protocol and switch to its decoder">Auto-decode</button>
-            <button class="tgl sm on" id="tg-autoana" title="Play analog FM when there's no sync, in AUTO and Auto-decode">Analog</button>
+            <button class="tgl sm on" id="tg-autoana" title="Play analog FM when there's no sync, in Auto-decode">Analog</button>
           </div>
           <span class="hint" id="ad-stat"></span>
         </div>
@@ -649,7 +649,7 @@ canvas{display:block;width:100%}
         </div>
         <div class="meters">
           <div class="mrow"><span class="k">Level</span><div class="meter segd"><i id="d-level"></i></div></div>
-          <div class="mrow" title="RF level; the mark is the squelch"><span class="k">RMS / SQL</span><div class="meter segd sq"><i id="d-rms"></i></div><span id="d-rmsv"></span></div>
+          <div class="mrow" title="RF level"><span class="k">RMS / SQL</span><div class="meter segd sq"><i id="d-rms"></i></div><span id="d-rmsv"></span></div>
         </div>
         <div class="sysbox glass" id="sysbox">
           <div class="kv" id="siteinfo"></div>
@@ -866,7 +866,7 @@ canvas{display:block;width:100%}
       </div>
 
       <div class="tabpane" data-t="rf" role="tabpanel">
-        <div class="hint" style="margin-top:0">RTL-SDR settings, applied live (needs <code>-i rtl</code>). RIGCTL works too.</div>
+        <div class="hint" style="margin-top:0">RTL-SDR live tuning (requires <code>-i rtl</code>). RIGCTL also supported.</div>
         <div class="row"><label for="rtlgain">LNA gain</label><input id="rtlgain" type="range" min="1" max="49" value="30" style="flex:1"><span id="rtlgainv" class="unit" style="min-width:6ch">auto</span></div>
         <div class="row"><span class="lbl">AGC</span><div class="ctl">
           <button class="tgl sm on" id="tg-agc" title="The tuner sets its own gain; the LNA slider is off">Tuner AGC</button>
@@ -1023,7 +1023,7 @@ canvas{display:block;width:100%}
       <span id="map-onair" class="badge">Nobody on air</span>
       <span class="sp"></span>
       <button class="tgl sm on" id="map-follow" title="Show radios as they go on air">Follow on air</button>
-      <button class="sm" id="map-fit" title="Zoom to fit every radio with a position"><svg class="i" aria-hidden="true"><use href="#i-fit"/></svg>Fit all</button>
+      <button class="sm" id="map-fit" title="Zoom to fit every located radio"><svg class="i" aria-hidden="true"><use href="#i-fit"/></svg>Fit all</button>
       <button class="sm icon" id="map-zin" title="Zoom in" aria-label="Zoom in"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
       <button class="sm icon" id="map-zout" title="Zoom out" aria-label="Zoom out"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg></button>
       <a class="btn" id="map-osm" target="_blank" rel="noopener" title="Open on openstreetmap.org">OSM<svg class="i" aria-hidden="true"><use href="#i-ext"/></svg></a>

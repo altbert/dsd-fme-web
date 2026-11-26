@@ -328,7 +328,7 @@ function renderStatus(m){
   const listen = (au.listen||0) < 4 ? ', '+(au.listen||0).toFixed(1)+' of 4 s' : '';
   const adText = {off:'Click the spectrum to tune.', paused:'Auto-decode paused while trunking or scanning', sync:'Locked on '+esc(d.name),
     heard:esc(au.heard)+' heard, waiting for '+esc(d.name)+' to hold its sync',
-    analog:'Analog FM; still listening for digital sync', idle:'Waiting for a signal ('+esc(d.name)+')',
+    analog:'Analog FM; listening for digital sync', idle:'Waiting for a signal ('+esc(d.name)+')',
     probe:'Listening for any digital sync'+listen};
   $('ad-stat').textContent = adText[au.state] || adText.off;
   renderBscan(m.bscan, d);
@@ -1428,7 +1428,7 @@ function bmMarkCurrent(){
   for (const r of $('bm-list').children) r.classList.toggle('on', +r.dataset.id === id);
   $('d-bm').innerHTML = cur ? icon('star-on')+' '+escH(cur.name) : '';
   $('btn-bm').innerHTML = icon(cur ? 'star-on' : 'star');
-  $('btn-bm').title = cur ? 'Edit bookmark "'+cur.name+'"' : 'Bookmark the tuned frequency';
+  $('btn-bm').title = cur ? 'Edit bookmark "'+cur.name+'"' : 'Bookmark this frequency';
   $('btn-bm').setAttribute('aria-label', $('btn-bm').title);
 }
 
@@ -1920,7 +1920,7 @@ $('tg-autodec').onclick=()=>{ const on=!$('tg-autodec').classList.contains('on')
 $('tg-autoana').onclick=()=>{ const on=!$('tg-autoana').classList.contains('on'); send({cmd:'auto_analog', enable:on}); reflect('tg-autoana', on); };
 
 // keys
-const khints={bp:'Decimal key number, 0–255',scrambler:'Decimal, 1–32767',rc4:'Hex, e.g. 0102030405',des:'Hex, 16 digits',aes:'Hex, a space every 16 digits (128 or 256 bits)',hytera:'Hex, 10, 32 or 64 digits',tyt_bp:'Hex, 4 digits',tyt_ap:'Hex, 32 or 64 digits',tyt_ep:'Hex, 32 digits',retevis:'Hex, 32 or 64 digits',baofeng:'Hex, 32 or 64 digits',anytone:'Hex, 4 digits',kenwood:'Decimal, 15-bit',csi:'Hex, 18 digits (72 bits)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 characters',straight:'len:hexbytes[:discard]',ras:'Password, 6–24 characters',hytera_ota:'128:<32 hex digits>, or 0:0 without a key. Only for OTA-encrypted systems: it drops CSBKs and headers'};
+const khints={bp:'Decimal key id (0-255)',scrambler:'Decimal (1-32767)',rc4:'Hex, e.g. 0102030405',des:'Hex 16 chars',aes:'Hex, space every 16 (128/256-bit)',hytera:'Hex 10/32/64 chars',tyt_bp:'Hex 4 chars',tyt_ap:'Hex 32/64 chars',tyt_ep:'Hex 32 chars',retevis:'Hex 32/64 chars',baofeng:'Hex 32/64 chars',anytone:'Hex 4 chars',kenwood:'Decimal (15-bit)',csi:'Hex 18 chars (72-bit)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 chars',straight:'len:hexbytes[:discard]',ras:'password (6-24 chars)',hytera_ota:'128:<32 hex chars>, or 0:0 without a key, only for OTA-encrypted systems (drops CSBKs and headers)'};
 $('ktype').onchange=()=>{ $('khint').textContent=khints[$('ktype').value]||''; };
 $('ktype').onchange();
 $('btn-key').onclick=()=>send({cmd:'key', keytype:$('ktype').value, value:$('kval').value});
