@@ -52,11 +52,13 @@ Open bugs and planned work for this fork, mostly the web interface. Bugs in the 
 
 ## Upstream bugs (fix on a fix/ branch, PR to lwvmobile/dsd-fme)
 
-Fixed on a branch and merged here, waiting for a pull request upstream (remove each entry when upstream merges it):
+Fixed on a branch and merged here, waiting for a pull request upstream (remove each entry when upstream merges it into `audio_work`):
 
 - `fix/csv-import-bounds`: the `-C` channel map import writes past `trunk_lcn_freq[26]` from the 27th row on, which puts later rows' frequencies into the lowest channels of `trunk_chan_map`. Channel numbers outside the map and `-K` hex key numbers over 0x1FCFD also write out of bounds, and `FFFFFFFF` crashes.
 - `fix/pulse-output-reopen`: `-fA -N` aborts as soon as the ncurses menu opens (`pa_simple_free` on the digital stream, which `-fA` never opens).
-- `fix/p25-missing-decodes` (pushed to origin): on a Phase 1 control channel the SNDCP Data Channel Announcement (TSBK 0x16) printed nothing, because `mac_msg_len[0x56]` was 0 and `process_MAC_VPDU` returned before its handler (which also read AA/RA from the DSO octet and CHAN-R's frequency from CHAN-T); Acknowledge Response - FNE (0x20) and Group Affiliation Response (0x28) had no handler; the RFSS Status Broadcast LC printed only its name. dsd-neo decodes all of them, though it reads the announcement's channels two octets early.
+- `fix/p25-missing-decodes`: on a Phase 1 control channel the SNDCP Data Channel Announcement (TSBK 0x16) printed nothing, because `mac_msg_len[0x56]` was 0 and `process_MAC_VPDU` returned before its handler (which also read AA/RA from the DSO octet and CHAN-R's frequency from CHAN-T); Acknowledge Response - FNE (0x20) and Group Affiliation Response (0x28) had no handler; the RFSS Status Broadcast LC printed only its name. dsd-neo decodes all of them, though it reads the announcement's channels two octets early.
+  - **Accepted, not in `audio_work` yet.** lwvmobile merged PR #380 on 2026-11-26 into his development branch `aw_dev` (merge commit add232e), not `audio_work`: he changed the PR's base. The commit is unchanged (d57172b, the same one merged here), so when `aw_dev` reaches `audio_work` the sync brings it in without a conflict and lists this branch as merged. Until then the sync reports the branch as still waiting: that is expected. Check with `git fetch upstream && git merge-base --is-ancestor d57172b upstream/audio_work && echo "in audio_work"`; the clone fetches only `audio_work`, so look at `aw_dev` with `git fetch upstream aw_dev:refs/remotes/upstream/aw_dev`. Remove this entry and delete the branch (ask first) once it is in `audio_work`.
+  - lwvmobile's comment on the PR: the explicit form of the Secondary Control Channel Broadcast isn't processed either, and other explicit messages from TSBKs are probably missed the same way. He is looking at it himself.
 
 Not fixed yet:
 
