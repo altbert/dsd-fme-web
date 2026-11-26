@@ -189,6 +189,15 @@ the slot's *Alias* line while the talker is on air: DMR's (Tait's too),
 NXDN's, and the P25 aliases of Motorola and L3Harris radios, which the
 calls in the activity log and the radios list also get.
 
+The P25 site box also lists the packet data channel the control channel
+announces, with its access: *with or without a grant* when radios may go
+there on their own as well as after asking (autonomous and requested access),
+*after a grant* or *without a grant* when only one is allowed. Tuned straight
+to a voice or data channel, where no control channel is heard, the box fills
+in the site from the channel's link control (system, RFSS, site, control
+channel, and the WACN when the channel sends it); the control channel's
+frequency shows once its channel plan is known.
+
 **RF** — RTL gain / PPM / sample volume / bandwidth / sample rate, the RMS
 squelch, and the RIGCTL SetMod bandwidth. The squelch gates NXDN, dPMR and M17
 sync, the analog monitor, the band scan and the bookmark scan. **Auto floor**, on by default with an RTL-SDR,

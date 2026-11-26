@@ -21,6 +21,10 @@ void p25_lcw (dsd_opts * opts, dsd_state * state, uint8_t LCW_bits[], uint8_t ir
   uint8_t lc_sf = LCW_bits[1]; //Implicit / Explicit MFID Format
   UNUSED2(lc_opcode, lc_sf);
 
+  //web site picture: voice and data channels repeat the site's broadcasts as LCs
+  if (irrecoverable_errors == 0 && opts->web_enable == 1)
+    web_p25_lcw (opts, state, LCW_bits);
+
   if (lc_pf == 1) //check the protect flag -- if set, its an encrypted lcw
   {
     fprintf (stderr, "%s",KRED);

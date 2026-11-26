@@ -1807,6 +1807,7 @@ void web_dmr_dheader (dsd_opts * opts, dsd_state * state, uint8_t * dheader); //
 void web_dmr_pdu_raw (dsd_opts * opts, dsd_state * state, int crc_ok); //completed DMR packet, before the assembler deciphers it (Hytera BP/EP: already per block)
 void web_dmr_pdu (dsd_opts * opts, dsd_state * state, int undecrypted); //the same packet after deciphering (if a key was loaded)
 void web_p25_tsbk (dsd_opts * opts, dsd_state * state, uint8_t * tsbk); //P25 TSBK (12 bytes) that passed its CRC
+void web_p25_lcw (dsd_opts * opts, dsd_state * state, uint8_t * lcw_bits); //P25 link control word (72 bits) without irrecoverable errors
 void web_p25_pdu (dsd_opts * opts, dsd_state * state, const uint8_t * pdu, int len, int confirmed, int crc_ok); //P25 packet, header block first, before it is logged
 void web_datacall (dsd_opts * opts, dsd_state * state, int slot, uint32_t src, uint32_t dst, const char * text); //watchdog_event_datacall
 #ifdef __cplusplus

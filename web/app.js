@@ -1280,8 +1280,10 @@ function renderSystem(m){
       ['Signalling',d.ota==='key'?'Hytera OTA encrypted, decrypted with the key':d.ota==='check'?'Treated as Hytera OTA encrypted (0:0, no key)':undefined,'cipher']])+'</div>'; }
   if (m.p25){ const p=m.p25;
     h+='<div><h4>P25 site</h4>'+kv([['WACN',p.wacn],['System',p.sys],['NAC',p.nac],['RFSS / site',p.rfss!=null?p.rfss+' / '+(p.site!=null?p.site:'?'):undefined],
-      ['Control channel',p.cc?mhz(p.cc)+(p.cc_ch?' (ch '+p.cc_ch+')':''):undefined],['Services',p.ssc?'0x'+p.ssc:undefined],['Network time',p.time]])+'</div>';
+      ['Control channel',p.cc?mhz(p.cc)+(p.cc_ch?' (ch '+p.cc_ch+')':''):p.cc_ch?'ch '+p.cc_ch+', frequency not known yet':undefined],['Services',p.ssc?'0x'+p.ssc:undefined],['Network time',p.time]])+'</div>';
     if (p.sec && p.sec.length) h+='<div><h4>Secondary control channels</h4>'+kv(p.sec.map(s=>['ch '+s.ch, s.f?mhz(s.f):'frequency not known yet']))+'</div>';
+    if (p.data && p.data.length) h+='<div><h4>Packet data channel'+(p.data.length>1?'s':'')+'</h4>'+kv(p.data.flatMap(d=>[['ch '+d.ch,
+      (d.f?mhz(d.f):'frequency not known yet')+(d.rch?', inbound ch '+d.rch:'')],['Access',d.access]]))+'</div>';
     if (p.nb && p.nb.length) h+='<div><h4>Neighbor sites</h4>'+kv(p.nb.map(n=>['RFSS '+n.rfss+' site '+n.site,
       (n.f?mhz(n.f):'ch '+n.ch)+(n.sys?', SYS '+n.sys:'')+(n.fail?', failed':'')+(n.conv?', conventional':'')]))+'</div>';
     if (p.iden && p.iden.length) h+='<div><h4>Channel plan</h4>'+kv(p.iden.map(i=>['Identifier '+i.id, mhz(i.base)+' + n × '+i.step+' kHz'+(i.tdma?' (TDMA)':'')]))+'</div>';

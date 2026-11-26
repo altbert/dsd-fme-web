@@ -172,13 +172,16 @@ static struct
   int claim[2];
   act_item * claimed[2];
 
-  //P25 site picture from the control channel broadcasts
+  //P25 site picture from the control channel broadcasts (and a voice or data channel's link control)
   long long p25_wacn;
   int p25_sysid, p25_rfss, p25_site, p25_cc_ch, p25_ssc;
   double p25_t;
   p25_neighbor nb[P25_NB_MAX];
   int nnb;
   int sccb[4], nsccb;
+  //packet data channels the SNDCP announcement names: channel, inbound channel (FFFF: none given),
+  //access bits (2 autonomous: radios go there by themselves, 1 requested: after a grant)
+  int dch[4], dch_r[4], dch_acc[4], ndch;
   unsigned iden_seen;  //channel identifiers already logged (bit per id)
   char p25_time[64];
   long long p25_logged_wacn;
@@ -2602,17 +2605,30 @@ static void p25_sys_note (const char * fmt, ...)
   act_emit (&a);
 }
 
+//the service an ACK, queue or deny response is about: the opcode of the radio's request (inbound, ISP)
 static const char * p25_svc_type (int t)
 {
   switch (t)
   {
-    case 0x00: return "group voice"; case 0x02: return "group voice update"; case 0x04: return "unit to unit voice";
-    case 0x05: return "unit to unit answer"; case 0x08: return "phone call"; case 0x14: return "data channel";
-    case 0x18: return "status update"; case 0x1A: return "status query"; case 0x1C: return "message";
-    case 0x1D: return "radio monitor"; case 0x1F: return "call alert"; case 0x24: return "extended function";
-    case 0x28: return "affiliation"; case 0x2C: return "registration"; case 0x2F: return "deregistration";
+    case 0x00: return "group voice"; case 0x04: return "unit to unit voice"; case 0x05: return "unit to unit answer";
+    case 0x08: case 0x09: return "phone call"; case 0x0A: return "phone call answer";
+    case 0x10: case 0x11: case 0x12: return "data channel"; case 0x13: return "data page answer";
+    case 0x14: return "data channel reconnect"; case 0x18: return "status update"; case 0x19: return "status answer";
+    case 0x1A: return "status query"; case 0x1C: return "message"; case 0x1D: return "radio monitor";
+    case 0x1F: return "call alert"; case 0x20: return "radio acknowledgement"; case 0x23: return "cancel service";
+    case 0x24: return "extended function"; case 0x27: return "emergency alarm"; case 0x28: return "affiliation";
+    case 0x29: return "affiliation query answer"; case 0x2B: return "deregistration"; case 0x2C: return "registration";
+    case 0x2D: return "location registration"; case 0x30: return "encryption parameters"; case 0x32: return "channel identifiers";
+    case 0x36: case 0x37: return "roaming address"; case 0x38: case 0x39: case 0x3A: case 0x3B: return "authentication";
   }
   return NULL;
+}
+
+//how radios may reach a packet data channel, from the SNDCP announcement's AA and RA bits
+static const char * p25_data_access (int acc)
+{
+  static const char * t[] = { "", "after a grant", "without a grant", "with or without a grant" };
+  return t[acc & 3];
 }
 
 static const char * p25_reason (int r)
@@ -2683,6 +2699,19 @@ static void p25_osp (dsd_state * state, int op, const uint8_t * b)
     case 0x08: case 0x09: p25_grant (3, (int)be16 (b + 1), be24 (b + 5), -1, b[0], 1); break;
     case 0x14: p25_grant (2, (int)be16 (b + 1), be24 (b + 5), -1, 0, 0); break;
     case 0x15: p25_sig ("Data page", -1, be24 (b + 5), 1, "The system has packet data waiting for radio %u", be24 (b + 5)); break;
+    case 0x16: //SNDCP Data Channel Announcement: DSO, AA (bit 7) and RA (bit 6), CHAN-T, CHAN-R, DAC
+    {
+      int ch = (int)be16 (b + 2), chr = (int)be16 (b + 4), acc = (b[1] >> 6) & 3, i = 0;
+      if (!ch || ch == 0xFFFF) break;
+      while (i < A.ndch && A.dch[i] != ch) i++;
+      if (i < A.ndch && A.dch_r[i] == chr && A.dch_acc[i] == acc) break; //heard already: it comes every few seconds
+      if (i == A.ndch && A.ndch == 4) break;
+      if (i == A.ndch) A.ndch++;
+      A.dch[i] = ch; A.dch_r[i] = chr; A.dch_acc[i] = acc;
+      ch_label (cl, sizeof(cl), state, ch);
+      p25_sys_note ("Packet data channel: %s%s%s", cl, acc ? ", radios use it " : "", p25_data_access (acc));
+      break;
+    }
     case 0x18: p25_sig ("Status", be24 (b + 5), be24 (b + 2), 1, "Status update: user %d, unit %d", b[0], b[1]); break;
     case 0x1A: p25_sig ("Status query", be24 (b + 5), be24 (b + 2), 1, "Status query"); break;
     case 0x1C: p25_sig ("Message", be24 (b + 5), be24 (b + 2), 1, "Short message %u", be16 (b)); break;
@@ -2715,7 +2744,8 @@ static void p25_osp (dsd_state * state, int op, const uint8_t * b)
     case 0x28:
     {
       static const char * gav[] = { "accepted", "failed", "denied", "refused" };
-      p25_sig ("Affiliation", be24 (b + 5), be16 (b + 3), 0, "Group affiliation %s%s", gav[b[0] & 3], b[0] & 0x80 ? " (local)" : "");
+      //LG set: a global affiliation, clear: local (the usual one, not marked)
+      p25_sig ("Affiliation", be24 (b + 5), be16 (b + 3), 0, "Group affiliation %s%s", gav[b[0] & 3], b[0] & 0x80 ? " (global)" : "");
       break;
     }
     case 0x29: //secondary control channel, explicit
@@ -2846,6 +2876,32 @@ void web_p25_tsbk (dsd_opts * opts, dsd_state * state, uint8_t * tsbk)
   else if (mfid == 0x90) p25_moto (state, op, tsbk + 2);
 }
 
+//link control (tap in p25_lcw.c, which only gets words without irrecoverable errors). Voice and data
+//channels repeat the site's broadcasts as LCs, the TSBK's fields one octet lower (no MFID octet), so
+//the site picture fills in there too, e.g. after tuning straight to a data channel
+void web_p25_lcw (dsd_opts * opts, dsd_state * state, uint8_t * lcw_bits)
+{
+  UNUSED2(opts, state);
+  if (!A.inited) return;
+  uint8_t lc[9];
+  for (int i = 0; i < 9; i++) lc[i] = (uint8_t)ConvertBitIntoBytes (&lcw_bits[i * 8], 8);
+  if (lc[0] == 0x63) //RFSS Status Broadcast: LRA, 4 bits + SYS, RFSS, site, control channel, service class
+  {
+    if (!A.p25_sysid) A.p25_sysid = ((lc[2] & 0xF) << 8) | lc[3];
+    A.p25_rfss = lc[4]; A.p25_site = lc[5]; A.p25_ssc = lc[8];
+    A.p25_cc_ch = (lc[6] << 8) | lc[7];
+  }
+  else if (lc[0] == 0x64) //Network Status Broadcast: LRA, WACN (20 bits) + SYS, control channel, service class
+  {
+    A.p25_wacn = ((long long)lc[2] << 12) | (lc[3] << 4) | (lc[4] >> 4);
+    A.p25_sysid = ((lc[4] & 0xF) << 8) | lc[5];
+    A.p25_cc_ch = (lc[6] << 8) | lc[7];
+  }
+  else return;
+  A.p25_t = wall_now ();
+  p25_site_check ();
+}
+
 //----------------------------------------------------------------------------
 // System picture (control channel / site details), sent when it changes
 //----------------------------------------------------------------------------
@@ -2925,6 +2981,19 @@ static char * build_system (dsd_opts * opts, dsd_state * state)
       jb_hex (&b, "ch", A.sccb[i], 4);
       long long f = p25_freq (state, A.sccb[i]);
       if (f) jb_int (&b, "f", f);
+      jb_obj_end (&b);
+    }
+    jb_arr_end (&b);
+    jb_arr (&b, "data");
+    for (int i = 0; i < A.ndch; i++)
+    {
+      jb_obj (&b, NULL);
+      jb_hex (&b, "ch", A.dch[i], 4);
+      long long f = p25_freq (state, A.dch[i]);
+      if (f) jb_int (&b, "f", f);
+      //an inbound channel of its own, when the announcement names one
+      if (A.dch_r[i] && A.dch_r[i] != 0xFFFF && A.dch_r[i] != A.dch[i]) jb_hex (&b, "rch", A.dch_r[i], 4);
+      if (A.dch_acc[i]) jb_str (&b, "access", p25_data_access (A.dch_acc[i]));
       jb_obj_end (&b);
     }
     jb_arr_end (&b);
@@ -3118,7 +3187,7 @@ void web_act_retuned (void)
 {
   if (!A.inited) return;
   A.p25_wacn = 0; A.p25_sysid = A.p25_rfss = A.p25_site = A.p25_cc_ch = A.p25_ssc = 0;
-  A.p25_t = 0; A.nnb = 0; A.nsccb = 0; A.iden_seen = 0; A.p25_time[0] = 0;
+  A.p25_t = 0; A.nnb = 0; A.nsccb = 0; A.ndch = 0; A.iden_seen = 0; A.p25_time[0] = 0;
   A.dmr_seen = A.nxdn_seen = 0;
   A.p25_logged_wacn = 0; A.p25_logged_sys = A.p25_logged_rfss = A.p25_logged_site = A.p25_logged_cc = 0;
   for (int i = 0; i < GRANT_MAX; i++) grant_end (&A.grant[i]);
