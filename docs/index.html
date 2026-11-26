@@ -288,7 +288,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
       <ul>
         <li>Type a frequency (<code>851.0125M</code>, <code>154987500</code>) and press <span class="k">Tune</span>. <span class="k">★</span> bookmarks it.</li>
         <li><span class="k">‹</span> <span class="k">›</span> tune to the next signal down or up in the spectrum. The line under them gives its frequency, level and width, or says there is none in view.</li>
-        <li><span class="k">«</span> <span class="k">»</span> seek: the same, and with nothing in view they hop a view further and search there, a hop a press. <span class="k">Until found</span> keeps them hopping until a signal turns up; the same button again stops it.</li>
+        <li><span class="k">«</span> <span class="k">»</span> seek: the same, and with nothing in the span they move one span further and search there, one span per press. <span class="k">Until found</span> keeps them going until a signal turns up; the same button again stops it.</li>
         <li><span class="k">Auto-tune</span> keeps the signal you're on centered. It only follows that one, so it stays put when the channel goes quiet.</li>
         <li><span class="k">Auto-decode</span> listens for every protocol's sync at once and switches the decoder to the one it hears, usually within a second.</li>
         <li><span class="k">Analog</span> (on at first) plays analog FM whenever there is no digital sync, in AUTO and Auto-decode. Set the squelch so noise stays muted.</li>
@@ -309,7 +309,7 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
       <ul>
         <li><span class="k">Follow calls</span> starts following; <span class="k">Stop</span> stops and stays on the control channel.</li>
         <li><span class="k">Skip call</span> leaves the current call until it ends; <span class="k">Back now</span> returns to the control channel without waiting out the hang time.</li>
-        <li><span class="k">Hold</span> follows only this talkgroup until you release it; <span class="k">Block</span> stops following it until DSD-FME closes.</li>
+        <li><span class="k">Hold</span> follows only this talkgroup until you release it; <span class="k">Block</span> stops following it until DSD-FME exits.</li>
         <li><span class="k">Group calls</span> <span class="k">Private calls</span> <span class="k">Data</span> <span class="k">Encrypted</span> pick which calls to follow. Data calls have nothing to hear, and encrypted ones stay muted without a key.</li>
         <li>In the talkgroup list, a lit key means followed: click it to change. Click a number to see its calls in Activity, or a name to edit it. <span class="k">Only lit</span> follows the lit ones and nothing else.</li>
       </ul>
@@ -358,12 +358,12 @@ dsd-fme -fs -i rtl:0:450M:0:-2:12 -T -C chan.csv -G group.csv \
   <ul>
     <li><span class="k">Invert</span> for inverted signals; <span class="k">Slot 1</span> <span class="k">Slot 2</span> turn each TDMA slot's audio on or off.</li>
     <li><b>Digital gain</b> (0 = automatic) and <b>Analog gain</b>; audio filters <span class="k">HPF-D</span> (high-pass on digital voice), <span class="k">HPF</span> <span class="k">LPF</span> <span class="k">PBF</span>.</li>
-    <li><span class="k">Payload</span> prints frame payloads in dsd-fme's console; <span class="k">Monitor</span> plays analog audio whenever there is no digital sync, in any decoder; <span class="k">Rec WAV</span> records each call; <span class="k">Clear events</span> empties the event history.</li>
+    <li><span class="k">Payload</span> prints frame payloads in dsd-fme's console; <span class="k">Monitor</span> plays analog audio whenever there is no digital sync, in any decoder; <span class="k">Per-call WAV</span> records each call; <span class="k">Clear events</span> empties the event history.</li>
     <li><b>P2 params</b>: WACN, system and NAC for decoding P25 Phase 2 voice when no control channel has given them.</li>
   </ul>
   <h3>RF</h3>
   <ul>
-    <li>RTL-SDR: <b>LNA gain</b>, <span class="k">Tuner AGC</span> (the tuner sets its own gain; the slider is off meanwhile), <span class="k">RTL AGC</span> (digital gain that lifts noise too, so the squelch works poorly with it), <b>PPM</b> correction, sample <b>Volume</b> (×1–3), <b>Bandwidth</b> (4–24 kHz) and <b>Sample rate</b> (0.25–3.2 MSPS; above 2.4 most dongles drop samples).</li>
+    <li>RTL-SDR: <b>LNA gain</b>, <span class="k">Tuner AGC</span> (the tuner sets its own gain; the slider is off meanwhile), <span class="k">RTL AGC</span> (digital gain that boosts the noise too, so the squelch can't tell noise from signals), <b>PPM</b> correction, sample <b>Volume</b> (×1–3), <b>Bandwidth</b> (4–24 kHz) and <b>Sample rate</b> (0.25–3.2 MSPS; above 2.4 most dongles drop samples).</li>
     <li>Squelch: <span class="k">Auto floor</span> keeps it a margin (0 to +20 dB) over the noise floor of the whole spectrum, so it follows retunes and gain changes. Or type a <b>Level</b> and press <span class="k">Set</span>, or press <span class="k">Channel floor</span> to take the tuned channel's quiet level plus the margin. The squelch gates NXDN, dPMR and M17 sync, analog audio, the band scan and the bookmark scan.</li>
     <li><b>SetMod BW</b>: the bandwidth sent over rigctl (SDR++).</li>
   </ul>

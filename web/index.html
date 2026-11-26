@@ -579,7 +579,7 @@ canvas{display:block;width:100%}
 <div id="login" class="overlay hidden">
   <form class="login" id="pw-form" aria-labelledby="pw-title">
     <h3 id="pw-title">Password required</h3>
-    <div class="hint">Enter the password DSD-FME was started with (<code>--web-pass</code>).</div>
+    <div class="hint">Enter the password set with <code>--web-pass</code>.</div>
     <input id="pw" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
     <button type="submit" class="p" id="pw-go">Connect</button>
     <div id="pw-err" class="hint err-text" role="alert"></div>
@@ -603,19 +603,19 @@ canvas{display:block;width:100%}
           <div class="tune-in">
             <input id="tunefreq" aria-label="Frequency" placeholder="e.g. 851.0125M or 154987500" enterkeyhint="go">
             <button class="p sm" id="btn-tune">Tune</button>
-            <button class="sm icon" id="btn-bm" title="Bookmark this frequency" aria-label="Bookmark this frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
+            <button class="sm icon" id="btn-bm" title="Bookmark the tuned frequency" aria-label="Bookmark the tuned frequency"><svg class="i" aria-hidden="true"><use href="#i-star"/></svg></button>
           </div>
           <div class="tune-step">
-            <button class="sm icon" id="btn-skdown" title="Seek down: the next signal down, a view further down if none is in this one" aria-label="Seek down"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
-            <button class="sm icon" id="btn-pkprev" title="Tune to the next signal down" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
-            <button class="sm icon" id="btn-pknext" title="Tune to the next signal up" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
-            <button class="sm icon" id="btn-skup" title="Seek up: the next signal up, a view further up if none is in this one" aria-label="Seek up"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
-            <button class="tgl sm" id="tg-skuntil" title="Seek hops on until it finds a signal, instead of one view a press">Until found</button>
+            <button class="sm icon" id="btn-skdown" title="Seek down: next signal below, or one span lower if there is none" aria-label="Seek down"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
+            <button class="sm icon" id="btn-pkprev" title="Tune to the next signal below" aria-label="Previous signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-pknext" title="Tune to the next signal above" aria-label="Next signal"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button>
+            <button class="sm icon" id="btn-skup" title="Seek up: next signal above, or one span higher if there is none" aria-label="Seek up"><svg class="i" aria-hidden="true"><use href="#i-chev2"/></svg></button>
+            <button class="tgl sm" id="tg-skuntil" title="Seek keeps going until it finds a signal, not one span per press">Until found</button>
           </div>
           <div class="tune-auto">
-            <button class="tgl sm" id="tg-autotune" title="Keep the signal you're on centred">Auto-tune</button>
+            <button class="tgl sm" id="tg-autotune" title="Keep the tuned signal centred">Auto-tune</button>
             <button class="tgl sm" id="tg-autodec" title="Detect the protocol and switch to its decoder">Auto-decode</button>
-            <button class="tgl sm on" id="tg-autoana" title="In AUTO and Auto-decode, play analog FM when there's no sync">Analog</button>
+            <button class="tgl sm on" id="tg-autoana" title="Play analog FM when there's no sync, in AUTO and Auto-decode">Analog</button>
           </div>
           <span class="hint" id="ad-stat"></span>
         </div>
@@ -626,7 +626,7 @@ canvas{display:block;width:100%}
             <option>8192</option><option>16384</option>
           </select></label>
           <label class="pair" title="Spectrum frames per second">FPS <input id="fps" type="number" value="15" min="1" max="60"></label>
-          <label class="pair" title="Minimum FFTs averaged into each frame">Average <input id="avg" type="number" value="2" min="1" max="32"></label>
+          <label class="pair" title="Minimum FFTs averaged per frame">Average <input id="avg" type="number" value="2" min="1" max="32"></label>
           <label class="pair">Range <input id="dbrange" type="range" min="30" max="120" value="80"></label>
         </div>
       </div>
@@ -649,11 +649,11 @@ canvas{display:block;width:100%}
         </div>
         <div class="meters">
           <div class="mrow"><span class="k">Level</span><div class="meter segd"><i id="d-level"></i></div></div>
-          <div class="mrow" title="RF level against the squelch (the mark)"><span class="k">RMS / SQL</span><div class="meter segd sq"><i id="d-rms"></i></div><span id="d-rmsv"></span></div>
+          <div class="mrow" title="RF level; the mark is the squelch"><span class="k">RMS / SQL</span><div class="meter segd sq"><i id="d-rms"></i></div><span id="d-rmsv"></span></div>
         </div>
         <div class="sysbox glass" id="sysbox">
           <div class="kv" id="siteinfo"></div>
-          <div id="sysinfo"><div class="hint">System details show up here once a repeater or control channel identifies itself.</div></div>
+          <div id="sysinfo"><div class="hint">System details appear once a repeater or control channel identifies itself.</div></div>
           <div id="chanlist" class="chips"></div>
         </div>
       </div>
@@ -671,14 +671,14 @@ canvas{display:block;width:100%}
             <button class="sm" id="trk-skip" title="Leave this call; skip it until it ends">Skip call</button>
             <button class="sm" id="trk-back" title="Return to the control channel now">Back now</button>
             <button class="sm" id="trk-hold" title="Follow only this talkgroup">Hold</button>
-            <button class="sm bad" id="trk-block" title="Never follow this talkgroup this session">Block</button>
+            <button class="sm bad" id="trk-block" title="Don't follow this talkgroup until DSD-FME exits">Block</button>
             <button class="sm" id="trk-stop" title="Stop following; stay on the control channel">Stop</button>
           </div>
         </div>
         <div class="row"><span class="lbl">Follow</span><div class="ctl">
           <button class="tgl sm on" id="tk-grp" title="Talkgroup calls">Group calls</button>
           <button class="tgl sm on" id="tk-prv" title="Radio-to-radio and phone calls">Private calls</button>
-          <button class="tgl sm" id="tk-data" title="Data channels: no audio; each pulls you off the control channel">Data</button>
+          <button class="tgl sm" id="tk-data" title="Data calls: no audio, and each one takes you off the control channel">Data</button>
           <button class="tgl sm on" id="tk-enc" title="Follow encrypted calls; muted without a key">Encrypted</button>
         </div></div>
         <div class="row"><label for="tk-hang">Hang time</label><input id="tk-hang" type="number" step="0.5" min="0" max="30" value="1"><span class="unit">s on a channel after it goes quiet</span></div>
@@ -692,7 +692,7 @@ canvas{display:block;width:100%}
         <div class="tgwrap glass"><table class="rtab tgtab">
           <thead><tr><th class="c-led"><span class="vh">Follow</span></th><th>Talkgroup or radio</th><th class="opt c-kind">Kind</th><th class="opt2 c-heard">Heard</th><th class="opt c-calls">Calls</th><th>Last call</th><th class="c-hold"><span class="vh">Hold</span></th></tr></thead>
           <tbody id="tg-body"></tbody></table></div>
-        <div class="hint">A lit key: DSD-FME follows that talkgroup; click it to change. Click a number to see its calls and packets in Activity, a name to edit it. Names and choices last until DSD-FME closes.</div>
+        <div class="hint">A lit key means the talkgroup is followed; click it to change. Click a number to see its calls and packets in Activity, or a name to edit it. Names and choices last until DSD-FME exits.</div>
       </div>
     </section>
 
@@ -701,12 +701,12 @@ canvas{display:block;width:100%}
       <div class="body">
         <div class="actbar">
           <div class="segctl" id="act-kinds" role="group" aria-label="Show">
-            <button class="chip on" data-k="" aria-pressed="true">All</button><button class="chip" data-k="call" aria-pressed="false">Calls</button><button class="chip" data-k="data" aria-pressed="false">Data</button><button class="chip" data-k="sig" aria-pressed="false" title="Grants, registrations, affiliations and delivery reports">Signalling</button><button class="chip" data-k="sys" aria-pressed="false">System</button><button class="chip" data-k="log" aria-pressed="false" title="The decoder's own event history">Decoder log</button>
+            <button class="chip on" data-k="" aria-pressed="true">All</button><button class="chip" data-k="call" aria-pressed="false">Calls</button><button class="chip" data-k="data" aria-pressed="false">Data</button><button class="chip" data-k="sig" aria-pressed="false" title="Grants, registrations, affiliations and delivery reports">Signalling</button><button class="chip" data-k="sys" aria-pressed="false">System</button><button class="chip" data-k="log" aria-pressed="false" title="DSD-FME's event history">Decoder log</button>
           </div>
           <input id="act-q" placeholder="Filter: radio, talkgroup, text" aria-label="Filter activity">
-          <button class="tgl sm on" id="act-rec" title="Record calls to replay; kept until exit">Record calls</button>
+          <button class="tgl sm on" id="act-rec" title="Record calls to play back; kept until DSD-FME exits">Record calls</button>
           <button class="tgl sm" id="act-err" title="Also show packets that failed CRC">Errors</button>
-          <button class="sm" id="act-clear" title="Clear activity and the event history">Clear</button>
+          <button class="sm" id="act-clear" title="Clear Activity and the event history">Clear</button>
         </div>
         <div class="acts glass" id="acts"></div>
         <div class="glass hidden" id="events"></div>
@@ -728,7 +728,7 @@ canvas{display:block;width:100%}
       <h2>Bookmarks <span class="hr"><button class="sm" id="bm-add" title="Bookmark the tuned frequency"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg>Add</button><button class="fold" data-fold="card-bm" aria-expanded="true" title="Hide bookmarks"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button></span></h2>
       <div class="body">
         <div class="row">
-          <input id="bm-q" placeholder="Search" title="Search by name, group or MHz" aria-label="Search bookmarks" style="flex:1;min-width:110px">
+          <input id="bm-q" placeholder="Search" title="Search by name, group or frequency" aria-label="Search bookmarks" style="flex:1;min-width:110px">
           <select id="bm-grp" aria-label="Group"><option value="">All groups</option></select>
         </div>
         <div class="bmlist glass" id="bm-list"></div>
@@ -750,10 +750,10 @@ canvas{display:block;width:100%}
             <button class="p sm" id="sc-start" title="Scan the selected bookmarks"><svg class="i" aria-hidden="true"><use href="#i-play"/></svg>Scan</button>
             <button class="sm" id="sc-stop" disabled>Stop</button>
             <button class="sm" id="sc-hold" disabled title="Stay on this bookmark">Hold</button>
-            <button class="sm" id="sc-skip" disabled title="Leave now; skip it until it's quiet">Skip</button>
+            <button class="sm" id="sc-skip" disabled title="Leave now; skip it until it goes quiet">Skip</button>
           </div>
           <div class="row">
-            <label class="pair" title="Seconds to keep listening after it goes quiet">Hang <input id="sc-hang" type="number" step="0.5" min="0" max="60" value="2"> s</label>
+            <label class="pair" title="Hang time: seconds to stay after it goes quiet">Hang <input id="sc-hang" type="number" step="0.5" min="0" max="60" value="2"> s</label>
             <span class="btns"><button class="sm" id="sc-all" title="Select every bookmark shown">Select all</button>
             <button class="sm" id="sc-none" title="Unselect every bookmark">Unselect all</button></span>
           </div>
@@ -763,7 +763,7 @@ canvas{display:block;width:100%}
           <summary>Import / export</summary>
           <div class="row" style="margin-top:8px"><button class="sm" id="bm-export">Export</button><button class="sm" id="bm-import">Import…</button>
             <input type="file" id="bm-file" accept=".json,.csv,.txt" class="hidden"></div>
-          <div class="hint">Import takes a DSD-FME export, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.
+          <div class="hint">Import reads a DSD-FME export, an SDR++ frequency manager file, or CSV lines <code>freq,name,decoder,group</code>.
             Bookmarks are saved on the DSD-FME host in <span id="bm-path">—</span>.</div>
         </details>
       </div>
@@ -789,7 +789,7 @@ canvas{display:block;width:100%}
         <div class="row"><label for="bs-thr">Threshold</label><input id="bs-thr" type="number" value="10" min="4" max="40"><span class="unit">dB over noise</span></div>
         <div class="row"><label for="bs-excl">Exclude</label>
           <textarea id="bs-excl" rows="2" placeholder="one per line: 462.5625 or 460-461"
-            title="Frequencies or ranges (MHz) to never stop on"></textarea></div>
+            title="Frequencies or ranges (MHz) to skip"></textarea></div>
         <div class="row"><span class="lbl"></span><div class="ctl">
           <button class="tgl sm on" id="bs-skip" title="Skip frequencies already bookmarked">Skip bookmarked</button>
           <button class="tgl sm" id="bs-keep" title="Bookmark each find and keep scanning">Keep going</button>
@@ -853,7 +853,7 @@ canvas{display:block;width:100%}
         <div class="row"><span class="lbl">Output</span><div class="ctl">
           <button class="tgl sm" id="tg-payload">Payload</button>
           <button class="tgl sm" id="tg-monitor" title="Play analog FM when there's no sync, in any decoder">Monitor</button>
-          <button class="tgl sm" id="tg-wav">Rec WAV</button>
+          <button class="tgl sm" id="tg-wav">Per-call WAV</button>
           <button class="sm" id="btn-resetev">Clear events</button>
         </div></div>
         <div class="row"><span class="lbl">P2 params</span><div class="ctl">
@@ -866,12 +866,12 @@ canvas{display:block;width:100%}
       </div>
 
       <div class="tabpane" data-t="rf" role="tabpanel">
-        <div class="hint" style="margin-top:0">RTL-SDR live tuning (requires <code>-i rtl</code>). RIGCTL also supported.</div>
+        <div class="hint" style="margin-top:0">RTL-SDR settings, applied live (needs <code>-i rtl</code>). RIGCTL works too.</div>
         <div class="row"><label for="rtlgain">LNA gain</label><input id="rtlgain" type="range" min="1" max="49" value="30" style="flex:1"><span id="rtlgainv" class="unit" style="min-width:6ch">auto</span></div>
         <div class="row"><span class="lbl">AGC</span><div class="ctl">
           <button class="tgl sm on" id="tg-agc" title="The tuner sets its own gain; the LNA slider is off">Tuner AGC</button>
-          <button class="tgl sm" id="tg-dagc" title="RTL2832 digital gain; lifts noise, so the squelch fails">RTL AGC</button></div></div>
-        <div class="hint">Tuner AGC runs the LNA gain itself (the slider is off meanwhile). RTL AGC is digital gain in the RTL2832: it lifts noise too, so the RMS squelch can't tell it from signals.</div>
+          <button class="tgl sm" id="tg-dagc" title="Digital gain in the RTL2832; it boosts noise too, so the squelch stops working">RTL AGC</button></div></div>
+        <div class="hint">Tuner AGC sets the LNA gain by itself, and the slider is off. RTL AGC is digital gain in the RTL2832: it boosts the noise too, so the squelch can't tell noise from signals.</div>
         <div class="row"><label for="rtlppm">PPM</label><input id="rtlppm" type="number" value="0"><button class="sm" id="btn-ppm">Set</button></div>
         <div class="row"><label for="rtlvol">Volume</label><select id="rtlvol"><option>1</option><option selected>2</option><option>3</option></select><span class="unit">× multiplier</span></div>
         <div class="row"><label for="rtlbw">Bandwidth</label><select id="rtlbw"><option>4</option><option>6</option><option>8</option><option selected>12</option><option>16</option><option>24</option></select><span class="unit">kHz</span>
@@ -886,7 +886,7 @@ canvas{display:block;width:100%}
         <div class="row"><span class="lbl"></span><span id="rtlratev" class="hint"></span></div>
         <div class="row"><span class="lbl">Squelch</span><div class="ctl">
           <button class="tgl sm on" id="tg-sqauto" title="Squelch follows the noise floor">Auto floor</button>
-          <select id="sqmargin" aria-label="Margin over the noise floor" title="Squelch margin over the noise floor">
+          <select id="sqmargin" aria-label="Margin above the noise floor" title="Squelch margin above the noise floor">
             <option value="0">0 dB</option><option value="1">+1 dB</option><option value="2">+2 dB</option><option value="3">+3 dB</option><option value="4" selected>+4 dB</option><option value="6">+6 dB</option>
             <option value="8">+8 dB</option><option value="10">+10 dB</option><option value="12">+12 dB</option><option value="15">+15 dB</option><option value="20">+20 dB</option>
           </select>
@@ -897,35 +897,35 @@ canvas{display:block;width:100%}
           <button class="sm" id="btn-sqchan" title="Use this frequency's quiet level plus the margin">Channel floor</button>
           <span class="sqv" id="sqchan"></span></div></div>
         <div class="hint res" id="res-sql" role="status"></div>
-        <div class="hint">Auto floor keeps the squelch the chosen margin over the noise floor of the whole spectrum, so it follows the gain. Off, the level stays where the arrows, Set or Channel floor (this frequency's own quiet level plus the margin) put it. The squelch gates NXDN, dPMR and M17 sync, the analog monitor, the band scan and the bookmark scan.</div>
+        <div class="hint">Auto floor holds the squelch the chosen margin above the noise floor of the whole spectrum, so it follows gain changes. With it off, the level stays where you set it: arrows, Set or Channel floor. The squelch gates NXDN, dPMR and M17 sync, the analog monitor, the band scan and the bookmark scan.</div>
         <div class="row"><label for="setmodbw">SetMod BW</label><input id="setmodbw" type="number" value="0" style="width:84px"><span class="unit">Hz (RIGCTL)</span><button class="sm" id="btn-smb">Set</button></div>
       </div>
 
       <div class="tabpane" data-t="trunk" role="tabpanel">
-        <div class="hint" style="margin-top:0">Trunking runs from the Trunking card, which shows up once a control channel is heard. These lists are for systems that need them.</div>
+        <div class="hint" style="margin-top:0">Trunking runs from the Trunking card, which appears once a control channel is heard. Use these lists only for systems that need them.</div>
         <h3 class="sub"><label for="csv-chan">Channel map</label></h3>
-        <div class="hint">For DMR Tier III, Capacity Plus, NXDN and EDACS systems that send channel numbers instead of frequencies; P25 sends its own channel plan. One <code>channel,frequency in Hz</code> per line after a header line.</div>
+        <div class="hint">For DMR Tier III, Capacity Plus, NXDN and EDACS systems that send channel numbers instead of frequencies (P25 sends its own channel plan). A header line, then one <code>channel,frequency in Hz</code> per line.</div>
         <textarea id="csv-chan" placeholder="ChannelNumber(dec),frequency(Hz)&#10;1,851012500"></textarea>
         <div class="row"><button class="sm" id="btn-chan">Import channel map</button></div>
         <div class="hint res" id="res-channel" role="status"></div>
         <h3 class="sub"><label for="csv-group">Talkgroup list</label></h3>
-        <div class="hint">DSD-FME's group CSV, <code>number,mode,name,tag</code> after a header line: mode A follows, B blocks. Importing replaces the names and choices made in the Trunking card.</div>
+        <div class="hint">DSD-FME's group CSV: a header line, then <code>number,mode,name,tag</code>; mode A follows, B blocks. Importing replaces the names and choices in the Trunking card.</div>
         <textarea id="csv-group" placeholder="DEC,Mode,Name,Tag&#10;1449,A,Fire Dispatch,Fire"></textarea>
         <div class="row"><button class="sm" id="btn-group">Import groups</button>
           <button class="sm" id="btn-group-cur" title="Fill in the current talkgroup list">Current list</button></div>
         <div class="hint res" id="res-group" role="status"></div>
         <h3 class="sub"><label for="scanlist">Scan list (conventional)</label></h3>
-        <div class="hint">Steps through these frequencies and stops on each one that carries a signal. It is not trunking: the two don't run together.</div>
+        <div class="hint">Steps through these frequencies and stops on any with a signal. It can't run together with trunking.</div>
         <div class="row"><button class="tgl sm" id="tg-scan">Scanner</button>
           <button class="sm" id="btn-cycle" title="Next frequency in the list">Next</button></div>
-        <textarea id="scanlist" placeholder="one freq per line&#10;154.9875M&#10;155.145M"></textarea>
+        <textarea id="scanlist" placeholder="one frequency per line&#10;154.9875M&#10;155.145M"></textarea>
         <div class="row"><button class="sm" id="btn-scanset">Apply scan list</button>
           <button class="sm" id="btn-scanbm" title="Fill with the bookmarks shown (first 26)">From bookmarks</button></div>
         <div class="hint res" id="res-scanlist" role="status"></div>
       </div>
 
       <div class="tabpane" data-t="keys" role="tabpanel">
-        <div class="hint" style="margin-top:0">Keys are applied to the running decoder. Only decode traffic you are authorized to.</div>
+        <div class="hint" style="margin-top:0">Keys apply to the running decoder. Only decode traffic you're authorized to.</div>
         <div class="row"><label for="ktype">Type</label>
           <select id="ktype" style="flex:1;min-width:0">
             <optgroup label="Common">
@@ -962,7 +962,7 @@ canvas{display:block;width:100%}
         </div></div>
         <div class="hint res" id="res-key" role="status"></div>
         <h3 class="sub">Auto-find key</h3>
-        <div class="hint">Finds a DMR Basic Privacy key (1–255): in speech pauses radios send a fixed silence frame, so the encrypted pauses give the key away. Let it run over some encrypted BP voice. Strong ciphers (AES/DES/RC4) cannot be found this way.</div>
+        <div class="hint">Finds a DMR Basic Privacy key (1–255). Radios send a fixed silence frame in speech pauses, so encrypted pauses give the key away. Let it run on some BP-encrypted voice. It can't find AES, DES or RC4 keys.</div>
         <div class="row">
           <button class="tgl sm" id="tg-autokey">Auto-find BP key</button>
           <span id="autokey-stat" role="status"></span>
@@ -971,7 +971,7 @@ canvas{display:block;width:100%}
         <div class="row">
           <select id="kcsvkind" aria-label="Key list format"><option value="keys_hex">Hex key list</option><option value="keys_dec">Decimal key list</option></select>
         </div>
-        <div class="hint">The first line is a header and is skipped. Hex list: <code>keyid,key</code>, a longer key as up to four 16-digit columns. Hytera Basic and Enhanced encrypted data packets use the key whose id their data header names, before a key entered above.</div>
+        <div class="hint">The first line is a header and is skipped. Hex list: <code>keyid,key</code>; a longer key goes in up to four 16-digit columns. Hytera Basic and Enhanced encrypted data packets use the key their data header names, before a key entered above.</div>
         <textarea id="csv-keys" placeholder="keyid,keyvalue"></textarea>
         <div class="row"><button class="sm" id="btn-keycsv">Import key list</button></div>
         <div class="hint res" id="res-keycsv" role="status"></div>
@@ -983,8 +983,8 @@ canvas{display:block;width:100%}
           <button class="tgl sm" id="tg-wav2">Per-call WAV</button>
         </div>
         <div class="hint res" id="res-wav" role="status"></div>
-        <div class="hint"><b>Record calls</b> keeps every call as it plays here, in a temporary folder that is
-          removed when DSD-FME exits; past <span id="rec-cap">256</span> MB the oldest go first. Keep one to copy it into the WAV folder.
+        <div class="hint"><b>Record calls</b> saves each call as it plays here, in a temporary folder deleted
+          when DSD-FME exits; past <span id="rec-cap">256</span> MB the oldest go first. <b>Keep</b> one to copy it to the WAV folder.
           <b>Per-call WAV</b> is DSD-FME's own recorder: one file per call in the WAV folder.</div>
         <div class="row"><button class="sm" id="btn-recs">Open recordings</button></div>
       </div>
@@ -1023,7 +1023,7 @@ canvas{display:block;width:100%}
       <span id="map-onair" class="badge">Nobody on air</span>
       <span class="sp"></span>
       <button class="tgl sm on" id="map-follow" title="Show radios as they go on air">Follow on air</button>
-      <button class="sm" id="map-fit" title="Fit every radio with a position"><svg class="i" aria-hidden="true"><use href="#i-fit"/></svg>Fit all</button>
+      <button class="sm" id="map-fit" title="Zoom to fit every radio with a position"><svg class="i" aria-hidden="true"><use href="#i-fit"/></svg>Fit all</button>
       <button class="sm icon" id="map-zin" title="Zoom in" aria-label="Zoom in"><svg class="i" aria-hidden="true"><use href="#i-plus"/></svg></button>
       <button class="sm icon" id="map-zout" title="Zoom out" aria-label="Zoom out"><svg class="i" aria-hidden="true"><use href="#i-minus"/></svg></button>
       <a class="btn" id="map-osm" target="_blank" rel="noopener" title="Open on openstreetmap.org">OSM<svg class="i" aria-hidden="true"><use href="#i-ext"/></svg></a>

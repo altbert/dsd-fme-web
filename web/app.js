@@ -46,7 +46,7 @@ function handleJSON(m){
   }
   else if (m.type === 'auth'){
     if (m.ok){ authed = true; loginShow(false); $('pw-err').textContent=''; setConn('Connected','live'); resync(); }
-    else { $('pw-err').textContent = 'Wrong password. Check it and connect again.'; $('pw').select(); }
+    else { $('pw-err').textContent = 'Wrong password. Try again.'; $('pw').select(); }
   }
   else if (m.type === 'status'){ authed = true; setConn('Connected','live'); renderStatus(m); }
   else if (m.type === 'activity'){ handleActivity(m); }
@@ -328,8 +328,8 @@ function renderStatus(m){
   const listen = (au.listen||0) < 4 ? ', '+(au.listen||0).toFixed(1)+' of 4 s' : '';
   const adText = {off:'Click the spectrum to tune.', paused:'Auto-decode paused while trunking or scanning', sync:'Locked on '+esc(d.name),
     heard:esc(au.heard)+' heard, waiting for '+esc(d.name)+' to hold its sync',
-    analog:'Analog FM, still listening for digital syncs', idle:'Waiting for a signal ('+esc(d.name)+')',
-    probe:'Listening for every digital sync'+listen};
+    analog:'Analog FM; still listening for digital sync', idle:'Waiting for a signal ('+esc(d.name)+')',
+    probe:'Listening for any digital sync'+listen};
   $('ad-stat').textContent = adText[au.state] || adText.off;
   renderBscan(m.bscan, d);
   renderBmScan(m.bmscan, d);
@@ -440,7 +440,7 @@ function dfStatus(inp){
   const can = DF.tuned > 0 && (inp.type === 'rtl' || !!inp.rigctl), el=$('d-freq');
   if (can !== DF.can){
     DF.can = can; el.tabIndex = can ? 0 : -1; el.classList.toggle('can', can);
-    el.title = can ? 'Click a digit, then type or ↑↓ (later digits reset). ←→ move, Enter tunes, Esc undoes' : '';
+    el.title = can ? 'Click a digit, then type or press ↑↓; the digits to its right reset. ←→ picks a digit, Enter tunes, Esc undoes' : '';
     if (!can){ clearTimeout(DF.timer); DF.pending=0; if (document.activeElement===el) el.blur(); }
   }
   dfRender();
@@ -661,7 +661,7 @@ function actHint(){
   let h=box.querySelector('.acthint');
   if (box.querySelector('.act')){ if (h) h.remove(); return; }
   if (!h){ h=document.createElement('div'); h.className='acthint'; box.appendChild(h); }
-  h.textContent = acts.size ? 'Nothing matches the filter.' : 'Calls, decoded data and signalling show up here as they are heard.';
+  h.textContent = acts.size ? 'Nothing matches the filter.' : 'Calls, data and signalling appear here as they are heard.';
 }
 // add, replace or drop one row, keeping the newest first
 function actPut(it){
@@ -858,7 +858,7 @@ function renderTrunkNow(){
   if (st==='off'){
     what = 'Not following calls';
     sub = tr.can===false ? 'Trunking needs a receiver DSD-FME can retune: start it with <code>-i rtl</code>, or with rigctl (<code>-U</code>).'
-      : 'Follow calls: the receiver jumps to each call’s channel and comes back here when the call ends.';
+      : 'Follow calls: the receiver jumps to each call’s channel and returns here when it ends.';
     show.go = true;
   }
   else if (st==='wait'){
@@ -1162,7 +1162,7 @@ function mapSide(now){
   setTxt($('map-onair'), air.length ? air.length+' on air' : 'Nobody on air');
   $('map-onair').className='badge'+(air.length?' live':'');
   let h='<h4>On air</h4>';
-  if (!air.length) h+='<div class="hint">Nobody is transmitting.</div>';
+  if (!air.length) h+='<div class="hint">Nobody is on air.</div>';
   for (const [id, c] of air){
     const r=radios.get(id), pos=r && r.lat!=null;
     h+='<button class="it air" data-id="'+escH(id)+'" title="'+(pos?'Show on the map':'No position yet')+'"><span>'+escH(id)+'</span><span class="x">'+escH(airLabel(id))+', '+fmtClock(now-c.t)+(pos?'':', no position')+'</span></button>';
@@ -1289,7 +1289,7 @@ function renderSystem(m){
     if (p.iden && p.iden.length) h+='<div><h4>Channel plan</h4>'+kv(p.iden.map(i=>['Identifier '+i.id, mhz(i.base)+' + n × '+i.step+' kHz'+(i.tdma?' (TDMA)':'')]))+'</div>';
   }
   if (m.nxdn){ const n=m.nxdn; h+='<div><h4>NXDN</h4>'+kv([['RAN',n.ran],['System code',n.sys],['Site code',n.site]])+'</div>'; }
-  setHTML($('sysinfo'), h ? '<div class="sysg">'+h+'</div>' : '<div class="hint">System details show up here once a repeater or control channel identifies itself.</div>');
+  setHTML($('sysinfo'), h ? '<div class="sysg">'+h+'</div>' : '<div class="hint">System details appear once a repeater or control channel identifies itself.</div>');
   sysPic = m; renderTrunkNow(); renderTalkgroups();
 }
 
@@ -1344,7 +1344,7 @@ function renderBookmarks(){
   el.innerHTML='';
   if (!list.length){
     const h=document.createElement('div'); h.className='hint';
-    h.textContent = bms.length ? 'No bookmark matches.' : 'No bookmarks yet. Tune a channel and press the star or Add.';
+    h.textContent = bms.length ? 'No bookmark matches.' : 'No bookmarks yet. Tune a frequency and press the star or Add.';
     el.appendChild(h);
   }
   let lastGroup = null;
@@ -1428,7 +1428,7 @@ function bmMarkCurrent(){
   for (const r of $('bm-list').children) r.classList.toggle('on', +r.dataset.id === id);
   $('d-bm').innerHTML = cur ? icon('star-on')+' '+escH(cur.name) : '';
   $('btn-bm').innerHTML = icon(cur ? 'star-on' : 'star');
-  $('btn-bm').title = cur ? 'Edit bookmark "'+cur.name+'"' : 'Bookmark this frequency';
+  $('btn-bm').title = cur ? 'Edit bookmark "'+cur.name+'"' : 'Bookmark the tuned frequency';
   $('btn-bm').setAttribute('aria-label', $('btn-bm').title);
 }
 
@@ -1543,7 +1543,7 @@ function renderBmScan(sc, d){
   const where = nm+', '+mhz(sc.freq)+(sc.pos ? ' ('+sc.pos+' of '+sc.n+')' : '');
   const dec = sc.mode && sc.mode !== 'autodecode' && MODE_LABEL[sc.mode] ? MODE_LABEL[sc.mode] : esc(d.name);
   let t, short = '';
-  if (!on) t = sc.msg ? 'Bookmark scan '+sc.msg : 'Select the bookmarks to scan with the key at the start of their row, then press Scan. It steps through them by frequency and stops on each active one with that bookmark’s decoder, until it has been quiet for Hang seconds.';
+  if (!on) t = sc.msg ? 'Bookmark scan '+sc.msg : 'Select bookmarks with the key at the start of their row, then press Scan. It steps through them by frequency and stops on each active one, with that bookmark’s decoder, until it has been quiet for the hang time.';
   else if (sc.held){ t = 'Held on '+where+(lis ? ', active' : ', quiet')+'. Release to scan on.'; short = 'Bookmark scan: held on '+nm; }
   else if (lis){
     t = 'Active: '+where+', '+dec+' · '+fmtClock(sc.on)+(!sc.synced && !sc.plays ? ' · waiting for its sync' : '')+
@@ -1657,7 +1657,7 @@ function renderBscan(bs, d){
   else if (bs.state === 'found'){ t = 'Decoding '+(bs.desc || esc(d.name))+' on '+mhz(bs.freq)+', collecting ids for the bookmark…'; short = 'Band scan: locked on '+mhz(bs.freq); }
   else if (bs.state === 'fixed'){ t = 'Found '+bs.last_name+' on '+mhz(bs.last_freq)+' and bookmarked it (group "Band scan"). Continue keeps looking.'; short = 'Band scan: found '+bs.last_name; }
   else if (bs.msg) t = 'Band scan '+bs.msg;
-  else t = 'Sweeps the bands with the RTL-SDR, listens on every signal it sees for every digital sync at once, and stops on the first one that decodes, or that is analog FM with a CTCSS tone or DCS code, saving it as a bookmark.'
+  else t = 'Sweeps the bands with the RTL-SDR, checks every signal it sees for any digital sync, and stops on the first one that decodes, or that is analog FM with a CTCSS tone or DCS code, and bookmarks it.'
     + (bs.found ? ' Last find: '+bs.last_name+' on '+mhz(bs.last_freq)+'.' : '');
   $('bs-stat').textContent = t;
   $('bs-stat').style.color = !on && bs.msg ? 'var(--fail)' : '';
@@ -1749,7 +1749,7 @@ document.addEventListener('input', e=>{
 // Keep, or that it was kept, in a slot of its own width so the players line up
 function recKeep(id, name){
   return '<span class="rp-k">'+(name ? '<span class="tag ok" title="Kept as '+escH(name)+'">'+icon('check')+'Kept</span>'
-    : '<button class="sm rp-keep" data-id="'+id+'" title="Save to the WAV folder; it stays after DSD-FME exits">Keep</button>')+'</span>';
+    : '<button class="sm rp-keep" data-id="'+id+'" title="Copy to the WAV folder, where it stays after DSD-FME exits">Keep</button>')+'</span>';
 }
 // the expanded call row: its recording, while it runs and after
 function actRec(it){
@@ -1802,7 +1802,7 @@ function recMatch(r, q){
 function recRow(r){
   const m=r.meta||{}, f=recFields(m);
   const who=idHTML(m.src, m.srcs, m.sn), to=idHTML(m.dst, m.dsts, m.dn, m.g===0 ? 'TG ' : '');
-  let meta='<span class="tag" title="'+(r.kind==='temp' ? 'Removed when DSD-FME exits' : 'In the WAV folder')+'">'+REC_KIND[r.kind]+'</span>';
+  let meta='<span class="tag" title="'+(r.kind==='temp' ? 'Deleted when DSD-FME exits' : 'In the WAV folder')+'">'+REC_KIND[r.kind]+'</span>';
   if (m.enc) meta+='<span class="tag enc" title="'+escH(m.enc)+'">'+icon('lock')+escH(m.enc)+'</span>';
   if (m.lat!=null) meta+='<button class="tag lnk" data-lat="'+m.lat+'" data-lon="'+m.lon+'" data-id="'+escH(m.srcs || (m.src>0 ? String(m.src) : ''))+'" title="'+m.lat.toFixed(5)+', '+m.lon.toFixed(5)+': show on the map" aria-label="Show on the map">'+icon('pin')+'</button>';
   meta+='<span class="dur">'+fmtClock(r.dur||0)+'</span>';
@@ -1830,7 +1830,7 @@ function renderRecs(){
     ' · WAV folder: '+(i.wav_dir || '—');
   const el=$('rec-list');
   if (!list.length){ el.innerHTML='<div class="rhint">'+(REC.items.length ? 'Nothing matches the filter.'
-    : 'No recordings yet. Calls are recorded while Record calls is on; Per-call WAV files show up here too.')+'</div>'; return; }
+    : 'No recordings yet. Calls are recorded while Record calls is on, and Per-call WAV files show here too.')+'</div>'; return; }
   el.innerHTML=list.map(recRow).join('');
 }
 $('btn-recs').onclick=recOpen;
@@ -1920,7 +1920,7 @@ $('tg-autodec').onclick=()=>{ const on=!$('tg-autodec').classList.contains('on')
 $('tg-autoana').onclick=()=>{ const on=!$('tg-autoana').classList.contains('on'); send({cmd:'auto_analog', enable:on}); reflect('tg-autoana', on); };
 
 // keys
-const khints={bp:'Decimal key id (0-255)',scrambler:'Decimal (1-32767)',rc4:'Hex, e.g. 0102030405',des:'Hex 16 chars',aes:'Hex, space every 16 (128/256-bit)',hytera:'Hex 10/32/64 chars',tyt_bp:'Hex 4 chars',tyt_ap:'Hex 32/64 chars',tyt_ep:'Hex 32 chars',retevis:'Hex 32/64 chars',baofeng:'Hex 32/64 chars',anytone:'Hex 4 chars',kenwood:'Decimal (15-bit)',csi:'Hex 18 chars (72-bit)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 chars',straight:'len:hexbytes[:discard]',ras:'password (6-24 chars)',hytera_ota:'128:<32 hex chars>, or 0:0 without a key, only for OTA-encrypted systems (drops CSBKs and headers)'};
+const khints={bp:'Decimal key number, 0–255',scrambler:'Decimal, 1–32767',rc4:'Hex, e.g. 0102030405',des:'Hex, 16 digits',aes:'Hex, a space every 16 digits (128 or 256 bits)',hytera:'Hex, 10, 32 or 64 digits',tyt_bp:'Hex, 4 digits',tyt_ap:'Hex, 32 or 64 digits',tyt_ep:'Hex, 32 digits',retevis:'Hex, 32 or 64 digits',baofeng:'Hex, 32 or 64 digits',anytone:'Hex, 4 digits',kenwood:'Decimal, 15-bit',csi:'Hex, 18 digits (72 bits)',vertex:'10:xxxxxxxxxx or 64:...',auctus:'8 characters',straight:'len:hexbytes[:discard]',ras:'Password, 6–24 characters',hytera_ota:'128:<32 hex digits>, or 0:0 without a key. Only for OTA-encrypted systems: it drops CSBKs and headers'};
 $('ktype').onchange=()=>{ $('khint').textContent=khints[$('ktype').value]||''; };
 $('ktype').onchange();
 $('btn-key').onclick=()=>send({cmd:'key', keytype:$('ktype').value, value:$('kval').value});
